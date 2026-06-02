@@ -29,7 +29,7 @@ Increment numbers are stable IDs. Because two dependencies run against the patie
 | [05](./increments/05-clinical-opd.md) | Clinical / OPD | Clinical/OPD | 00, 01, 02, 03, 04 | M2 | backend-engineer |
 | [06](./increments/06-lab-radiology-procedure-theatre.md) | Laboratory, Radiology, Procedures & Theatre | Lab, Radiology, Procedures/Theatre | 00–02, 04, 05 | M3 | backend-engineer |
 | [07](./increments/07-inpatient-nursing.md) | Inpatient & Nursing | Inpatient/Nursing | 00–02, 04, 05, **08** | M5 | backend-engineer |
-| [08](./increments/08-pharmacy-inventory-procurement.md) | Pharmacy, Inventory & Procurement | Pharmacy, Inventory/Procurement | 00–02, 04 | M4 | backend-engineer |
+| [08](./increments/08-pharmacy-inventory-procurement.md) | Pharmacy, Inventory & Procurement | Pharmacy, Inventory/Procurement | 00–02, 04, 05 | M4 | backend-engineer |
 | [09](./increments/09-hr-payroll-assets.md) | HR, Payroll & Assets | HR/Payroll, Assets | 00, 01, 02 | M6 | backend-engineer |
 | [10](./increments/10-reporting-management.md) | Reporting & Management | Reporting | 03–09 | M6 | backend-engineer |
 | [11](./increments/11-hardening-cutover.md) | Hardening, Non-Functional & Cutover | cross-cutting | all | M7 | devops-engineer |

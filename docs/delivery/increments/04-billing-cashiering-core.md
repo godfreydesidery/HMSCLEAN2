@@ -35,10 +35,11 @@ Deliver a fully working billing and cashiering vertical slice so that a cashier 
 
 ## Dependencies
 
-- **Increment 00 (Walking skeleton)** — provides `AuditableEntity`, ULID `uid`, `Money` value object, `TxAuditContext`, `DocumentNumberService` with `seq_pcn_no`, `BusinessDay`/`BusinessDayService`, Flyway baseline, `ApplicationModules.verify()` gate, CI pipeline. All of these are directly consumed by the billing module.
-- **Increment 01 (IAM & Master data)** — provides seeded `ServicePrice` rows (cash and plan prices), `InsurancePlan` masterdata, `Currency`, the `iam` module for `@PreAuthorize` privilege enforcement (`BILL-A`, `CASHIER-ACCESS`, `ADMIN-ACCESS`, and the billing-specific privilege codes seeded in V2), and `BusinessDay` open/close workflow. Billing cannot price a charge without a loaded pricing matrix.
-- **Increment 02 (Patient registration)** — provides the `PatientRef` (uid + MR no + payment type) that every invoice and payment line references; the registration-fee invoice is the first use of `BillingCommands.recordClinicalCharge`. Increment 04 must be wired after the `PatientRegistered` event fires and charges can be seeded.
-- **Increment 03 (Consultation / reception)** — the consultation-fee charge is the primary trigger for the cashier queue. Increment 04 must be available before Increment 03 goes live because the consultation `book()` transition calls `billing.api` synchronously in one transaction (ADR-0008 §4). The build order therefore is 00 → 01 → 02 → 04 → 03.
+- **Increment 00 (Walking Skeleton & Shared Kernel)** — `AuditableEntity`, ULID `uid`, `Money`, `TxAuditContext`, `DocumentNumberService` with `seq_pcn_no`, `BusinessDay`/`BusinessDayService`, Flyway baseline, `ApplicationModules.verify()` gate, CI pipeline. All directly consumed by the billing module.
+- **Increment 01 (Identity & Access)** — the `iam` module for `@PreAuthorize` enforcement (`BILL-A`, `CASHIER-ACCESS`, `ADMIN-ACCESS`, and the billing-specific codes seeded in V2).
+- **Increment 02 (Master Data & Reference Seeding)** — the seeded `ServicePrice` matrix (cash + plan rows), `InsuranceProvider`/`InsurancePlan`, `Currency`, `CompanyProfile`. Billing cannot price a charge without a loaded pricing matrix.
+
+This increment is **built before 03 (Registration) and 05 (Clinical/OPD)**, which are *downstream consumers*: registration's registration-fee invoice and clinical's consultation-fee invoice both call `billing.api.recordClinicalCharge()` synchronously in one transaction (ADR-0008 §4). Build order: `00 → 01 → 02 → 04 → 03 → 05`.
 
 ## Exact-process fidelity targets
 

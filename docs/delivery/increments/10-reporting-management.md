@@ -42,13 +42,14 @@ Deliver every one of the 29 legacy reports as typed, JOOQ-backed endpoints in th
 
 ## Dependencies
 
-All 9 preceding feature increments (00–09) must be done. Every billable entity, stock entity, and clinical order that the reports query must be persisted and indexed before the JOOQ queries can be validated. Specifically:
-- Increment 02 (Billing & Payments) for `PatientInvoice`, `PatientPayment`, `CashierShift`, `Collection`.
-- Increment 05 (Pharmacy & Inventory) for `StockBatch`, `PharmacySaleOrder`, `StoreStockBatch`.
-- Increment 06 (Procurement) for `LocalPurchaseOrder`, `GoodsReceipt`.
-- Increment 07 (Laboratory / Radiology / Procedure) for `ClinicalOrder` result and turnaround data.
-- Increment 09 (HR) for `Employee` and `ProviderProfile` referenced by clinician performance.
-- JOOQ code generation runs after Flyway migrations in the CI Testcontainers step; the devops-engineer must wire the `jooq-codegen-maven` plugin to execute post-Flyway (ADR-0010).
+All preceding feature increments (03–09) must be done. Every billable entity, stock entity, and clinical order the reports query must be persisted and indexed before the read queries can be validated. Specifically:
+- **Increment 04 (Billing, Cashiering & Insurance)** for `PatientInvoice`, `PatientPayment`, `CashierShift`, `Collection`, `InsuranceClaim`.
+- **Increment 05 (Clinical / OPD)** for consultations and `ClinicalOrder` data.
+- **Increment 06 (Laboratory, Radiology, Procedures & Theatre)** for `ClinicalOrder` results and turnaround data.
+- **Increment 07 (Inpatient & Nursing)** for admissions, ward-day charges, occupancy.
+- **Increment 08 (Pharmacy, Inventory & Procurement)** for `StockBatch`, `PharmacySaleOrder`, `StoreStockBatch`, `LocalPurchaseOrder`, `GoodsReceipt`.
+- **Increment 09 (HR, Payroll & Assets)** for `Employee`/`ProviderProfile` referenced by clinician performance.
+- Read-model code generation runs after Flyway migrations in the CI Testcontainers step; devops-engineer wires it post-Flyway (ADR-0010).
 
 ## Exact-process fidelity targets
 

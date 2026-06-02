@@ -31,12 +31,11 @@ Harden the fully-featured system — enforcing facility/clinic-store scoping, wi
 
 ## Dependencies
 
-Requires all prior increments (00–10) to be merged and green. Specifically:
-- Increment 00 (walking skeleton): `ApplicationModules.verify()`, Flyway baseline, ArchUnit gates, CI pipeline.
-- Increments 01–06 (Registration through Inpatient/Discharge): all clinical state machines and payment gates in place; scoping enforcement requires a complete aggregate surface to gate.
-- Increment 07 (Pharmacy/Store): `StockBalance`/`StockBatch` per-pharmacy ledgers and FEFO dispensing must exist before working-pharmacy enforcement is testable.
-- Increment 08 (Procurement/GRN): `StoreStaff` affiliation gating on store-issue requires GRN stock credit to be live.
-- Increment 10 (Reports/HR/Billing extensions): reporting endpoints must exist before load tests can validate P99 latency SLOs (ADR-0012 alert thresholds: billing/clinical P99 > 2 s pages; report P99 > 10 s warns).
+Requires all prior increments (00–10) merged and green. Specifically:
+- **Increment 00 (Walking Skeleton & Shared Kernel)** — `ApplicationModules.verify()`, Flyway baseline, ArchUnit gates, CI pipeline.
+- **Increments 01–07** (Identity through Inpatient/Discharge) — all clinical state machines and payment gates in place; facility-scoping enforcement requires a complete aggregate surface to gate.
+- **Increment 08 (Pharmacy, Inventory & Procurement)** — per-location `StockBalance`/`StockBatch` ledgers, FEFO dispensing, and GRN stock credit must be live before working-pharmacy / store-staff scoping is testable.
+- **Increment 10 (Reporting & Management)** — reporting endpoints must exist before load tests validate P99 latency SLOs (ADR-0012: billing/clinical P99 > 2 s pages; report P99 > 10 s warns).
 
 ## Exact-Process Fidelity Targets
 

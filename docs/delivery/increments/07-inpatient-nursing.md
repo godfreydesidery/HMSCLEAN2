@@ -53,10 +53,11 @@ Admission state machine: `ADMITTED → DISCHARGED / DECEASED / REFERRED / TRANSF
 
 ## Dependencies
 
-- **Increment 02 (IAM / RBAC)** — privilege codes (ADMISSION-CREATE, ADMISSION-DISCHARGE, NURSING-CHART-WRITE, MAR-WRITE, DISCHARGE-PLAN-APPROVE, etc.) must exist in the seeded role/privilege matrix before this increment's `@PreAuthorize` gates can be tested end-to-end.
-- **Increment 04 (Masterdata — Wards/Beds)** — `Ward`, `WardType`, `WardBed`, and `ServicePrice(kind=WARD)` rows must be seeded; `WardBed` assignment logic is a hard dependency for admit and ward-transfer flows.
-- **Increment 05 (Billing / Invoicing)** — `billing.api.recordClinicalCharge` and the `SettlementDispatcher` (which writes `admission.bills_cleared`) are called synchronously from consumable issue and the accrual job; the billing module must be present and functional.
-- **Increment 08 (Consumable Stock)** — `ConsumableStockBalance` and `ConsumableStockService.decrementForIssue` must exist before the consumable chart can issue stock atomically; without this, the consumable chart cannot enforce overdraft refusal.
+- **Increment 01 (Identity & Access)** — privilege codes (`ADMISSION-CREATE`, `ADMISSION-DISCHARGE`, `NURSING-CHART-WRITE`, `MAR-WRITE`, `DISCHARGE-PLAN-APPROVE`, etc.) seeded before this increment's `@PreAuthorize` gates can be tested end-to-end.
+- **Increment 02 (Master Data & Reference Seeding)** — `Ward`, `WardType`, `WardBed`, and `ServicePrice(kind=WARD)` rows seeded; bed-assignment logic is a hard dependency for admit and ward-transfer.
+- **Increment 04 (Billing, Cashiering & Insurance)** — `billing.api.recordClinicalCharge` and the `SettlementDispatcher` are called synchronously from consumable issue and the daily ward-accrual job.
+- **Increment 05 (Clinical / OPD)** — admission is triggered from a consultation; the encounter context must exist.
+- **Increment 08 (Pharmacy, Inventory & Procurement)** — `ConsumableStockBalance` and `ConsumableStockService.decrementForIssue` must exist before the consumable chart can issue stock atomically (overdraft refusal). **08 is therefore built before 07** (see build-plan.md → build sequence).
 
 ## Exact-process fidelity targets
 
