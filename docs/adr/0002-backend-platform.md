@@ -17,7 +17,7 @@ The legacy Zana HMIS backend runs Java 11 + Spring Boot 2.2.5 with a cluster of 
 | Security config | `WebSecurityConfigurerAdapter` subclass | Class removed in Spring Security 6; replace with `SecurityFilterChain` bean + lambda DSL |
 | Hibernate | 5 (`MySQL5InnoDBDialect`, `ddl-auto=update`) | Hibernate 6 — dialect class renamed, DDL generation semantics changed; no authoritative schema exists |
 | Swagger | springfox 2.7 | springfox incompatible with Spring Boot 3; replace with springdoc-openapi 3 |
-| JWT | auth0 `java-jwt` 3.x (hardcoded secret `"secret"`) | Migrate to Spring Security OAuth2 Resource Server + `spring-security-oauth2-jose`; secret must be externalized |
+| JWT | auth0 `java-jwt` 3.x (hardcoded secret `"<REDACTED>"`) | Migrate to Spring Security OAuth2 Resource Server + `spring-security-oauth2-jose`; secret must be externalized |
 | Lombok | `@Data` inconsistently applied (`User` deliberately avoids it) | Lombok 1.18.x required; `@Data` exclusion on `User` must be preserved |
 | Money/Decimal | `private double` on 115+ entity files; zero `BigDecimal` | Pre-approved upgrade to `BigDecimal`; no source compatibility — requires field-by-field rewrite |
 | Schema management | None (Hibernate auto-DDL, no migration tool) | Schema must be reverse-engineered from live MySQL DB + entities; Flyway baseline scripts authored from scratch |
@@ -82,7 +82,7 @@ This is a rebuild, not an upgrade. Every source file is authored for the target 
 **Accepted improvements (client pre-approved, not change-requests):**
 - `double` → `BigDecimal` on all monetary and quantity fields.
 - Atomic document-number generation via PostgreSQL `SEQUENCE` objects (one per document type), replacing the racy `SELECT MAX(id)+1` pattern. The "SPT" prefix collision between StoreToPharmacy-TO and PharmacyToPharmacy-TO must be resolved by the product owner before sequences are defined — legacy-analyst to raise.
-- JWT secret externalized to environment variable; hardcoded `"secret"` eliminated (security-architect to specify secret rotation policy).
+- JWT secret externalized to environment variable; hardcoded `"<REDACTED>"` eliminated (security-architect to specify secret rotation policy).
 
 ---
 

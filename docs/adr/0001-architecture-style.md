@@ -8,7 +8,7 @@
 The legacy Zana HMIS is a single Spring Boot application (`com.orbix.api`, package-by-layer) over one MySQL 5 database (`zana_hmis_db_test`). Verified facts force the macro-architecture decision:
 - **Cross-context atomicity is pervasive.** `@Transactional` appears 114 times across 110 files (confirmed by direct grep). Operations routinely span domains in one in-process transaction: `PatientServiceImpl` creates Patient + PatientBill + Registration + Visit (Registration + Billing + Clinical) and injects ~45 collaborators crossing every context bar HR and Assets; `GoodsReceivedNoteServiceImpl.approve()` mutates StoreItem stock, StoreStockCard, StoreItemBatch, Purchase, and LPO status across Inventory + Procurement + Purchasing atomically.
 - **One shared database, no DDL.** Hibernate `ddl-auto=update`, no Flyway/Liquibase, no authoritative schema. Reports (`ReportResource`, 36+ endpoints injecting 30+ repositories) perform in-Java nested-loop joins across all 14 contexts.
-- **Team & ops maturity is modest.** No migration tooling, hardcoded JWT secret (`"secret"`), single deployable today. There is no evidence of a platform team capable of running distributed transactions, service mesh, or per-service datastores.
+- **Team & ops maturity is modest.** No migration tooling, hardcoded JWT secret (`"<REDACTED>"`), single deployable today. There is no evidence of a platform team capable of running distributed transactions, service mesh, or per-service datastores.
 - **Mandate:** the business PROCESS and RESULTS must stay identical; data types/model may improve (double→BigDecimal pre-approved). "Fidelity" = identical process/results, not bit-exact.
 
 ## Decision
