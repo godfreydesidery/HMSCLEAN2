@@ -9,7 +9,7 @@ Every monetary, quantity, stock, and balance field in every domain entity is Jav
 Both service impls and resource (controller) classes are transactional. The `@Transactional` in `PatientServiceImpl` covers creation of Patient + PatientBill + Registration + Visit in one transaction, all touching different conceptual domains (Registration, Billing, Clinical). `GoodsReceivedNoteServiceImpl.approve()` updates StoreItem stock, writes StoreStockCard, creates StoreItemBatch records, creates Purchase records, and updates LocalPurchaseOrder status — all in one transaction spanning Inventory, Procurement, and Purchasing domains. This is the dominant cross-domain coupling pattern.
 
 **PERSISTENCE/DB — MySQL 5, Hibernate ddl-auto=update, no Flyway.**
-Confirmed in `application.properties` (line 11: `MySQL5InnoDBDialect`; line 14: `ddl-auto = update`). DB name `zana_hmis_db_test`, port 3306. jwt.secret is the literal string `"javainuse"` (hardcoded in both filter classes — a security finding, see below). No Flyway or Liquibase on the classpath.
+Confirmed in `application.properties` (line 11: `MySQL5InnoDBDialect`; line 14: `ddl-auto = update`). DB name `zana_hmis_db_test`, port 3306. jwt.secret is the literal string `"<REDACTED>"` (hardcoded in both filter classes — a security finding, see below). No Flyway or Liquibase on the classpath.
 
 **IDENTITY/RBAC — User → Role → Privilege, stateless JWT, 177 @PreAuthorize annotations across 45 resource files.**
 Confirmed exactly. `CustomAuthorizationFilter` reads `decodedJWT.getClaim("privileges").asArray(String.class)` and constructs Spring `SimpleGrantedAuthority` objects, confirming the claim name is `privileges` (not `roles`). `CustomAuthenticationFilter` emits tokens with an 8-hour access expiry and 24-hour refresh expiry. The `Privilege` entity stores only `name` (the code string) and `id`. The `Role` entity holds a `@ManyToMany` collection of `Privilege`. `User` holds a `@ManyToMany` collection of `Role`.
@@ -70,8 +70,8 @@ Active native queries are in: `CollectionRepository` (2 active), `ClinicianPerfo
 **REPORT RETURN TYPES: not uniform DTOs — reports return domain entities directly in many cases.**
 Several report endpoints return `List<Consultation>`, `List<LabTest>`, `List<Radiology>`, `List<Procedure>` — bare domain entities with all their JPA-loaded associations, including nested lazy/eager collections, which will serialize the full object graph to the client. This is a significant serialization hazard (circular references handled by `@JsonIgnoreProperties`, but still overloading).
 
-**JWT secret is hardcoded as `"secret"` in the filter, not from `jwt.secret` property.**
-`application.properties` line 26 sets `jwt.secret=javainuse`, but `CustomAuthorizationFilter.java` line 73 uses `Algorithm.HMAC256("secret".getBytes())` literally. `CustomAuthenticationFilter.java` line 76 also uses `Algorithm.HMAC256("secret".getBytes())`. The property value `javainuse` is **never read** by either filter — the actual operative secret is the hardcoded string `"secret"`. This is both a security defect and a fact relevant to migration: the secret to reproduce is `"secret"`, not `"javainuse"`.
+**JWT secret is hardcoded as `"<REDACTED>"` in the filter, not from `jwt.secret` property.**
+`application.properties` line 26 sets `jwt.secret=<REDACTED>`, but `CustomAuthorizationFilter.java` line 73 uses `Algorithm.HMAC256("<REDACTED>".getBytes())` literally. `CustomAuthenticationFilter.java` line 76 also uses `Algorithm.HMAC256("<REDACTED>".getBytes())`. The property value `<REDACTED>` is **never read** by either filter — the actual operative secret is the hardcoded string `"<REDACTED>"`. This is both a security defect and a fact relevant to migration: the secret to reproduce is `"<REDACTED>"`, not `"<REDACTED>"`.
 
 **DayService.getTimeStamp() adds 3 hours — hardcoded UTC+3 offset.**
 `DayServiceImpl.getTimeStamp()` returns `LocalDateTime.now().plusHours(3)` (line 87). All `createdAt`, `approvedAt`, `verifiedAt` etc. timestamps are stored in this UTC+3-adjusted wall-clock time. Migration must account for this offset to avoid silently shifting all timestamps.
@@ -122,7 +122,7 @@ Every entity stores both a `created_on_day_id` (Long FK to `days.id`) and a `cre
 
 4. **ADR: API Design** — The new API must correct the HTTP verb/status-code misuse (GET-like queries using POST+201), adopt typed request DTOs (not domain entity bodies), and introduce proper RESTful sub-resource paths. These are non-breaking to business process. The existing privilege codes (`GOODS_RECEIVED_NOTE-ALL`, `GOODS_RECEIVED_NOTE-CREATE`, etc.) must be reproduced verbatim in the new `@PreAuthorize` annotations.
 
-5. **ADR: Security** — The JWT secret is `"secret"` (hardcoded), not the properties value. Token expiry is 8 hours access / 24 hours refresh. The new system must use a configurable secret (externalized via environment variable), not a hardcoded value. The `authorizationToken` DB-persistence mechanism (commented out) should not be revived.
+5. **ADR: Security** — The JWT secret is `"<REDACTED>"` (hardcoded), not the properties value. Token expiry is 8 hours access / 24 hours refresh. The new system must use a configurable secret (externalized via environment variable), not a hardcoded value. The `authorizationToken` DB-persistence mechanism (commented out) should not be revived.
 
 6. **ADR: Reporting** — All 21 report projection interfaces in `reports/models` must be migrated to equivalent Spring Data or JOOQ projection interfaces. The in-memory nested-loop joins in `ReportResource` must be replaced with proper database-level aggregation queries. The golden-master test requirement applies to output rows and cents.
 

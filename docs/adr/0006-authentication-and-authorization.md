@@ -11,10 +11,10 @@ Legacy auth (verified by reading `CustomAuthenticationFilter`, `CustomAuthorizat
 
 **Security defects to correct, not port — all four hardcoded HMAC secret sites must be eliminated:**
 
-The HMAC256 signing key is the hardcoded literal `"secret"` in exactly four source locations (confirmed by reading the legacy files). None of the four reads the `jwt.secret=javainuse` application property — that property is dead:
+The HMAC256 signing key is the hardcoded literal `"<REDACTED>"` in exactly four source locations (confirmed by reading the legacy files). None of the four reads the `jwt.secret=<REDACTED>` application property — that property is dead:
 
-1. `CustomAuthenticationFilter:76` — login token signing (`Algorithm.HMAC256("secret".getBytes())`)
-2. `CustomAuthorizationFilter:73` — inbound token verification (`Algorithm.HMAC256("secret".getBytes())`)
+1. `CustomAuthenticationFilter:76` — login token signing (`Algorithm.HMAC256("<REDACTED>".getBytes())`)
+2. `CustomAuthorizationFilter:73` — inbound token verification (`Algorithm.HMAC256("<REDACTED>".getBytes())`)
 3. `UserResource:352` — refresh-token verification inside the `GET /token/refresh` handler
 4. `UserResource:516` — the `getUsernameFromAuthorizationHeader` private helper
 
@@ -30,7 +30,7 @@ Per CLIENT MANDATE, the **process and authorization results** must be identical;
 
 Adopt **Spring Security 6.3 (Spring Boot 3.3) as an OAuth2 Resource Server validating self-issued JWTs**, with **BCrypt** password hashing. We **preserve verbatim**: the User->Role->Privilege model, the `privileges` claim (array of privilege CODE strings) on **every access token including those issued by /auth/token/refresh**, and **all 177 `@PreAuthorize("hasAnyAuthority(...)")` gates with their exact codes**. A `JwtAuthenticationConverter` maps the `privileges` claim directly to `SimpleGrantedAuthority` with **no `SCOPE_`/`ROLE_` prefix**.
 
-Token lifecycle: **access token 15 min, refresh token 8h, refresh-token rotation** with server-side revocation (one-time-use, reuse-detection). Dedicated `POST /auth/token` (login) and `POST /auth/token/refresh` replace the legacy filter and `GET /token/refresh` controller endpoint. Signing: **HS256 with a key sourced from a secrets store** (env var in dev, cloud secret manager in prod via devops-engineer) — never hardcoded; `kid` header added to enable rotation. All four hardcoded `"secret"` sites are eliminated: the two legacy filter classes and the `UserResource` refresh handler and private helper are deleted entirely; no hardcoded key survives into the new codebase. Sessions remain `STATELESS`. **CORS locked to a configured allow-list of origins**; CSRF stays disabled (bearer tokens only).
+Token lifecycle: **access token 15 min, refresh token 8h, refresh-token rotation** with server-side revocation (one-time-use, reuse-detection). Dedicated `POST /auth/token` (login) and `POST /auth/token/refresh` replace the legacy filter and `GET /token/refresh` controller endpoint. Signing: **HS256 with a key sourced from a secrets store** (env var in dev, cloud secret manager in prod via devops-engineer) — never hardcoded; `kid` header added to enable rotation. All four hardcoded `"<REDACTED>"` sites are eliminated: the two legacy filter classes and the `UserResource` refresh handler and private helper are deleted entirely; no hardcoded key survives into the new codebase. Sessions remain `STATELESS`. **CORS locked to a configured allow-list of origins**; CSRF stays disabled (bearer tokens only).
 
 The 177 privilege CODE strings are seeded as reference data by a Flyway migration on every fresh deployment (see Implementation notes). They are not dev-only seeds.
 
@@ -49,7 +49,7 @@ The 177 privilege CODE strings are seeded as reference data by a Flyway migratio
 
 ## Consequences
 
-**Positive:** Identical authorization decisions on every request; 177 gates compile unchanged. Framework-managed JWT validation replaces hand-rolled filters. Externalized signing key + rotation + short access TTL close all four hardcoded-`"secret"` sites and the 8h-token risk. Locked CORS removes the open-origin exposure. The `"roles"`-claim defect on the refresh path is eliminated: `/auth/token/refresh` now emits a correctly-shaped `privileges` claim, restoring intended RBAC behavior for refreshed sessions.
+**Positive:** Identical authorization decisions on every request; 177 gates compile unchanged. Framework-managed JWT validation replaces hand-rolled filters. Externalized signing key + rotation + short access TTL close all four hardcoded-`"<REDACTED>"` sites and the 8h-token risk. Locked CORS removes the open-origin exposure. The `"roles"`-claim defect on the refresh path is eliminated: `/auth/token/refresh` now emits a correctly-shaped `privileges` claim, restoring intended RBAC behavior for refreshed sessions.
 
 **Negative / risks:**
 
@@ -64,7 +64,7 @@ The 177 privilege CODE strings are seeded as reference data by a Flyway migratio
 
 **Defect fix (behavior change vs. broken legacy behavior):** The legacy `GET /token/refresh` handler emitted claim `"roles"` at `UserResource:371` while the authorization filter read claim `"privileges"` at `CustomAuthorizationFilter:77` — meaning every legacy-refreshed access token granted zero authorities and every `@PreAuthorize` gate denied. The new `/auth/token/refresh` emits `"privileges"` consistently. This is a fix of pre-existing broken code; it does not violate the "exact process" mandate because the legacy refresh-then-authorize path was never functionally correct in the field.
 
-**Retire the hardcoded `"secret"` — full scope (all four sites confirmed, none survive):**
+**Retire the hardcoded `"<REDACTED>"` — full scope (all four sites confirmed, none survive):**
 
 1. `CustomAuthenticationFilter:76` — login token signing
 2. `CustomAuthorizationFilter:73` — inbound token verification
@@ -75,7 +75,7 @@ All four are superseded by the new `/auth/token` and `/auth/token/refresh` endpo
 
 **legacy-analyst must confirm:** (1) device-binding is truly unused at the Angular layer (fingerprint libs bundled but unwired); (2) no deployed client depends on the literal 8h access lifetime; (3) the full canonical list of distinct privilege codes for the parity matrix and seed migration.
 
-**Change-requests implied:** retire all four hardcoded-`"secret"` sites; record the `"roles"`-claim refresh defect fix in the change-request log. The `jwt.secret=javainuse` property is dead and should be removed from any configuration template carried forward.
+**Change-requests implied:** retire all four hardcoded-`"<REDACTED>"` sites; record the `"roles"`-claim refresh defect fix in the change-request log. The `jwt.secret=<REDACTED>` property is dead and should be removed from any configuration template carried forward.
 
 ## Implementation notes
 

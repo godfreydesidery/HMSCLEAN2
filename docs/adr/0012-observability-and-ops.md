@@ -16,7 +16,7 @@ The legacy Zana HMIS backend has **zero production observability**. Key findings
 - The system processes **financial transactions** (billing, cashiering, insurance claims — all previously in floating-point double, now migrated to BigDecimal) and **clinical records** (prescriptions, lab orders, admissions) that require regulated audit visibility and SLO enforcement.
 - The codebase spans **14 bounded contexts**, **51 resource classes**, **177 `@PreAuthorize` annotations**, and **29+ report endpoints**. `ReportResource` alone performs in-memory O(n×m) joins across all contexts. Without metrics, latency regressions in reports are invisible until a user complains.
 - The `Day` entity workflow (business-day open/close) gates all `createdOn` stamping. A stuck or failed day transition affects every write across every context — a scenario that must be surfaced by a health indicator, not discovered manually.
-- The JWT secret was hardcoded as the literal `"javainuse"` (line 27). Security-architect's externalized-secrets mandate means all credentials — including observability sinks such as Grafana API keys and Prometheus remote-write tokens — must never appear in source or logs.
+- The JWT secret was hardcoded as the literal `"<REDACTED>"` (line 27). Security-architect's externalized-secrets mandate means all credentials — including observability sinks such as Grafana API keys and Prometheus remote-write tokens — must never appear in source or logs.
 
 The target stack (Java 21, Spring Boot 3.3, PostgreSQL 16, Docker + GitHub Actions) has first-class support for the full observability stack recommended by the engagement.
 

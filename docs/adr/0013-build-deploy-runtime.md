@@ -11,8 +11,8 @@
 
 The legacy system runs as a single Spring Boot 2.2.5 JAR deployed manually against MySQL 5, with all configuration — including security-critical secrets — baked into `application.properties`. Specifically:
 
-- `spring.datasource.password = rootroot` is committed in plaintext.
-- `jwt.secret = javainuse` is set in properties but **never read** by any filter or controller; all four JWT-handling sites use the hardcoded literal `Algorithm.HMAC256("secret".getBytes())`. The operative secret is `"secret"` — an 8-character, all-lowercase, trivially brutable HMAC key.
+- `spring.datasource.password = <REDACTED>` is committed in plaintext.
+- `jwt.secret = <REDACTED>` is set in properties but **never read** by any filter or controller; all four JWT-handling sites use the hardcoded literal `Algorithm.HMAC256("<REDACTED>".getBytes())`. The operative secret is `"<REDACTED>"` — an 8-character, all-lowercase, trivially brutable HMAC key.
 - `spring.jpa.hibernate.ddl-auto = update` means there is no versioned DDL and no repeatable build; schema state is whatever Hibernate decided to do last run.
 - There is no CI/CD pipeline, no container, and no infrastructure-as-code. Deployments are manual and environment-specific configuration is hand-edited.
 - The frontend (Angular 16) is a separate artefact with its own build, not co-deployed.
@@ -72,13 +72,13 @@ The legacy system has hardcoded secrets at exactly five locations. The new syste
 
 | Secret | Legacy value | Legacy location | Migration action |
 |--------|-------------|-----------------|-----------------|
-| DB password | `rootroot` | `application.properties` line 5 | Replace with `${DB_PASSWORD}` env var; provision a least-privilege PostgreSQL application user in Terraform; no MySQL root-privilege assumptions carry forward |
-| JWT signing key | `"secret"` (literal) | `CustomAuthenticationFilter.java:76` (token issuance at login) | Replace with `${JWT_SECRET}` env var; generate a cryptographically random 256-bit key per environment |
-| JWT signing key | `"secret"` (literal) | `CustomAuthorizationFilter.java:73` (token verification on every protected request) | Same `${JWT_SECRET}` env var — both filters and both UserResource paths must be replaced atomically |
-| JWT signing key | `"secret"` (literal) | `UserResource.java:352` (token refresh endpoint — verifies incoming refresh token) | Same `${JWT_SECRET}` env var |
-| JWT signing key | `"secret"` (literal) | `UserResource.java:516` (private helper `getUsernameFromAuthorizationHeader()` — called by user-lookup endpoints) | Same `${JWT_SECRET}` env var |
+| DB password | `<REDACTED>` | `application.properties` line 5 | Replace with `${DB_PASSWORD}` env var; provision a least-privilege PostgreSQL application user in Terraform; no MySQL root-privilege assumptions carry forward |
+| JWT signing key | `"<REDACTED>"` (literal) | `CustomAuthenticationFilter.java:76` (token issuance at login) | Replace with `${JWT_SECRET}` env var; generate a cryptographically random 256-bit key per environment |
+| JWT signing key | `"<REDACTED>"` (literal) | `CustomAuthorizationFilter.java:73` (token verification on every protected request) | Same `${JWT_SECRET}` env var — both filters and both UserResource paths must be replaced atomically |
+| JWT signing key | `"<REDACTED>"` (literal) | `UserResource.java:352` (token refresh endpoint — verifies incoming refresh token) | Same `${JWT_SECRET}` env var |
+| JWT signing key | `"<REDACTED>"` (literal) | `UserResource.java:516` (private helper `getUsernameFromAuthorizationHeader()` — called by user-lookup endpoints) | Same `${JWT_SECRET}` env var |
 
-**Note:** The property value `javainuse` in `application.properties` was never operative — none of these four JWT sites reads the property. The operative secret has always been the in-code literal `"secret"`.
+**Note:** The property value `<REDACTED>` in `application.properties` was never operative — none of these four JWT sites reads the property. The operative secret has always been the in-code literal `"<REDACTED>"`.
 
 **Release gate:** security-architect must run `grep -r 'HMAC256' src/` against the new codebase and confirm zero matches as a mandatory step before the first staging deployment. This grep is also automated as a required CI check (see Decision §3 above).
 
@@ -103,7 +103,7 @@ The JWT signing-key change means all tokens issued by the legacy system become i
 ## Consequences
 
 **Positive:**
-- Secrets are externalized and auditable; the trivially-guessable `"secret"` JWT key is replaced with a proper random key per environment across all four legacy sites.
+- Secrets are externalized and auditable; the trivially-guessable `"<REDACTED>"` JWT key is replaced with a proper random key per environment across all four legacy sites.
 - The automated HMAC256 literal grep gate in CI makes it structurally impossible for a residual hardcoded key to ship — not just a documentation promise.
 - `docker compose up` gives every engineer a faithful local environment with real PostgreSQL 16 and Flyway-applied migrations — no more Hibernate `ddl-auto=update` surprises.
 - CI enforces that every PR is buildable, testable, and scannable before merge; broken builds cannot reach staging.
@@ -122,7 +122,7 @@ The JWT signing-key change means all tokens issued by the legacy system become i
 
 | Risk | Mitigation |
 |------|-----------|
-| Legacy DB password `rootroot` committed to history | New repo has no legacy `application.properties`; the legacy repo is read-only archaeology. Not a live risk in the new codebase — confirm with security-architect. |
+| Legacy DB password `<REDACTED>` committed to history | New repo has no legacy `application.properties`; the legacy repo is read-only archaeology. Not a live risk in the new codebase — confirm with security-architect. |
 | JWT key migration misses one of the four HMAC256 sites, shipping a residual hardcoded key | Mandatory `grep -r 'HMAC256' src/` release gate in CI (zero-match required); security-architect verifies all four sites explicitly in cutover runbook |
 | JWT key rotation invalidates in-flight sessions at cutover | Coordinated maintenance window; documented in cutover runbook; frontend must handle 401 gracefully with a re-login prompt |
 | Fresh V1 DDL is large (14 bounded contexts, 100+ entities) and error-prone | data-architect delivers V1 in reviewable segments, validated against a clean PostgreSQL 16 instance before it is declared the baseline; no migration from legacy schema is involved |
