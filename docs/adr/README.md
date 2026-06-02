@@ -1,0 +1,27 @@
+# Architecture Decision Records
+
+This directory contains the Architecture Decision Records (ADRs) for the Zana HMIS modernization project. An ADR is a short document that captures an important architectural decision made during development, along with its context and consequences. All ADRs listed here carry a status of **Proposed** and are pending ratification by the engagement lead before they become binding. This is a fresh greenfield build; no data migration from any prior system is in scope. For the overall system context in which these decisions are made, see [../architecture/overview.md](../architecture/overview.md).
+
+| ADR | Title | Status | Summary |
+|-----|-------|--------|---------|
+| [ADR-0001](0001-architecture-style.md) | Architecture Style | Proposed | Adopt a modular monolith using Spring Modulith to balance deployment simplicity with enforced module boundaries. |
+| [ADR-0002](0002-backend-platform.md) | Backend Platform & Language | Proposed | Use Java 21 and Spring Boot 3.3 as the primary backend platform for long-term support and ecosystem maturity. |
+| [ADR-0003](0003-database-and-persistence.md) | Database and Persistence | Proposed | PostgreSQL 16 as the primary store, JPA/Hibernate 6 for ORM, and Flyway for versioned schema migrations (reconciled). |
+| [ADR-0004](0004-frontend-platform.md) | Frontend Platform | Proposed | Angular 18+ as the single-page application framework for the Zana HMIS web client. |
+| [ADR-0005](0005-api-style-and-contract.md) | API Style & Contract | Proposed | RESTful APIs described with OpenAPI 3, exposing a uid-only surface to decouple clients from internal surrogate keys. |
+| [ADR-0006](0006-authentication-and-authorization.md) | Authentication & Authorization | Proposed | Spring Security 6 with JWT tokens and a Preserved Privilege RBAC model that mirrors existing permission structures. |
+| [ADR-0007](0007-audit-trail.md) | Audit Trail | Proposed | Implement an explicit append-only audit trail for net-new records, separate from Hibernate Envers-style change capture. |
+| [ADR-0008](0008-bounded-context-decomposition.md) | Bounded-Context Decomposition & Module Boundaries | Proposed | Define bounded contexts and enforced inter-module contracts aligned to clinical and administrative domains. |
+| [ADR-0009](0009-money-and-numbering.md) | Monetary, Numeric & Document-Numbering Policy | Proposed | Mandate `BigDecimal` for all monetary values and define deterministic, collision-free document numbering schemes. |
+| [ADR-0010](0010-reporting-strategy.md) | Reporting Strategy | Proposed | Reproduce all existing reports at functional parity before introducing any new reporting capabilities. |
+| [ADR-0011](0011-data-migration-strategy.md) | Data Strategy | Proposed | Greenfield start with reference-data seeding; parity verified by golden-master tests rather than live data migration. |
+| [ADR-0012](0012-observability-and-ops.md) | Observability & Operations | Proposed | Instrument the system with structured logging, metrics, and distributed tracing to support production operations. |
+| [ADR-0013](0013-build-deploy-runtime.md) | Build, Deploy, and Runtime Platform | Proposed | Define the CI/CD pipeline, container strategy, and target runtime environment for the modernized system. |
+| [ADR-0014](0014-cross-cutting-conventions.md) | Cross-cutting Engineering Conventions | Proposed | Establish shared coding standards, naming conventions, error handling, and testing expectations across all modules. |
+| [ADR-0015](0015-file-attachment-storage.md) | File & Attachment (Blob) Storage | Proposed | Store binary attachments in object storage (S3-compatible) with metadata in PostgreSQL and virus-scan on ingest. |
+| [ADR-0016](0016-caching-strategy.md) | Caching Strategy | Proposed | Apply a layered caching approach using Spring Cache abstractions backed by Redis for shared distributed state. |
+| [ADR-0017](0017-concurrency-and-locking.md) | Concurrency & Locking for Stock and Documents | Proposed | Use optimistic locking by default and pessimistic locking for high-contention stock and document workflows. |
+| [ADR-0018](0018-background-jobs-scheduling.md) | Background Jobs and Scheduling | Proposed | Run scheduled and async background jobs via Spring Batch and `@Scheduled`, with persistent job state in PostgreSQL. |
+| [ADR-0019](0019-notifications-messaging.md) | Notifications and Outbound Messaging | Proposed | Deliver outbound SMS, email, and in-app notifications through a pluggable gateway abstraction with retry semantics. |
+| [ADR-0020](0020-facility-scoping-tenancy.md) | Facility Scoping & Tenancy Model | Proposed | Scope all clinical data to a facility identifier; support multi-facility deployments without physical schema separation. |
+| [ADR-0021](0021-internationalization-localization.md) | Internationalization & Localization | Proposed | Externalize all user-facing strings to resource bundles and support locale-aware formatting for dates, numbers, and currency. |
