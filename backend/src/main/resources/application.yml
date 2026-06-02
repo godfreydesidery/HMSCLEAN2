@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: hmis-backend
+
+  datasource:
+    # Local-dev defaults per ADR-0013 (${ENV_VAR:default_for_local}). Real envs inject via env vars;
+    # Testcontainers overrides the connection entirely. No production secret is committed here.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/hmis}
+    username: ${DB_USERNAME:hmis_app}
+    password: ${DB_PASSWORD:local_dev_password}
+    hikari:
+      maximum-pool-size: 10
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema (ADR-0003, ADR-0013). NEVER 'update'.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  threads:
+    virtual:
+      enabled: true
+
+# JWT signing — secret consumed ONLY via ${JWT_SECRET}; no literal anywhere (ADR-0013).
+hmis:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: https://hmis.otapp.net
+    access-token-ttl-minutes: 15
+    refresh-token-ttl-hours: 8
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+server:
+  port: 8080

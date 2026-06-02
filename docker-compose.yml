@@ -1,0 +1,58 @@
+# Local dev stack for the Zana HMIS backend (ADR-0013).
+# `docker compose up` brings up: db (postgres:16) -> migrate (flyway) -> backend.
+# Secrets are read from .env (git-ignored); see .env.example.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: hmis
+      POSTGRES_USER: ${DB_USERNAME:-hmis_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-hmis_app} -d hmis"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: flyway/flyway:10
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      -url=jdbc:postgresql://db:5432/hmis
+      -user=${DB_USERNAME:-hmis_app}
+      -password=${DB_PASSWORD}
+      -locations=filesystem:/flyway/sql
+      -baselineOnMigrate=false
+      migrate
+    volumes:
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/hmis
+      DB_USERNAME: ${DB_USERNAME:-hmis_app}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:
