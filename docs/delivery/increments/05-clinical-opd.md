@@ -58,9 +58,11 @@ Deliver the complete outpatient consultation lifecycle — from the reception qu
 
 ## Dependencies
 
-- **Increment 02 (IAM)** — JWT auth, 177 privilege codes, `ProviderProfile`, `ClinicClinician` affiliation table seeded; `booking()` asserts clinician belongs to the target clinic (lessons R1–R4)
-- **Increment 03 (Masterdata)** — `Clinic`, `Diagnosis`, `LabTestType`, `RadiologyType`, `ProcedureType`, `Medicine`, `Dosage`, `AdministrationRoute`, `DosingFrequency` all present; ServicePrice matrix for CONSULTATION, LAB_TEST, RADIOLOGY, PROCEDURE kinds
-- **Increment 04 (Registration/Billing)** — `Patient`, `PatientType`, `PaymentType`, `feeSettled` flag pattern, `SettlementDispatcher`, `Invoice` and `InvoiceLineKind`; consultation-fee invoice seeded by `ConsultationBookedEvent` listener; CASH gate infrastructure already exercised at registration
+- **Increment 00 (Walking Skeleton & Shared Kernel)** — shared kernel, audit, ProblemDetail, CI gates.
+- **Increment 01 (Identity & Access)** — JWT auth, 177 privilege codes, `ProviderProfile`, `ClinicClinician` affiliation; `book()` asserts the clinician belongs to the target clinic (lessons R1–R4).
+- **Increment 02 (Master Data & Reference Seeding)** — `Clinic`, `Diagnosis`, `LabTestType`, `RadiologyType`, `ProcedureType`, `Medicine`, `Dosage`, `AdministrationRoute`, `DosingFrequency`; the `ServicePrice` matrix for CONSULTATION, LAB_TEST, RADIOLOGY, PROCEDURE kinds.
+- **Increment 03 (Registration & Patient)** — `Patient`, `PatientType`, `PaymentType`, and the registered-patient + last-visit data a consultation is booked against.
+- **Increment 04 (Billing, Cashiering & Insurance)** — the `feeSettled` flag pattern, `SettlementDispatcher`, `Invoice`/`InvoiceLineKind`; the consultation-fee invoice is seeded by the `ConsultationBookedEvent` listener and the CASH gate is enforced via billing.
 
 ## Exact-process fidelity targets
 

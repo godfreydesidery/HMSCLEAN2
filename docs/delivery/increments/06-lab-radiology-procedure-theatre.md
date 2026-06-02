@@ -43,9 +43,10 @@ Deliver the complete clinical-order fulfilment loop — from lab/radiology/proce
 
 ## Dependencies
 
-- **Increment 02 (IAM / RBAC)** — all 177 `@PreAuthorize` privilege codes; JWT claims; `@PreAuthorize("hasAuthority('LAB_TEST-CREATE')")` et al. on every endpoint.
-- **Increment 04 (Masterdata)** — `MdLabTestType`, `MdLabTestAnalyte`, `MdReferenceRange`, `MdRadiologyType`, `MdProcedureType`, `MdTheatre` seed data; `ServicePrice` matrix for plan-based pricing.
-- **Increment 05 (Clinical encounters / OPD)** — `ClinicalOrder` records are created by the doctor in increment 05 (status PENDING on raise); this increment consumes and advances those orders. The `settled` flag is written by billing from increment 05's billing module. Increment 06 must not duplicate the order-creation endpoint.
+- **Increment 01 (Identity & Access)** — all 177 `@PreAuthorize` privilege codes and JWT claims; `@PreAuthorize("hasAuthority('LAB_TEST-CREATE')")` et al. on every endpoint.
+- **Increment 02 (Master Data & Reference Seeding)** — `LabTestType`, lab analytes/reference ranges, `RadiologyType`, `ProcedureType`, `Theatre` seed data; the `ServicePrice` matrix for plan-based pricing.
+- **Increment 04 (Billing, Cashiering & Insurance)** — the `settled` flag and `SettlementDispatcher` that gate accept/complete on payment for CASH patients.
+- **Increment 05 (Clinical / OPD)** — `ClinicalOrder` records are created by the doctor in 05 (status PENDING on raise); this increment consumes and advances them and must not duplicate the order-creation endpoint.
 
 ## Exact-process fidelity targets
 

@@ -96,10 +96,11 @@ Full prescription lifecycle (§8.1); OTC sale order lifecycle (§8.2); FEFO stoc
 
 ## Dependencies
 
-- **Increment 00** (walking skeleton): shared kernel (`AuditableEntity`, `Money`, `TxAuditContext`, `BusinessDay`), Flyway baseline, CI gates, `ApplicationModules.verify()`.
-- **Increment 01** (IAM + master data): `Pharmacy`, `Store`, `Medicine`, `ItemMedicineCoefficient`, `Supplier` masterdata seeded via Flyway; 177 privilege codes including `PRESCRIPTION-ALL`, `GOODS_RECEIVED_NOTE-CREATE`, `LOCAL_PURCHASE_ORDER-ALL` etc.; `@PreAuthorize` wired.
-- **Increment 02** (Patient registration + billing): `PatientRef`, `PaymentType`, `billing.api.recordClinicalCharge()`, `ServicePrice` matrix (cash + plan), `settled`-flag pattern, `SettlementDispatcher` — all required for the per-line UNPAID→PAID gate and charge accrual on dispense.
-- **Increment 04** (Consultation + prescriptions): `Prescription` aggregate created in the `clinical` module; `pharmacy` module reads prescriptions by UID only (no entity import); the `PENDING` state must exist before `accept()` is callable.
+- **Increment 00 (Walking Skeleton & Shared Kernel)** — shared kernel (`AuditableEntity`, `Money`, `TxAuditContext`, `BusinessDay`), Flyway baseline, CI gates, `ApplicationModules.verify()`.
+- **Increment 01 (Identity & Access)** — 177 privilege codes including `PRESCRIPTION-ALL`, `GOODS_RECEIVED_NOTE-CREATE`, `LOCAL_PURCHASE_ORDER-ALL`, etc.; `@PreAuthorize` wired.
+- **Increment 02 (Master Data & Reference Seeding)** — `Pharmacy`, `Store`, `Medicine`, units/`ItemMedicineCoefficient`, `Supplier` masterdata seeded via Flyway.
+- **Increment 04 (Billing, Cashiering & Insurance)** — `billing.api.recordClinicalCharge()`, the `ServicePrice` matrix, the `settled`-flag pattern + `SettlementDispatcher` — required for the per-line UNPAID→PAID dispensing gate and charge accrual.
+- **Increment 05 (Clinical / OPD)** — the `Prescription` aggregate is created in the `clinical` module; `pharmacy` reads prescriptions by uid only (no entity import) and the `PENDING` state must exist before `accept()`. *(The stock, procurement, and retail-sale sub-features have no clinical dependency.)*
 
 ---
 

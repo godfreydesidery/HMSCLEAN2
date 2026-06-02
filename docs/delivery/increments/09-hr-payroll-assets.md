@@ -53,8 +53,9 @@ Employee register → (optional) User link. Payroll: HR staff builds a DRAFT per
 
 ## Dependencies
 
-- **Increment 01 (Walking skeleton + shared kernel)** — required for `AuditableEntity` (hidden `id` + ULID `uid`), `TxAuditContext`, `Money`/`NUMERIC(19,2)`, `ProblemDetail`/`ErrorCode`, Flyway baseline, `ApplicationModules.verify()` gate, and CI pipeline.
-- **Increment 02 (IAM / RBAC)** — required because `Employee.userUid` is a cross-module uid reference into `iam.User`; the `link-user` endpoint must verify the target User exists and carries the CLINICIAN or STAFF role via `iam.api`. The 177 privilege codes seeded in increment 02 include `HR_ACCESS`, `HR_VERIFY`, `HR_APPROVE`, and `HR_PAY`, which gate every endpoint in this increment.
+- **Increment 00 (Walking Skeleton & Shared Kernel)** — `AuditableEntity` (hidden `id` + ULID `uid`), `TxAuditContext`, `Money`/`NUMERIC(19,2)`, `ProblemDetail`/`ErrorCode`, Flyway baseline, `ApplicationModules.verify()` gate, CI pipeline.
+- **Increment 01 (Identity & Access)** — `Employee.userUid` is a cross-module uid reference into `iam.User`; `link-user` verifies the target user exists and carries the CLINICIAN/STAFF role via `iam.api`. The seeded privilege codes include `HR_ACCESS`, `HR_VERIFY`, `HR_APPROVE`, `HR_PAY`, which gate every endpoint here.
+- **Increment 02 (Master Data & Reference Seeding)** — payroll component definitions and designations are reference data.
 
 No dependency on clinical, billing, pharmacy, or inventory increments. The `clinician-performance` roll-up queries across module boundaries via read-model projection queries (reporting read path, not write-side entity access), so it requires that encounter data is available — in practice this endpoint returns zeros until clinical slices are active, which is acceptable.
 
