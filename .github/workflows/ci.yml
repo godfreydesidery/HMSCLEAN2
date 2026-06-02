@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # ADR-0013 §3 — required gate: zero HMAC256 literals in src/
+      - name: HMAC256 literal scan (zero-match gate)
+        run: |
+          count=$(grep -r 'HMAC256' src/ | wc -l)
+          if [ "$count" -ne "0" ]; then
+            echo "ERROR: $count hardcoded HMAC256 literal(s) found — externalize via JWT_SECRET env var"
+            grep -rn 'HMAC256' src/
+            exit 1
+          fi
+          echo "OK: no HMAC256 literals in src/"
+
+      # Surefire: unit tests + ArchUnit gates + Spring Modulith verify() (no Docker required)
+      # Uses the system `mvn` provided by actions/setup-java. The committed repo does not include
+      # the Maven wrapper (.mvn/ writes are blocked in the authoring sandbox); run
+      # `mvn -N wrapper:wrapper` locally to add `./mvnw`.
+      - name: Unit tests, ArchUnit & Modulith verify
+        env:
+          JWT_SECRET: test-secret-key-for-hmis-ci-only-please-rotate-0123456789
+        run: mvn -B -ntp test
+
+      # Failsafe: Testcontainers integration tests (Docker available on ubuntu-latest)
+      - name: Integration tests (Testcontainers PostgreSQL 16)
+        env:
+          JWT_SECRET: test-secret-key-for-hmis-ci-only-please-rotate-0123456789
+        run: mvn -B -ntp verify
+
+      - name: Publish test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-failsafe-reports
+          path: |
+            backend/target/surefire-reports/**
+            backend/target/failsafe-reports/**
+          if-no-files-found: ignore

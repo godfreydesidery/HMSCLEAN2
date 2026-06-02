@@ -1,0 +1,27 @@
+spring:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+# Test-only JWT secret. This is NOT a production secret and is acceptable in test config.
+# (>= 256-bit so HS256 key-length validation passes.)
+hmis:
+  jwt:
+    secret: test-secret-key-for-hmis-ci-only-please-rotate-0123456789
+    issuer: https://hmis.otapp.net
+    access-token-ttl-minutes: 15
+    refresh-token-ttl-hours: 8
+
+logging:
+  level:
+    org.testcontainers: INFO
+    org.flywaydb: INFO

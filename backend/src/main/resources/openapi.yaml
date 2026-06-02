@@ -1,0 +1,154 @@
+openapi: 3.0.3
+info:
+  title: Zana HMIS API
+  description: >
+    Zana HMIS rebuild — Increment 00 (walking skeleton & shared kernel).
+    All resources are addressed by ULID `uid`; the internal `id` is never exposed (ADR-0003, ADR-0005, ADR-0014).
+    Errors are RFC 7807 ProblemDetail with a stable `urn:hmis:error:*` `type` (ADR-0005 §5).
+  version: 0.0.1
+servers:
+  - url: /api/v1
+paths:
+  /auth/token:
+    post:
+      summary: Issue an access + refresh token pair (login)
+      operationId: issueToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token pair issued; access token carries the `privileges` claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+  /auth/token/refresh:
+    post:
+      summary: Rotate the refresh token and reissue an access token (privileges claim)
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New token pair; access token carries the `privileges` claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+  /company-profile:
+    get:
+      summary: Get the company profile
+      operationId: getCompanyProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The company profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyProfile'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Problem:
+      description: RFC 7807 problem detail
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    TokenRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresInSeconds:
+          type: integer
+          format: int64
+        privileges:
+          type: array
+          items:
+            type: string
+    CompanyProfile:
+      type: object
+      description: No internal id is ever exposed; addressed by uid.
+      properties:
+        uid:
+          type: string
+          minLength: 26
+          maxLength: 26
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+    MoneyDto:
+      type: object
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+          example: TZS
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+          example: urn:hmis:error:no-day-open
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
