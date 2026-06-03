@@ -1,8 +1,11 @@
 package com.otapp.hmis.registration.web;
 
 import com.otapp.hmis.registration.application.PatientRegistrationProcess;
+import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
+import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
+import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import jakarta.validation.Valid;
@@ -13,7 +16,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -72,5 +78,65 @@ public class PatientController {
 
         URI location = URI.create("/api/v1/patients/uid/" + dto.uid());
         return ResponseEntity.created(location).body(dto);
+    }
+
+    /**
+     * Update a patient's demographics + next-of-kin (NOT payment/type/no — those have dedicated
+     * endpoints). RBAC: {@code PATIENT-ALL} or {@code PATIENT-UPDATE} (PatientResource.java:378-379).
+     *
+     * @param uid     the patient uid
+     * @param request the demographics/kin payload
+     * @param jwt     the authenticated principal
+     * @return 200 with the updated patient
+     */
+    @PutMapping("/uid/{uid}")
+    @PreAuthorize("hasAnyAuthority('PATIENT-ALL','PATIENT-UPDATE')")
+    public PatientDto updatePatient(
+            @PathVariable("uid") String uid,
+            @Valid @RequestBody UpdatePatientRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return registrationProcess.updateDemographics(uid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Change the patient type (OUTPATIENT ↔ OUTSIDER; INPATIENT/DECEASED rejected) with the legacy
+     * change_type guards (PatientResource.java:398-506). RBAC: {@code PATIENT-ALL}/{@code PATIENT-UPDATE}.
+     *
+     * @param uid     the patient uid
+     * @param request the desired target type
+     * @param jwt     the authenticated principal
+     * @return 200 with the updated patient
+     */
+    @PatchMapping("/uid/{uid}/patient-type")
+    @PreAuthorize("hasAnyAuthority('PATIENT-ALL','PATIENT-UPDATE')")
+    public PatientDto changePatientType(
+            @PathVariable("uid") String uid,
+            @Valid @RequestBody ChangePatientTypeRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return registrationProcess.changePatientType(uid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Change the payment type (CASH ↔ INSURANCE; INSURANCE requires plan + membership, CASH
+     * collapses them) — PatientResource.java:359-373. RBAC: {@code PATIENT-ALL}/{@code PATIENT-UPDATE}
+     * (CR-03 FIX — the legacy endpoint was ungated).
+     *
+     * @param uid     the patient uid
+     * @param request the desired payment classification (+ plan/membership for INSURANCE)
+     * @param jwt     the authenticated principal
+     * @return 200 with the updated patient
+     */
+    @PatchMapping("/uid/{uid}/payment-type")
+    @PreAuthorize("hasAnyAuthority('PATIENT-ALL','PATIENT-UPDATE')")
+    public PatientDto changePaymentType(
+            @PathVariable("uid") String uid,
+            @Valid @RequestBody ChangePaymentTypeRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return registrationProcess.changePaymentType(uid, request, ctxFrom(jwt));
+    }
+
+    /** Build the per-operation audit context at the controller edge (ADR-0008 §3). */
+    private TxAuditContext ctxFrom(Jwt jwt) {
+        return new TxAuditContext(businessDayService.currentUid(), Instant.now(), jwt.getSubject());
     }
 }

@@ -5,8 +5,13 @@ import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.domain.PaymentMode;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
+import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
+import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
+import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
+import com.otapp.hmis.registration.domain.ConsultationRepository;
+import com.otapp.hmis.registration.domain.ConsultationStatus;
 import com.otapp.hmis.registration.domain.Patient;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.PatientType;
@@ -19,7 +24,9 @@ import com.otapp.hmis.registration.domain.VisitSequence;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.MissingInsuranceInformationException;
+import com.otapp.hmis.shared.error.NotFoundException;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -51,9 +58,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PatientRegistrationProcess {
 
+    /** Stable audit entity-type string for Patient (ADR-0007). */
+    private static final String AUDIT_ENTITY_PATIENT = "registration.Patient";
+
     private final PatientRepository patientRepository;
     private final RegistrationRepository registrationRepository;
     private final VisitRepository visitRepository;
+    private final ConsultationRepository consultationRepository;
     private final MrNumberGenerator mrNumberGenerator;
     private final BillingCommands billingCommands;
     private final AuditRecorder auditRecorder;
@@ -86,9 +97,8 @@ public class PatientRegistrationProcess {
         String insurancePlanUid = (req.paymentType() == PaymentType.CASH)
                 ? null
                 : req.insurancePlanUid();
-        String membershipNo = (req.paymentType() == PaymentType.CASH)
-                ? ""
-                : (req.membershipNo() != null ? req.membershipNo() : "");
+        String rawMembership = req.membershipNo() != null ? req.membershipNo() : "";
+        String membershipNo = (req.paymentType() == PaymentType.CASH) ? "" : rawMembership;
 
         // ---- Step 2: Allocate MRN (build-spec §2.1, CR-02) ------------------------------
         String no = mrNumberGenerator.next();
@@ -162,9 +172,198 @@ public class PatientRegistrationProcess {
         visitRepository.save(visit);
 
         // ---- Step 8: Audit (build-spec §2.3 step 8, ADR-0007) --------------------------
-        // Audit entityType strings per spec: "registration.Patient"
-        auditRecorder.record("registration.Patient", patient.getUid(),
+        // Audit entityType strings per spec: AUDIT_ENTITY_PATIENT
+        auditRecorder.record(AUDIT_ENTITY_PATIENT, patient.getUid(),
                 AuditAction.CREATE, ctx.actorUsername());
+
+        return patientMapper.toDto(patient);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // C4 — update demographics + type/payment-type flip guards
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Update mutable demographic and kin fields for an existing patient.
+     *
+     * <p>Payment type, MRN ({@code no}), and patient type are NOT touched here — they have
+     * dedicated endpoints (build-spec §8 C4, §1.3).
+     *
+     * <p>The search key is recomputed from the updated name/phone fields so the GIN
+     * trigram index stays consistent (build-spec §2.2, CR-09).
+     *
+     * @param uid    the patient ULID
+     * @param req    validated demographics update request
+     * @param ctx    transaction audit context
+     * @return the updated {@link PatientDto}
+     * @throws NotFoundException (404) if no patient with the given uid exists
+     * Legacy citation: PatientResource.java:378-395.
+     */
+    @Transactional
+    public PatientDto updateDemographics(String uid, UpdatePatientRequest req, TxAuditContext ctx) {
+
+        Patient patient = requirePatient(uid);
+
+        // Recompute search key from the new name/phone values (build-spec §2.2, CR-09)
+        String updatedSearchKey = SearchKeyBuilder.build(
+                patient.getNo(),
+                req.firstName(),
+                req.middleName(),
+                req.lastName(),
+                req.phoneNo());
+
+        patient.updateDemographics(
+                req.firstName(),
+                req.middleName(),
+                req.lastName(),
+                req.dateOfBirth(),
+                req.gender(),
+                req.phoneNo(),
+                req.address(),
+                req.email(),
+                req.nationality(),
+                req.nationalId(),
+                req.passportNo(),
+                req.kinFullName(),
+                req.kinRelationship(),
+                req.kinPhoneNo(),
+                updatedSearchKey);
+
+        patientRepository.save(patient);
+
+        auditRecorder.record(AUDIT_ENTITY_PATIENT, patient.getUid(),
+                AuditAction.UPDATE, ctx.actorUsername());
+
+        return patientMapper.toDto(patient);
+    }
+
+    /**
+     * Toggle the patient's type between OUTPATIENT and OUTSIDER, applying all legacy
+     * guards verbatim (build-spec §8 C4, PatientResource.java:421-506).
+     *
+     * <p>Guard table:
+     * <ul>
+     *   <li><b>null current type</b>: treated as OUTPATIENT (defensive — PatientResource.java:410-414).</li>
+     *   <li><b>OUTPATIENT → OUTSIDER</b>: blocked if the patient has any {@code PENDING}
+     *       consultation.  Throws {@link InvalidPatientOperationException} (422) with verbatim
+     *       legacy message.  Inc-05 widens the status set to include IN-PROCESS and TRANSFERRED
+     *       (inc-05 widens these statuses).</li>
+     *   <li><b>OUTSIDER → OUTPATIENT</b>: deferred — NonConsultation order-clearance check
+     *       lands with inc-05/06 (REG-3); the flip proceeds unconditionally here.</li>
+     *   <li><b>INPATIENT current</b>: always blocked (PatientResource.java:499-500).</li>
+     *   <li><b>DECEASED or other current</b>: always blocked (PatientResource.java:505).</li>
+     *   <li><b>INPATIENT or DECEASED target</b>: rejected — only OUTPATIENT↔OUTSIDER toggle
+     *       is legal here (build-spec §2.3 state machine).</li>
+     * </ul>
+     *
+     * @param uid    the patient ULID
+     * @param req    the desired target type (only OUTPATIENT or OUTSIDER accepted)
+     * @param ctx    transaction audit context
+     * @return the updated {@link PatientDto}
+     * @throws NotFoundException              (404) if no patient with the given uid exists
+     * @throws InvalidPatientOperationException (422) on any guard violation
+     * Legacy citation: PatientResource.java:398-506 (change_type).
+     */
+    @Transactional
+    public PatientDto changePatientType(String uid, ChangePatientTypeRequest req, TxAuditContext ctx) {
+
+        Patient patient = requirePatient(uid);
+
+        // Reject INPATIENT / DECEASED as target — only OUTPATIENT↔OUTSIDER is legal
+        if (req.targetType() == PatientType.INPATIENT || req.targetType() == PatientType.DECEASED) {
+            throw new InvalidPatientOperationException("Patient type could not be changed.");
+        }
+
+        PatientType current = patient.getType() != null ? patient.getType() : PatientType.OUTPATIENT;
+
+        switch (current) {
+            case OUTPATIENT -> {
+                // OUTPATIENT → OUTSIDER: block if patient has an active (PENDING) consultation
+                // Inc-05 widens these statuses to include IN-PROCESS and TRANSFERRED.
+                if (req.targetType() == PatientType.OUTSIDER
+                        && consultationRepository.existsByPatientAndStatus(
+                                patient, ConsultationStatus.PENDING)) {
+                    throw new InvalidPatientOperationException(
+                            "Can not change patient type, the patient has an active consultation.");
+                }
+                patient.changeType(req.targetType());
+            }
+            // OUTSIDER → OUTPATIENT: deferred — NonConsultation order-clearance check
+            // lands with inc-05/06 (REG-3); flip proceeds unconditionally in inc-03.
+            case OUTSIDER -> patient.changeType(req.targetType());
+            case INPATIENT ->
+                // Legacy: PatientResource.java:499-500 — verbatim message
+                throw new InvalidPatientOperationException(
+                        "This operation is not allowed for inpatients");
+            default ->
+                // DECEASED or any future value — verbatim legacy catch-all (PatientResource.java:505)
+                throw new InvalidPatientOperationException("Patient type could not be changed.");
+        }
+
+        patientRepository.save(patient);
+
+        auditRecorder.record(AUDIT_ENTITY_PATIENT, patient.getUid(),
+                AuditAction.UPDATE, ctx.actorUsername());
+
+        return patientMapper.toDto(patient);
+    }
+
+    /**
+     * Change the patient's payment classification (CASH ↔ INSURANCE), applying legacy
+     * guards and the CR-03 security gate (build-spec §8 C4, PatientResource.java:359-373).
+     *
+     * <p>Rules:
+     * <ul>
+     *   <li><b>Target INSURANCE</b>: {@code insurancePlanUid} must be non-null AND
+     *       {@code membershipNo} must be non-blank; else
+     *       {@link MissingInsuranceInformationException} (422).
+     *       Sets plan + membership + {@code paymentType=INSURANCE}.</li>
+     *   <li><b>Any non-INSURANCE (i.e. CASH)</b>: collapses to CASH —
+     *       {@code insurancePlanUid=null}, {@code membershipNo=""}, {@code paymentType=CASH}
+     *       (PatientResource.java:368-373 verbatim).</li>
+     *   <li><b>Admissions guard</b>: PatientResource.java:366-367 ("Could not change. Patient
+     *       has an ongoing medical operation") — DEFERRED-ENFORCEMENT no-op stub; admissions
+     *       do not exist until inc-06.
+     *       <!-- CR-19-style deferred: no admissions until inc-06 --></li>
+     * </ul>
+     *
+     * @param uid    the patient ULID
+     * @param req    the desired payment type + optional insurance details
+     * @param ctx    transaction audit context
+     * @return the updated {@link PatientDto}
+     * @throws NotFoundException                   (404) if no patient with the given uid exists
+     * @throws MissingInsuranceInformationException (422) if INSURANCE target without plan/membership
+     * Legacy citation: PatientResource.java:359-373 (change_payment_type, legacy ungated → CR-03).
+     */
+    @Transactional
+    public PatientDto changePaymentType(String uid, ChangePaymentTypeRequest req, TxAuditContext ctx) {
+
+        Patient patient = requirePatient(uid);
+
+        // DEFERRED-ENFORCEMENT (CR-19-style): the admissions guard from PatientResource.java:366-367
+        // ("Could not change. Patient has an ongoing medical operation") is a no-op stub in inc-03.
+        // When inc-06 lands, add: existsByPatientAndActiveAdmission check → InvalidPatientOperationException.
+
+        if (req.paymentType() == PaymentType.INSURANCE
+                && (req.insurancePlanUid() == null
+                        || req.membershipNo() == null
+                        || req.membershipNo().isBlank())) {
+            // INSURANCE requires both plan uid and non-blank membership number
+            throw new MissingInsuranceInformationException();
+        }
+
+        if (req.paymentType() == PaymentType.INSURANCE) {
+            patient.changePaymentType(PaymentType.INSURANCE,
+                    req.insurancePlanUid(), req.membershipNo());
+        } else {
+            // Any non-INSURANCE → collapse to CASH (PatientResource.java:368-373 verbatim)
+            patient.changePaymentType(PaymentType.CASH, null, "");
+        }
+
+        patientRepository.save(patient);
+
+        auditRecorder.record(AUDIT_ENTITY_PATIENT, patient.getUid(),
+                AuditAction.UPDATE, ctx.actorUsername());
 
         return patientMapper.toDto(patient);
     }
@@ -172,6 +371,18 @@ public class PatientRegistrationProcess {
     // ---------------------------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------------------------
+
+    /**
+     * Load a {@link Patient} by ULID or throw {@link NotFoundException} (404).
+     *
+     * @param uid the patient ULID
+     * @return the patient aggregate root
+     * @throws NotFoundException if no patient with the given uid exists
+     */
+    private Patient requirePatient(String uid) {
+        return patientRepository.findByUid(uid)
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + uid));
+    }
 
     /**
      * Validate insurance consistency (build-spec §2.3 step 1).
