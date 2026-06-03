@@ -24,7 +24,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
  */
 class PrivilegeGateArchTest {
 
-    /** The 26 live gate codes (build-spec §1). Any other code in @PreAuthorize is a bug. */
+    /**
+     * The 27 live gate codes (build-spec §1 + inc-04 billing addition).
+     * Any other code in @PreAuthorize is a bug.
+     *
+     * <p>BILL-A is seeded in V2:53 and is the gate for all billing endpoints
+     * (view/pay/credit-note/collections — inc-04 build-spec §5.4, 11-DECISIONS-RATIFIED).
+     * It was previously listed as a dead code before the billing increment was built.
+     */
     private static final Set<String> LIVE_CODES = Set.of(
             "ADMIN-ACCESS",
             "DAY-ACCESS",
@@ -51,7 +58,9 @@ class PrivilegeGateArchTest {
             "MEDICINE_STOCK-UPDATE",
             "USER-ALL",
             "USER-UPDATE",
-            "ROLE-ALL"
+            "ROLE-ALL",
+            // inc-04 billing gate (seeded V2:53; previously marked dead pending billing build)
+            "BILL-A"
     );
 
     /** Matches single-quoted authority codes inside hasAnyAuthority / hasAuthority expressions. */
@@ -80,9 +89,10 @@ class PrivilegeGateArchTest {
         }
 
         assertThat(violations)
-                .as("Every @PreAuthorize authority code must be in the 26 live codes (build-spec §1). " +
-                    "Dead codes (BILL-A, GOO-ALL, PATIENT-A, PATIENT-C, PATIENT-U, " +
+                .as("Every @PreAuthorize authority code must be in the 27 live codes (build-spec §1). " +
+                    "Dead codes (GOO-ALL, PATIENT-A, PATIENT-C, PATIENT-U, " +
                     "PROCUREMENT-ACCESS, PRODUCT-CREATE, ROLE-CREATE, ROLE-U) must never gate anything. " +
+                    "BILL-A is live as of inc-04. " +
                     "Violations:")
                 .isEmpty();
     }

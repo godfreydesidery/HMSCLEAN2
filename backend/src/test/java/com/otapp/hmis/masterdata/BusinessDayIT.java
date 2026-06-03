@@ -39,6 +39,22 @@ class BusinessDayIT extends AbstractIntegrationTest {
     @Autowired TestJwtFactory jwtFactory;
 
     // ------------------------------------------------------------------
+    // Order(0): establish a deterministic no-day-open baseline. Other ITs (e.g. billing,
+    // which stamps business_day_uid) share the singleton Testcontainer and may leave a day
+    // OPEN; close it so this ordered lifecycle starts clean. Idempotent: 200 if a day was
+    // open, 422 if none — either outcome leaves no open day.
+    // ------------------------------------------------------------------
+    @Test
+    @Order(0)
+    void resetAnyOpenDayBaseline() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("operator", List.of("DAY-ACCESS"));
+        int status = mockMvc.perform(post(CLOSE).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andReturn().getResponse().getStatus();
+        // 200 = a leaked open day was closed; 422 = none was open. Either leaves no open day.
+        org.assertj.core.api.Assertions.assertThat(status).isIn(200, 422);
+    }
+
+    // ------------------------------------------------------------------
     // Authorization gates (before any day is opened — current returns 422)
     // ------------------------------------------------------------------
 

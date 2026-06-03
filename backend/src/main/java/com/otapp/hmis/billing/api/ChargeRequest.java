@@ -1,0 +1,34 @@
+package com.otapp.hmis.billing.api;
+
+import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.masterdata.lookup.ServiceKind;
+import java.math.BigDecimal;
+
+/**
+ * Cross-module charge request carried into {@link BillingCommands#recordClinicalCharge}
+ * (build-spec §4.1).
+ *
+ * <p>All identifiers are public uids — NO internal {@code id} fields (ADR-0014 §1).
+ * The record is immutable; callers build it in the clinical module and pass it
+ * in-process with the caller's {@link com.otapp.hmis.shared.domain.TxAuditContext}.
+ *
+ * @param patientUid   loose cross-module ref to the patient (ULID)
+ * @param planUid      loose cross-module ref to the insurance plan; null for cash patients
+ * @param membershipNo patient's insurance membership number; null for cash
+ * @param kind         service category ({@link ServiceKind})
+ * @param serviceUid   the service entity uid; null only for {@link ServiceKind#REGISTRATION}
+ * @param qty          quantity (1 for most services; multiplied for MEDICINE)
+ * @param paymentType  requested payment mode
+ * @param inpatient    whether the patient is currently admitted
+ */
+public record ChargeRequest(
+        String patientUid,
+        String planUid,
+        String membershipNo,
+        ServiceKind kind,
+        String serviceUid,
+        BigDecimal qty,
+        PaymentMode paymentType,
+        boolean inpatient
+) {
+}

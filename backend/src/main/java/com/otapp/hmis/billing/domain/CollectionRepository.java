@@ -1,0 +1,45 @@
+package com.otapp.hmis.billing.domain;
+
+import java.time.Instant;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+/**
+ * Spring Data JPA repository for {@link Collection}.
+ *
+ * <p>Supports the EOD collections report (P3 scope) and per-patient collection queries.
+ * CollectionRepository.java in legacy was minimal; report aggregation was inline SQL.
+ */
+public interface CollectionRepository extends JpaRepository<Collection, Long> {
+
+    /**
+     * Find all collections in a date range (for EOD report).
+     * Range: from.atStartOfDay()..to.atStartOfDay().plusDays(1) (inclusive of to).
+     * PatientBillResource.java:415+ (read-time aggregation — P3 scope).
+     */
+    @Query("""
+           SELECT c FROM Collection c
+           WHERE c.createdAt >= :from
+             AND c.createdAt < :to
+           ORDER BY c.createdAt
+           """)
+    List<Collection> findByDateRange(@Param("from") Instant from, @Param("to") Instant to);
+
+    /**
+     * Find collections in a date range attributed to a specific cashier (by username).
+     * PatientBillResource.java:532+ (per-cashier filter — P3 scope).
+     */
+    @Query("""
+           SELECT c FROM Collection c
+           WHERE c.createdAt >= :from
+             AND c.createdAt < :to
+             AND c.createdBy = :username
+           ORDER BY c.createdAt
+           """)
+    List<Collection> findByDateRangeAndCashier(
+            @Param("from") Instant from,
+            @Param("to") Instant to,
+            @Param("username") String username);
+}
