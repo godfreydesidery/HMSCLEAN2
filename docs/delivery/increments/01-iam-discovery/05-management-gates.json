@@ -1,0 +1,213 @@
+[
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users",
+    "gateCode": "(none)",
+    "behaviour": "List all users",
+    "behaviour_": "UNGATED - any authenticated user"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users/get_by_cashiers",
+    "gateCode": "(none)",
+    "behaviour": "List users that are cashiers; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users/get",
+    "gateCode": "(none)",
+    "behaviour": "Get user by id; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users/get_user",
+    "gateCode": "(none)",
+    "behaviour": "Get user by username; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users/load_user",
+    "gateCode": "(none)",
+    "behaviour": "Load minimal UserModel (id+alias); throws if user not active; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/users/load_users_like",
+    "gateCode": "(none)",
+    "behaviour": "Search users by first/middle/last name contains; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/users/create",
+    "gateCode": "USER-ALL OR ADMIN-ACCESS",
+    "behaviour": "CREATE USER. UserResource.java:146 @PreAuthorize(hasAnyAuthority('USER-ALL','ADMIN-ACCESS')). Rejects username 'root'. Service generates USR-NNNNNN code and BCrypt-encodes password (UserServiceImpl.java:114-115)."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "PUT",
+    "path": "/zana-hmis-api/users/update",
+    "gateCode": "USER-ALL OR ADMIN-ACCESS",
+    "behaviour": "UPDATE USER + implicit CHANGE-PASSWORD + the de-facto ACTIVATE/DEACTIVATE path. UserResource.java:158. No dedicated change-password or activate endpoint exists; password is changed via the User body (blank=keep, non-blank=re-encode, UserServiceImpl.java:121-125). Self activate/deactivate blocked at controller (lines 166-170); root may only be activated/deactivated. CAVEAT: service hardcodes user.setActive(true) on every update (UserServiceImpl.java:126, comment 'before implementing activate and deactivate user') so deactivate is effectively a no-op stub."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "DELETE",
+    "path": "/zana-hmis-api/users/delete",
+    "gateCode": "USER-ALL OR ADMIN-ACCESS",
+    "behaviour": "DELETE USER. UserResource.java:193. Rejects deleting 'root'."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/roles/get_role",
+    "gateCode": "(none)",
+    "behaviour": "Get role by name; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/roles/create",
+    "gateCode": "ROLE-ALL OR ADMIN-ACCESS",
+    "behaviour": "CREATE ROLE. UserResource.java:213. Rejects a hardcoded reserved-name list (ROOT, ADMIN, RECEPTION, CASHIER, HUMAN-RESOURCE, PROCUREMENT, MANAGER, ACCOUNTANT, STORE-PERSON, CLINICIAN, NURSE, PHARMACIST, LABORATORIST, RADIOGRAPHER, RADIOLOGIST); sets owner=ORGANIZATION."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "PUT",
+    "path": "/zana-hmis-api/roles/update",
+    "gateCode": "ROLE-ALL OR ADMIN-ACCESS",
+    "behaviour": "UPDATE ROLE. UserResource.java:269. Rejects editing the same reserved roles; sets owner=ORGANIZATION."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "DELETE",
+    "path": "/zana-hmis-api/roles/delete",
+    "gateCode": "ROLE-ALL OR ADMIN-ACCESS",
+    "behaviour": "DELETE ROLE. UserResource.java:323. Rejects deleting ROOT."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/roles/addtouser",
+    "gateCode": "USER-ALL OR USER-UPDATE OR ROLE-ALL OR ADMIN-ACCESS",
+    "behaviour": "ASSIGN-ROLE-TO-USER. UserResource.java:336. Body=RoleToUserForm(username, roleName)."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/token/refresh",
+    "gateCode": "(none)",
+    "behaviour": "Legacy refresh token; UNGATED. Uses HMAC256('secret'), 8h access TTL, emits defective 'roles' claim populated with PRIVILEGE names (UserResource.java:345-394)."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/roles",
+    "gateCode": "(none)",
+    "behaviour": "List all roles; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/operations",
+    "gateCode": "(none)",
+    "behaviour": "List operation strings; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/objects",
+    "gateCode": "(none)",
+    "behaviour": "List object strings; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/privileges",
+    "gateCode": "(none)",
+    "behaviour": "LIST-PRIVILEGES for a role (query param role); UNGATED. UserResource.java:414"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/check_op_valid",
+    "gateCode": "(none)",
+    "behaviour": "Check if object-operation privilege exists; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/privileges/addtorole",
+    "gateCode": "(none) - GATE COMMENTED OUT",
+    "behaviour": "ASSIGN-PRIVILEGES-TO-ROLE. UserResource.java:444-445. The @PreAuthorize(hasAnyAuthority('ROLE-U')) is COMMENTED OUT, so this endpoint is effectively UNGATED. Clears all existing privileges then re-adds from the AccessModel; supports 'ALL' shortcut."
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/load_privilege_model",
+    "gateCode": "(none)",
+    "behaviour": "Reflectively builds object/operation authority matrix; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/shortcuts/create",
+    "gateCode": "(none)",
+    "behaviour": "Create user shortcut; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/shortcuts/remove",
+    "gateCode": "(none)",
+    "behaviour": "Remove user shortcut; UNGATED"
+  },
+  {
+    "resource": "UserResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/shortcuts/load",
+    "gateCode": "(none)",
+    "behaviour": "Load user shortcuts; UNGATED"
+  },
+  {
+    "resource": "EmployeeResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/employees",
+    "gateCode": "(none)",
+    "behaviour": "List employees; UNGATED"
+  },
+  {
+    "resource": "EmployeeResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/employees/get_all_active",
+    "gateCode": "(none)",
+    "behaviour": "List active employees; UNGATED"
+  },
+  {
+    "resource": "EmployeeResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/employees/get",
+    "gateCode": "(none)",
+    "behaviour": "Get employee; UNGATED"
+  },
+  {
+    "resource": "EmployeeResource",
+    "httpMethod": "GET",
+    "path": "/zana-hmis-api/employees/change_status",
+    "gateCode": "(none)",
+    "behaviour": "Change employee status; UNGATED (note: it is a GET despite mutating)"
+  },
+  {
+    "resource": "EmployeeResource",
+    "httpMethod": "POST",
+    "path": "/zana-hmis-api/employees/save",
+    "gateCode": "EMPLOYEE-ALL",
+    "behaviour": "CREATE/UPDATE EMPLOYEE. EmployeeResource.java:83 @PreAuthorize(hasAnyAuthority('EMPLOYEE-ALL'))."
+  }
+]

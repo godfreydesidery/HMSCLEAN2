@@ -17,6 +17,7 @@ public enum ErrorCode {
     VALIDATION("urn:hmis:error:validation", HttpStatus.BAD_REQUEST, "Validation failed"),
     INVALID_CREDENTIALS("urn:hmis:error:invalid-credentials", HttpStatus.UNAUTHORIZED, "Invalid credentials"),
     INVALID_TOKEN("urn:hmis:error:invalid-token", HttpStatus.UNAUTHORIZED, "Invalid or expired token"),
+    TOKEN_REUSE_DETECTED("urn:hmis:error:token-reuse-detected", HttpStatus.UNAUTHORIZED, "Refresh token reuse detected"),
     UNAUTHENTICATED("urn:hmis:error:unauthenticated", HttpStatus.UNAUTHORIZED, "Authentication required"),
     FORBIDDEN("urn:hmis:error:forbidden", HttpStatus.FORBIDDEN, "Access denied"),
     INTERNAL("urn:hmis:error:internal", HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
