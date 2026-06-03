@@ -20,6 +20,8 @@ hmis:
     issuer: https://hmis.otapp.net
     access-token-ttl-minutes: 15
     refresh-token-ttl-hours: 8
+  cors:
+    allowed-origins: http://localhost:4200
 
 logging:
   level:

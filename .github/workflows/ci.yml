@@ -34,6 +34,12 @@ jobs:
           fi
           echo "OK: no HMAC256 literals in src/"
 
+      # ADR-0013 §3 — Semgrep static analysis for hardcoded secrets (build-spec §4)
+      # Note: config path is relative to repo root (not working-directory: backend).
+      - name: Semgrep secrets scan
+        run: pip install semgrep && semgrep --config backend/ci/semgrep-secrets.yml backend/src --error
+        continue-on-error: false
+
       # Surefire: unit tests + ArchUnit gates + Spring Modulith verify() (no Docker required)
       # Uses the system `mvn` provided by actions/setup-java. The committed repo does not include
       # the Maven wrapper (.mvn/ writes are blocked in the authoring sandbox); run

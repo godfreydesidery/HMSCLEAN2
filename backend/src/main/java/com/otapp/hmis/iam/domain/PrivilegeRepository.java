@@ -11,4 +11,6 @@ public interface PrivilegeRepository extends JpaRepository<Privilege, Long> {
     Optional<Privilege> findByUid(String uid);
 
     List<Privilege> findAllByOrderByCodeAsc();
+
+    List<Privilege> findByCategory(String category);
 }

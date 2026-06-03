@@ -49,6 +49,25 @@ paths:
                 $ref: '#/components/schemas/TokenResponse'
         '401':
           $ref: '#/components/responses/Problem'
+  /auth/token/revoke:
+    post:
+      summary: Revoke the caller's current refresh token (logout)
+      operationId: revokeToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRequest'
+      responses:
+        '204':
+          description: Token revoked (idempotent; 204 also for unknown/already-revoked tokens)
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
   /company-profile:
     get:
       summary: Get the company profile
@@ -91,6 +110,12 @@ components:
         password:
           type: string
     RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    RevokeRequest:
       type: object
       required: [refreshToken]
       properties:

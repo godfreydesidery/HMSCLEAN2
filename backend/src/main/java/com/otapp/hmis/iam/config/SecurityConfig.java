@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 /**
  * Spring Security 6 OAuth2 Resource Server validating self-issued HS256 JWTs (ADR-0006, ADR-0013).
  *
+ * <p>Increment-01 change: wildcard CORS origin pattern replaced with an explicit allow-list
+ * from {@link CorsProperties} (build-spec §4 D-1). {@code allowCredentials} is NOT enabled
+ * (bearer tokens, not cookies).
+ *
  * <p>The signing key is derived from {@code ${JWT_SECRET}} via a {@link SecretKeySpec}; no legacy
  * auth0-style HMAC signing literal exists anywhere (the hardcoded-secret grep gate stays clean).
  * The {@link JwtAuthenticationConverter} maps the {@code privileges} claim to authorities with no
@@ -41,7 +46,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  */
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, CorsProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -49,6 +54,7 @@ public class SecurityConfig {
     public static final String PRIVILEGES_CLAIM = "privileges";
 
     private final JwtProperties jwtProperties;
+    private final CorsProperties corsProperties;
 
     @Bean
     SecretKey jwtSecretKey() {
@@ -88,9 +94,11 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.addAllowedOriginPattern("*");
+        // Explicit allow-list — replaces legacy wildcard (build-spec §4 D-1).
+        config.setAllowedOrigins(corsProperties.allowedOrigins());
         config.addAllowedHeader("*");
-        config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        // allowCredentials NOT set — bearer tokens are in Authorization header, not cookies.
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
@@ -114,6 +122,7 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html")
                         .permitAll()
+                        // POST /auth/token/revoke is NOT in permitAll — requires authentication.
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))

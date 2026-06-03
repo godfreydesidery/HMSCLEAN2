@@ -1,5 +1,4 @@
 .gitignore
-.openapi-generator-ignore
 README.md
 api.base.service.ts
 api.module.ts
@@ -15,6 +14,7 @@ model/models.ts
 model/money-dto.ts
 model/problem-detail.ts
 model/refresh-request.ts
+model/revoke-request.ts
 model/token-request.ts
 model/token-response.ts
 ng-package.json

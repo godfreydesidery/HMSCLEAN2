@@ -1,5 +1,19 @@
 # Increment 01 — Identity & Access (IAM)
 
+> **⚠️ SUPERSEDED IN PART — read the as-built record first.** This planning doc pre-dates the
+> implementation and the legacy discovery, and drifted from the legacy source of truth on several
+> points. The **authoritative, ratified, as-built** specification is in
+> [`01-iam-discovery/`](01-iam-discovery/) — start with `00-build-spec.md` and `07-DECISIONS-RATIFIED.md`.
+> Key corrections (legacy-verified): privilege codes are **35 distinct** (the "177" below counts
+> `@PreAuthorize` *sites*, not codes; 26 are live gates, 9 commented-dead, tagged `ACTIVE/DEAD`);
+> tables are **plural** (`users`/`roles`/`privileges`…), not `iam_*`; Flyway delta is **V4/V5**; the
+> real gate codes are coarse (`USER-ALL`/`ROLE-ALL`/`ADMIN-ACCESS`), not the invented
+> `USER-CREATE`/`ROLE-PRIVILEGE`/`PRIVILEGE-ALL`; user code is **`USR-NNN-NNN`**; **`ProviderProfile`
+> does not exist** in the legacy — the six personnel extensions (Clinician/Nurse/Pharmacist/Cashier/
+> StorePerson/Management) were modelled instead; new users are created **inactive**; the `'ALL'`
+> privilege shortcut was **dropped**. The OpenAPI reference is committed at
+> [`../../openapi/iam.yaml`](../../openapi/iam.yaml).
+
 ## Goal
 
 Deliver a fully working, production-grade authentication and authorization spine — JWT login + refresh with the exact 177 legacy privilege codes seeded and enforced — so that every subsequent increment can gate its endpoints with `@PreAuthorize` from day one and the Angular shell can silently rotate tokens without re-login.
