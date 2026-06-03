@@ -1,12 +1,17 @@
 package com.otapp.hmis.iam.domain;
 
 import com.otapp.hmis.shared.domain.AuditableEntity;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -18,8 +23,11 @@ import lombok.NoArgsConstructor;
  * role is removed (UserAdminService.saveUser lifecycle). Code and name fields are copied from
  * the parent User on create/update (service enforces equality).
  *
- * <p>Deferred: {@code clinics} collection (clinicians_clinics join table) — the {@code clinics}
- * table does not exist in this increment. Add in the clinical/masterdata increment.
+ * <p>{@code clinicUids} is an @ElementCollection of opaque clinic-uid strings (CR-08 /
+ * build-spec §5.2). This faithfully reproduces the legacy {@code Clinician.clinics}
+ * {@code @ManyToMany} (Clinician.java:69-71) while keeping the {@code iam} module independent
+ * of the {@code masterdata} module — no JPA relation to {@code masterdata.Clinic}, only loose
+ * VARCHAR(26) uid references. Stored in {@code clinician_clinic_uids} (V10 migration).
  *
  * <p>Legacy source: {@code com.orbix.api.domain.Clinician}.
  */
@@ -56,6 +64,27 @@ public class Clinician extends AuditableEntity {
     @JoinColumn(name = "user_id")
     private User user;
 
+    /**
+     * Affiliated clinic UIDs (CR-08 / build-spec §5.2).
+     *
+     * <p>Opaque string references to {@code masterdata.Clinic.uid} values — stored without a
+     * DB-level FK so the {@code iam} module remains independent of {@code masterdata}.
+     * The join table {@code clinician_clinic_uids} is created by V10.
+     *
+     * <p>Legacy model: {@code Clinician.clinics Collection<Clinic>} @ManyToMany owning side
+     * (Clinician.java:69-71). Here reproduced as loose uid strings (CR-08 decision).
+     *
+     * <p>Lombok getter suppressed — a hand-written {@link #getClinicUids()} returns an
+     * unmodifiable view so callers cannot bypass the domain methods.
+     */
+    @Getter(AccessLevel.NONE)
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "clinician_clinic_uids",
+            joinColumns = @JoinColumn(name = "clinician_id"))
+    @Column(name = "clinic_uid", length = 26, nullable = false)
+    private Set<String> clinicUids = new HashSet<>();
+
     // -----------------------------------------------------------------------
     // Domain methods
     // -----------------------------------------------------------------------
@@ -82,5 +111,38 @@ public class Clinician extends AuditableEntity {
         Clinician c = new Clinician();
         c.copyFrom(user);
         return c;
+    }
+
+    // -----------------------------------------------------------------------
+    // Affiliation domain methods (CR-08 / build-spec §5.2)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Idempotently adds a clinic-uid to this clinician's affiliation set.
+     * The caller (ClinicianAffiliationServiceImpl) is responsible for transaction management.
+     *
+     * @param clinicUid the masterdata Clinic.uid — an opaque string (no FK)
+     */
+    public void affiliateClinic(String clinicUid) {
+        this.clinicUids.add(clinicUid);
+    }
+
+    /**
+     * Idempotently removes a clinic-uid from this clinician's affiliation set.
+     * Safe to call when the uid is not present (no-op).
+     *
+     * @param clinicUid the masterdata Clinic.uid to remove
+     */
+    public void removeClinic(String clinicUid) {
+        this.clinicUids.remove(clinicUid);
+    }
+
+    /**
+     * Returns an unmodifiable view of the affiliated clinic UIDs.
+     *
+     * @return unmodifiable set of clinic uid strings
+     */
+    public Set<String> getClinicUids() {
+        return Collections.unmodifiableSet(clinicUids);
     }
 }

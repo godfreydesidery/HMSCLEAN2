@@ -20,7 +20,47 @@ public enum ErrorCode {
     TOKEN_REUSE_DETECTED("urn:hmis:error:token-reuse-detected", HttpStatus.UNAUTHORIZED, "Refresh token reuse detected"),
     UNAUTHENTICATED("urn:hmis:error:unauthenticated", HttpStatus.UNAUTHORIZED, "Authentication required"),
     FORBIDDEN("urn:hmis:error:forbidden", HttpStatus.FORBIDDEN, "Access denied"),
-    INTERNAL("urn:hmis:error:internal", HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error");
+    INTERNAL("urn:hmis:error:internal", HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error"),
+
+    /**
+     * No matching {@code service_prices} row found for the given
+     * (planUid, kind, serviceUid, currency) tuple (build-spec §2.2, §2.4, AC-5).
+     * HTTP 422 Unprocessable Entity — the request is syntactically valid but the pricing
+     * data is missing.  Thrown by {@code PriceLookupImpl} when neither an insurance hit
+     * nor a cash fallback exists.
+     */
+    SERVICE_PRICE_NOT_FOUND("urn:hmis:error:service-price-not-found",
+            HttpStatus.UNPROCESSABLE_ENTITY, "Service price not found"),
+
+    /**
+     * A {@code service_prices} row with the same (plan_uid, kind, service_uid, currency)
+     * composite key already exists (build-spec §2.1 COALESCE unique index, AC-5).
+     * HTTP 409 Conflict. Distinct type URI from the generic CONFLICT to allow clients to
+     * branch on this specific duplicate-price scenario.
+     */
+    DUPLICATE_SERVICE_PRICE("urn:hmis:error:duplicate-service-price",
+            HttpStatus.CONFLICT, "Duplicate service price"),
+
+    /**
+     * The target user does not hold the {@code CLINICIAN} role and therefore cannot be
+     * affiliated with a clinic (CR-08, build-spec §5.2, AC-4).
+     * HTTP 403 Forbidden — distinct from the generic access-denied FORBIDDEN so the Angular
+     * client can surface a specific "user must have CLINICIAN role" message.
+     */
+    CLINICIAN_ROLE_REQUIRED("urn:hmis:error:clinician-role-required",
+            HttpStatus.FORBIDDEN, "User must hold the CLINICIAN role for this operation"),
+
+    /**
+     * A {@code POST /api/v1/masterdata/company-profile} attempt when a company-profile row
+     * already exists (build-spec §1.5, CR-14).
+     *
+     * <p>The company-profile is a singleton: exactly one row is allowed. A second POST is
+     * rejected with 409 rather than silently replacing the existing row (improvement over
+     * legacy's {@code deleteAll()+keepOne} — CR-14 ratified).
+     * HTTP 409 Conflict.
+     */
+    COMPANY_PROFILE_EXISTS("urn:hmis:error:company-profile-exists",
+            HttpStatus.CONFLICT, "A company profile already exists; use PUT to update it");
 
     private final String type;
     private final HttpStatus status;

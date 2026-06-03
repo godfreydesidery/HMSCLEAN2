@@ -27,4 +27,16 @@ public interface IamLookupService {
      * @return summaries for found users (missing uids are silently omitted)
      */
     List<UserSummary> findUsers(Collection<String> uids);
+
+    /**
+     * Find all users that have been assigned the given role name (admin listing).
+     *
+     * <p>Used by the masterdata module's admin endpoint
+     * {@code GET /api/v1/masterdata/clinicians/by-role/CLINICIAN} (build-spec §5.2 / CR-08).
+     * Only role names from the ratified 35-code set should be passed.
+     *
+     * @param roleName the role name to filter by (e.g. {@code "CLINICIAN"})
+     * @return summaries for all users assigned the given role, ordered by username
+     */
+    List<UserSummary> findUsersByRole(String roleName);
 }

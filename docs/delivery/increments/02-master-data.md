@@ -1,5 +1,21 @@
 # Increment 02 — Master Data & Reference Seeding
 
+> **⚠️ SUPERSEDED IN PART — read the as-built record first.** This planning doc pre-dates the legacy
+> discovery and drifted on several points. The **authoritative, ratified, as-built** spec is in
+> [`02-masterdata-discovery/`](02-masterdata-discovery/) — start with `00-build-spec.md`,
+> `11-DECISIONS-RATIFIED.md`, and the review resolutions `15-REVIEW-RESOLUTIONS.md`. Legacy-verified
+> corrections (all ratified): unified `ServicePrice` matrix for **insurance only** (cash stays on the
+> catalog entity); flat legacy `LabTestTypeRange` (no analyte model); `DiagnosisType` (no ICD); free-text
+> picklists/category/UoM (no lookup tables); clinic-clinician affiliation **owned by `iam`** (loose
+> `clinicUids`) with the net-new CLINICIAN gate; WardType-only ward pricing; `SPTO`/`PPTO` (fixes the
+> legacy `SPT` collision); `VARCHAR(26)` not `CHAR(26)`; 35-not-177 codes; catalogs **start empty**
+> (no data migration — parity proven by golden-master test fixtures). The OpenAPI reference is committed
+> at [`../../openapi/masterdata.yaml`](../../openapi/masterdata.yaml).
+>
+> **Delivery split:** the masterdata **backend** (this PR) is complete, reviewed (3-lens), and green
+> (315 tests). The **Angular admin shell** (the ~18 admin screens in §DoD) is deferred to a dedicated
+> follow-up increment per the engagement owner's decision.
+
 ## Goal
 
 Deliver a fully operational `masterdata` Spring Modulith module — covering every reference catalogue the clinical and financial workflows depend on — seeded from legacy values via Flyway scripts, exposed through a versioned REST API, and verified by an Angular admin shell with RBAC-gated screens. After this increment, the system is bootstrappable from an empty database into a state where any subsequent clinical increment can start without manual admin setup.

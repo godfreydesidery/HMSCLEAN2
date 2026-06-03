@@ -1,0 +1,3542 @@
+openapi: 3.0.1
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost
+  description: Generated server url
+paths:
+  /api/v1/masterdata/wards/uid/{uid}:
+    get:
+      tags:
+      - ward-controller
+      operationId: getByUid
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardDto"
+    put:
+      tags:
+      - ward-controller
+      operationId: update
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardDto"
+  /api/v1/masterdata/ward-types/uid/{uid}:
+    get:
+      tags:
+      - ward-type-controller
+      operationId: getByUid_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardTypeDto"
+    put:
+      tags:
+      - ward-type-controller
+      operationId: update_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardTypeDto"
+  /api/v1/masterdata/ward-categories/uid/{uid}:
+    get:
+      tags:
+      - ward-category-controller
+      operationId: getByUid_2
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardCategoryDto"
+    put:
+      tags:
+      - ward-category-controller
+      operationId: update_2
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardCategoryRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardCategoryDto"
+  /api/v1/masterdata/theatres/uid/{uid}:
+    get:
+      tags:
+      - theatre-controller
+      operationId: getByUid_3
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TheatreDto"
+    put:
+      tags:
+      - theatre-controller
+      operationId: update_3
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TheatreRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TheatreDto"
+  /api/v1/masterdata/suppliers/uid/{uid}:
+    get:
+      tags:
+      - supplier-controller
+      operationId: getByUid_4
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierDto"
+    put:
+      tags:
+      - supplier-controller
+      operationId: update_4
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierDto"
+  /api/v1/masterdata/supplier-item-prices/uid/{uid}:
+    get:
+      tags:
+      - supplier-item-price-controller
+      operationId: getByUid_5
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierItemPriceDto"
+    put:
+      tags:
+      - supplier-item-price-controller
+      operationId: update_5
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierItemPriceRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierItemPriceDto"
+    delete:
+      tags:
+      - supplier-item-price-controller
+      operationId: delete
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/masterdata/stores/uid/{uid}:
+    get:
+      tags:
+      - store-controller
+      operationId: getByUid_6
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StoreDto"
+    put:
+      tags:
+      - store-controller
+      operationId: update_6
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StoreDto"
+  /api/v1/masterdata/radiology-types/uid/{uid}:
+    get:
+      tags:
+      - radiology-type-controller
+      operationId: getByUid_7
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyTypeDto"
+    put:
+      tags:
+      - radiology-type-controller
+      operationId: update_7
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadiologyTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyTypeDto"
+  /api/v1/masterdata/procedure-types/uid/{uid}:
+    get:
+      tags:
+      - procedure-type-controller
+      operationId: getByUid_8
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProcedureTypeDto"
+    put:
+      tags:
+      - procedure-type-controller
+      operationId: update_8
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcedureTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProcedureTypeDto"
+  /api/v1/masterdata/pharmacies/uid/{uid}:
+    get:
+      tags:
+      - pharmacy-controller
+      operationId: getByUid_9
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PharmacyDto"
+    put:
+      tags:
+      - pharmacy-controller
+      operationId: update_9
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PharmacyDto"
+  /api/v1/masterdata/medicines/uid/{uid}:
+    get:
+      tags:
+      - medicine-controller
+      operationId: getByUid_10
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MedicineDto"
+    put:
+      tags:
+      - medicine-controller
+      operationId: update_10
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicineRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MedicineDto"
+  /api/v1/masterdata/lab-test-types/uid/{uid}:
+    get:
+      tags:
+      - lab-test-type-controller
+      operationId: getByUid_11
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeDto"
+    put:
+      tags:
+      - lab-test-type-controller
+      operationId: update_11
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeDto"
+  /api/v1/masterdata/lab-test-types/uid/{uid}/ranges/{rangeUid}:
+    get:
+      tags:
+      - lab-test-type-controller
+      operationId: getRange
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rangeUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeRangeDto"
+    put:
+      tags:
+      - lab-test-type-controller
+      operationId: updateRange
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rangeUid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestTypeRangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeRangeDto"
+    delete:
+      tags:
+      - lab-test-type-controller
+      operationId: deleteRange
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: rangeUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/masterdata/items/uid/{uid}:
+    get:
+      tags:
+      - item-controller
+      operationId: getByUid_12
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemDto"
+    put:
+      tags:
+      - item-controller
+      operationId: update_12
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemDto"
+  /api/v1/masterdata/item-suppliers/uid/{uid}:
+    get:
+      tags:
+      - item-supplier-controller
+      operationId: getByUid_13
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemSupplierDto"
+    put:
+      tags:
+      - item-supplier-controller
+      operationId: update_13
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemSupplierRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemSupplierDto"
+  /api/v1/masterdata/item-medicine-coefficients/uid/{uid}:
+    get:
+      tags:
+      - item-medicine-coefficient-controller
+      operationId: getByUid_14
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemMedicineCoefficientDto"
+    put:
+      tags:
+      - item-medicine-coefficient-controller
+      operationId: update_14
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemMedicineCoefficientRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemMedicineCoefficientDto"
+  /api/v1/masterdata/insurance-providers/uid/{uid}:
+    get:
+      tags:
+      - insurance-provider-controller
+      operationId: getByUid_15
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsuranceProviderDto"
+    put:
+      tags:
+      - insurance-provider-controller
+      operationId: update_15
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsuranceProviderRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsuranceProviderDto"
+  /api/v1/masterdata/insurance-plans/uid/{uid}:
+    get:
+      tags:
+      - insurance-plan-controller
+      operationId: getByUid_16
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsurancePlanDto"
+    put:
+      tags:
+      - insurance-plan-controller
+      operationId: update_16
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsurancePlanRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsurancePlanDto"
+  /api/v1/masterdata/diagnosis-types/uid/{uid}:
+    get:
+      tags:
+      - diagnosis-type-controller
+      operationId: getByUid_17
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DiagnosisTypeDto"
+    put:
+      tags:
+      - diagnosis-type-controller
+      operationId: update_17
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiagnosisTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DiagnosisTypeDto"
+  /api/v1/masterdata/company-profile:
+    get:
+      tags:
+      - company-profile-controller
+      operationId: current_1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CompanyProfileDto"
+    put:
+      tags:
+      - company-profile-controller
+      operationId: update_18
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyProfileRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CompanyProfileDto"
+    post:
+      tags:
+      - company-profile-controller
+      operationId: create_18
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyProfileRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CompanyProfileDto"
+  /api/v1/masterdata/clinics/uid/{uid}:
+    get:
+      tags:
+      - clinic-controller
+      operationId: getByUid_18
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClinicDto"
+    put:
+      tags:
+      - clinic-controller
+      operationId: update_19
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClinicRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClinicDto"
+  /api/v1/masterdata/beds/uid/{uid}:
+    get:
+      tags:
+      - ward-bed-controller
+      operationId: getByUid_19
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardBedDto"
+    put:
+      tags:
+      - ward-bed-controller
+      operationId: update_20
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardBedRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardBedDto"
+  /api/v1/iam/users/uid/{uid}:
+    get:
+      tags:
+      - user-admin-controller
+      operationId: get
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    put:
+      tags:
+      - user-admin-controller
+      operationId: update_21
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    delete:
+      tags:
+      - user-admin-controller
+      operationId: delete_2
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/iam/users/uid/{uid}/roles:
+    put:
+      tags:
+      - user-admin-controller
+      operationId: assignRoles
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRolesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/iam/roles/uid/{uid}:
+    get:
+      tags:
+      - role-admin-controller
+      operationId: get_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+    put:
+      tags:
+      - role-admin-controller
+      operationId: update_22
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+    delete:
+      tags:
+      - role-admin-controller
+      operationId: delete_3
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/iam/roles/uid/{uid}/privileges:
+    put:
+      tags:
+      - role-admin-controller
+      operationId: replacePrivileges
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceRolePrivilegesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+  /api/v1/shared/business-days/open:
+    post:
+      tags:
+      - business-day-admin-controller
+      operationId: open
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BusinessDayDto"
+  /api/v1/shared/business-days/close:
+    post:
+      tags:
+      - business-day-admin-controller
+      operationId: close
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BusinessDayDto"
+  /api/v1/masterdata/wards:
+    get:
+      tags:
+      - ward-controller
+      operationId: list
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WardDto"
+    post:
+      tags:
+      - ward-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardDto"
+  /api/v1/masterdata/ward-types:
+    get:
+      tags:
+      - ward-type-controller
+      operationId: list_1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WardTypeDto"
+    post:
+      tags:
+      - ward-type-controller
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardTypeDto"
+  /api/v1/masterdata/ward-categories:
+    get:
+      tags:
+      - ward-category-controller
+      operationId: list_2
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WardCategoryDto"
+    post:
+      tags:
+      - ward-category-controller
+      operationId: create_2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardCategoryRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardCategoryDto"
+  /api/v1/masterdata/theatres:
+    get:
+      tags:
+      - theatre-controller
+      operationId: list_3
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TheatreDto"
+    post:
+      tags:
+      - theatre-controller
+      operationId: create_3
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TheatreRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TheatreDto"
+  /api/v1/masterdata/suppliers:
+    get:
+      tags:
+      - supplier-controller
+      operationId: list_4
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupplierDto"
+    post:
+      tags:
+      - supplier-controller
+      operationId: create_4
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierDto"
+  /api/v1/masterdata/supplier-item-prices:
+    get:
+      tags:
+      - supplier-item-price-controller
+      operationId: list_5
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupplierItemPriceDto"
+    post:
+      tags:
+      - supplier-item-price-controller
+      operationId: create_5
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SupplierItemPriceRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierItemPriceDto"
+  /api/v1/masterdata/stores:
+    get:
+      tags:
+      - store-controller
+      operationId: list_6
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StoreDto"
+    post:
+      tags:
+      - store-controller
+      operationId: create_6
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/StoreDto"
+  /api/v1/masterdata/service-prices:
+    get:
+      tags:
+      - service-price-controller
+      operationId: list_7
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ServicePriceDto"
+    post:
+      tags:
+      - service-price-controller
+      operationId: upsert
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServicePriceRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ServicePriceDto"
+  /api/v1/masterdata/radiology-types:
+    get:
+      tags:
+      - radiology-type-controller
+      operationId: list_8
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RadiologyTypeDto"
+    post:
+      tags:
+      - radiology-type-controller
+      operationId: create_7
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadiologyTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyTypeDto"
+  /api/v1/masterdata/procedure-types:
+    get:
+      tags:
+      - procedure-type-controller
+      operationId: list_9
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcedureTypeDto"
+    post:
+      tags:
+      - procedure-type-controller
+      operationId: create_8
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcedureTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ProcedureTypeDto"
+  /api/v1/masterdata/pharmacies:
+    get:
+      tags:
+      - pharmacy-controller
+      operationId: list_10
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PharmacyDto"
+    post:
+      tags:
+      - pharmacy-controller
+      operationId: create_9
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PharmacyDto"
+  /api/v1/masterdata/medicines:
+    get:
+      tags:
+      - medicine-controller
+      operationId: list_11
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MedicineDto"
+    post:
+      tags:
+      - medicine-controller
+      operationId: create_10
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicineRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MedicineDto"
+  /api/v1/masterdata/lab-test-types:
+    get:
+      tags:
+      - lab-test-type-controller
+      operationId: list_12
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LabTestTypeDto"
+    post:
+      tags:
+      - lab-test-type-controller
+      operationId: create_11
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeDto"
+  /api/v1/masterdata/lab-test-types/uid/{uid}/ranges:
+    get:
+      tags:
+      - lab-test-type-controller
+      operationId: listRanges
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LabTestTypeRangeDto"
+    post:
+      tags:
+      - lab-test-type-controller
+      operationId: createRange
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestTypeRangeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestTypeRangeDto"
+  /api/v1/masterdata/items:
+    get:
+      tags:
+      - item-controller
+      operationId: list_13
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemDto"
+    post:
+      tags:
+      - item-controller
+      operationId: create_12
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemDto"
+  /api/v1/masterdata/item-suppliers:
+    get:
+      tags:
+      - item-supplier-controller
+      operationId: list_14
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemSupplierDto"
+    post:
+      tags:
+      - item-supplier-controller
+      operationId: create_13
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemSupplierRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemSupplierDto"
+  /api/v1/masterdata/item-medicine-coefficients:
+    get:
+      tags:
+      - item-medicine-coefficient-controller
+      operationId: list_15
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemMedicineCoefficientDto"
+    post:
+      tags:
+      - item-medicine-coefficient-controller
+      operationId: create_14
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemMedicineCoefficientRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ItemMedicineCoefficientDto"
+  /api/v1/masterdata/insurance-providers:
+    get:
+      tags:
+      - insurance-provider-controller
+      operationId: list_16
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InsuranceProviderDto"
+    post:
+      tags:
+      - insurance-provider-controller
+      operationId: create_15
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsuranceProviderRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsuranceProviderDto"
+  /api/v1/masterdata/insurance-providers/uid/{providerUid}/plans:
+    get:
+      tags:
+      - insurance-plan-controller
+      operationId: listByProvider
+      parameters:
+      - name: providerUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InsurancePlanDto"
+    post:
+      tags:
+      - insurance-plan-controller
+      operationId: createUnderProvider
+      parameters:
+      - name: providerUid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsurancePlanRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InsurancePlanDto"
+  /api/v1/masterdata/diagnosis-types:
+    get:
+      tags:
+      - diagnosis-type-controller
+      operationId: list_19
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DiagnosisTypeDto"
+    post:
+      tags:
+      - diagnosis-type-controller
+      operationId: create_16
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiagnosisTypeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DiagnosisTypeDto"
+  /api/v1/masterdata/currencies:
+    get:
+      tags:
+      - md-currency-controller
+      operationId: list_20
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MdCurrencyDto"
+    post:
+      tags:
+      - md-currency-controller
+      operationId: create_17
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MdCurrencyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MdCurrencyDto"
+  /api/v1/masterdata/clinics:
+    get:
+      tags:
+      - clinic-controller
+      operationId: list_21
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ClinicDto"
+    post:
+      tags:
+      - clinic-controller
+      operationId: create_19
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClinicRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClinicDto"
+  /api/v1/masterdata/clinics/uid/{clinicUid}/clinicians:
+    get:
+      tags:
+      - clinic-clinician-controller
+      operationId: listClinicians
+      parameters:
+      - name: clinicUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+    post:
+      tags:
+      - clinic-clinician-controller
+      operationId: affiliateClinician
+      parameters:
+      - name: clinicUid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AffiliateClinicianRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+  /api/v1/masterdata/beds:
+    get:
+      tags:
+      - ward-bed-controller
+      operationId: list_22
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WardBedDto"
+    post:
+      tags:
+      - ward-bed-controller
+      operationId: create_20
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WardBedRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WardBedDto"
+  /api/v1/iam/users:
+    get:
+      tags:
+      - user-admin-controller
+      operationId: list_23
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummaryResponse"
+    post:
+      tags:
+      - user-admin-controller
+      operationId: create_21
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/iam/roles:
+    get:
+      tags:
+      - role-admin-controller
+      operationId: list_24
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleResponse"
+    post:
+      tags:
+      - role-admin-controller
+      operationId: create_22
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+  /api/v1/auth/token:
+    post:
+      tags:
+      - auth-controller
+      operationId: token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+  /api/v1/auth/token/revoke:
+    post:
+      tags:
+      - auth-controller
+      operationId: revoke
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/token/refresh:
+    post:
+      tags:
+      - auth-controller
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+  /api/v1/shared/business-days/current:
+    get:
+      tags:
+      - business-day-admin-controller
+      operationId: current
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BusinessDayDto"
+  /api/v1/masterdata/supplier-item-prices/by-supplier/{supplierUid}:
+    get:
+      tags:
+      - supplier-item-price-controller
+      operationId: listBySupplier
+      parameters:
+      - name: supplierUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SupplierItemPriceListDto"
+  /api/v1/masterdata/service-prices/resolve:
+    get:
+      tags:
+      - service-price-controller
+      operationId: resolve
+      parameters:
+      - name: planUid
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: kind
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - REGISTRATION
+          - CONSULTATION
+          - LAB_TEST
+          - MEDICINE
+          - PROCEDURE
+          - RADIOLOGY
+          - WARD
+      - name: serviceUid
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: currency
+        in: query
+        required: false
+        schema:
+          type: string
+          default: TZS
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ServicePriceResult"
+  /api/v1/masterdata/item-suppliers/by-item/{itemUid}:
+    get:
+      tags:
+      - item-supplier-controller
+      operationId: listByItem
+      parameters:
+      - name: itemUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemSupplierDto"
+  /api/v1/masterdata/item-medicine-coefficients/by-medicine/{medicineUid}:
+    get:
+      tags:
+      - item-medicine-coefficient-controller
+      operationId: listByMedicine
+      parameters:
+      - name: medicineUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemMedicineCoefficientDto"
+  /api/v1/masterdata/insurance-plans:
+    get:
+      tags:
+      - insurance-plan-controller
+      operationId: list_17
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InsurancePlanDto"
+  /api/v1/masterdata/document-types:
+    get:
+      tags:
+      - md-document-type-controller
+      operationId: list_18
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MdDocumentTypeDto"
+  /api/v1/masterdata/clinicians/by-role/CLINICIAN:
+    get:
+      tags:
+      - clinic-clinician-controller
+      operationId: listAllClinicians
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+  /api/v1/iam/privileges:
+    get:
+      tags:
+      - privilege-query-controller
+      operationId: list_25
+      parameters:
+      - name: roleName
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrivilegeResponse"
+  /api/v1/masterdata/service-prices/uid/{uid}:
+    delete:
+      tags:
+      - service-price-controller
+      operationId: delete_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/masterdata/clinics/uid/{clinicUid}/clinicians/{userUid}:
+    delete:
+      tags:
+      - clinic-clinician-controller
+      operationId: removeAffiliation
+      parameters:
+      - name: clinicUid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: userUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+components:
+  schemas:
+    WardRequest:
+      required:
+      - code
+      - name
+      - wardCategoryUid
+      - wardTypeUid
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        noOfBeds:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+        wardCategoryUid:
+          type: string
+        wardTypeUid:
+          type: string
+    WardDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        noOfBeds:
+          type: integer
+          format: int32
+        active:
+          type: boolean
+        wardCategoryUid:
+          type: string
+        wardTypeUid:
+          type: string
+    WardTypeRequest:
+      required:
+      - code
+      - name
+      - price
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        active:
+          type: boolean
+    WardTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        active:
+          type: boolean
+    WardCategoryRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+    WardCategoryDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+    TheatreRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        active:
+          type: boolean
+    TheatreDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        active:
+          type: boolean
+    SupplierRequest:
+      required:
+      - code
+      - contactName
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        contactName:
+          type: string
+        active:
+          type: boolean
+        tin:
+          type: string
+        vrn:
+          type: string
+        termsOfContract:
+          type: string
+        physicalAddress:
+          type: string
+        postCode:
+          type: string
+        postAddress:
+          type: string
+        telephone:
+          type: string
+        mobile:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        bankAccountName:
+          type: string
+        bankPhysicalAddress:
+          type: string
+        bankPostCode:
+          type: string
+        bankPostAddress:
+          type: string
+        bankName:
+          type: string
+        bankAccountNo:
+          type: string
+    SupplierDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        contactName:
+          type: string
+        active:
+          type: boolean
+        tin:
+          type: string
+        vrn:
+          type: string
+        termsOfContract:
+          type: string
+        physicalAddress:
+          type: string
+        postCode:
+          type: string
+        postAddress:
+          type: string
+        telephone:
+          type: string
+        mobile:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        bankAccountName:
+          type: string
+        bankPhysicalAddress:
+          type: string
+        bankPostCode:
+          type: string
+        bankPostAddress:
+          type: string
+        bankName:
+          type: string
+        bankAccountNo:
+          type: string
+    SupplierItemPriceRequest:
+      required:
+      - itemUid
+      - price
+      - supplierUid
+      type: object
+      properties:
+        price:
+          type: number
+        terms:
+          type: string
+        active:
+          type: boolean
+        supplierUid:
+          type: string
+        itemUid:
+          type: string
+    SupplierItemPriceDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        price:
+          type: number
+        terms:
+          type: string
+        active:
+          type: boolean
+        supplierUid:
+          type: string
+        itemUid:
+          type: string
+    StoreRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    StoreDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    RadiologyTypeRequest:
+      required:
+      - code
+      - name
+      - price
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    RadiologyTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    ProcedureTypeRequest:
+      required:
+      - code
+      - name
+      - price
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    ProcedureTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    PharmacyRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    PharmacyDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    MedicineRequest:
+      required:
+      - category
+      - code
+      - name
+      - price
+      - type
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    MedicineDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        category:
+          type: string
+        active:
+          type: boolean
+    LabTestTypeRequest:
+      required:
+      - code
+      - name
+      - price
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    LabTestTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        uom:
+          type: string
+        active:
+          type: boolean
+    LabTestTypeRangeRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          type: string
+    LabTestTypeRangeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        labTestTypeUid:
+          type: string
+        name:
+          type: string
+    ItemRequest:
+      required:
+      - code
+      - costPriceVatIncl
+      - name
+      - packSize
+      - sellingPriceVatIncl
+      - vat
+      type: object
+      properties:
+        code:
+          type: string
+        barcode:
+          type: string
+        name:
+          type: string
+        shortName:
+          type: string
+        commonName:
+          type: string
+        vat:
+          type: number
+        uom:
+          type: string
+        packSize:
+          type: number
+        category:
+          type: string
+        costPriceVatIncl:
+          type: number
+        sellingPriceVatIncl:
+          type: number
+        active:
+          type: boolean
+        ingredients:
+          type: string
+    ItemDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        barcode:
+          type: string
+        name:
+          type: string
+        shortName:
+          type: string
+        commonName:
+          type: string
+        vat:
+          type: number
+        uom:
+          type: string
+        packSize:
+          type: number
+        category:
+          type: string
+        costPriceVatIncl:
+          type: number
+        sellingPriceVatIncl:
+          type: number
+        active:
+          type: boolean
+        ingredients:
+          type: string
+    ItemSupplierRequest:
+      required:
+      - costPriceVatExcl
+      - costPriceVatIncl
+      - itemUid
+      - supplierUid
+      type: object
+      properties:
+        itemUid:
+          type: string
+        supplierUid:
+          type: string
+        costPriceVatIncl:
+          type: number
+        costPriceVatExcl:
+          type: number
+        active:
+          type: boolean
+    ItemSupplierDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        itemUid:
+          type: string
+        supplierUid:
+          type: string
+        costPriceVatIncl:
+          type: number
+        costPriceVatExcl:
+          type: number
+        active:
+          type: boolean
+    ItemMedicineCoefficientRequest:
+      required:
+      - itemQty
+      - itemUid
+      - medicineQty
+      - medicineUid
+      type: object
+      properties:
+        itemUid:
+          type: string
+        medicineUid:
+          type: string
+        itemQty:
+          type: number
+        medicineQty:
+          type: number
+    ItemMedicineCoefficientDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        itemUid:
+          type: string
+        medicineUid:
+          type: string
+        coefficient:
+          type: number
+        itemQty:
+          type: number
+        medicineQty:
+          type: number
+    InsuranceProviderRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        website:
+          type: string
+        active:
+          type: boolean
+    InsuranceProviderDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        website:
+          type: string
+        active:
+          type: boolean
+    InsurancePlanRequest:
+      required:
+      - code
+      - insuranceProviderUid
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+        insuranceProviderUid:
+          type: string
+    InsurancePlanDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+        insuranceProviderUid:
+          type: string
+    DiagnosisTypeRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+    DiagnosisTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        active:
+          type: boolean
+    CompanyProfileRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        contactName:
+          type: string
+        tin:
+          type: string
+        vrn:
+          type: string
+        physicalAddress:
+          type: string
+        postCode:
+          type: string
+        postAddress:
+          type: string
+        telephone:
+          type: string
+        mobile:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        website:
+          type: string
+        bankAccountName:
+          type: string
+        bankPhysicalAddress:
+          type: string
+        bankPostCode:
+          type: string
+        bankPostAddress:
+          type: string
+        bankName:
+          type: string
+        bankAccountNo:
+          type: string
+        bankAccountName2:
+          type: string
+        bankPhysicalAddress2:
+          type: string
+        bankPostCode2:
+          type: string
+        bankPostAddress2:
+          type: string
+        bankName2:
+          type: string
+        bankAccountNo2:
+          type: string
+        bankAccountName3:
+          type: string
+        bankPhysicalAddress3:
+          type: string
+        bankPostCode3:
+          type: string
+        bankPostAddress3:
+          type: string
+        bankName3:
+          type: string
+        bankAccountNo3:
+          type: string
+        quotationNotes:
+          type: string
+        salesInvoiceNotes:
+          type: string
+        registrationFee:
+          type: number
+        publicPath:
+          type: string
+        employeePrefix:
+          type: string
+    CompanyProfileDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+        contactName:
+          type: string
+        tin:
+          type: string
+        vrn:
+          type: string
+        physicalAddress:
+          type: string
+        postCode:
+          type: string
+        postAddress:
+          type: string
+        telephone:
+          type: string
+        mobile:
+          type: string
+        email:
+          type: string
+        fax:
+          type: string
+        website:
+          type: string
+        bankAccountName:
+          type: string
+        bankPhysicalAddress:
+          type: string
+        bankPostCode:
+          type: string
+        bankPostAddress:
+          type: string
+        bankName:
+          type: string
+        bankAccountNo:
+          type: string
+        bankAccountName2:
+          type: string
+        bankPhysicalAddress2:
+          type: string
+        bankPostCode2:
+          type: string
+        bankPostAddress2:
+          type: string
+        bankName2:
+          type: string
+        bankAccountNo2:
+          type: string
+        bankAccountName3:
+          type: string
+        bankPhysicalAddress3:
+          type: string
+        bankPostCode3:
+          type: string
+        bankPostAddress3:
+          type: string
+        bankName3:
+          type: string
+        bankAccountNo3:
+          type: string
+        quotationNotes:
+          type: string
+        salesInvoiceNotes:
+          type: string
+        registrationFee:
+          type: number
+        publicPath:
+          type: string
+        employeePrefix:
+          type: string
+    ClinicRequest:
+      required:
+      - code
+      - consultationFee
+      - name
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        consultationFee:
+          type: number
+        active:
+          type: boolean
+    ClinicDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        consultationFee:
+          type: number
+        active:
+          type: boolean
+    WardBedRequest:
+      required:
+      - "no"
+      - wardUid
+      type: object
+      properties:
+        "no":
+          type: string
+        status:
+          type: string
+        active:
+          type: boolean
+        wardUid:
+          type: string
+    WardBedDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        "no":
+          type: string
+        status:
+          type: string
+        active:
+          type: boolean
+        wardUid:
+          type: string
+    UpdateUserRequest:
+      required:
+      - firstName
+      - lastName
+      - nickname
+      type: object
+      properties:
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        password:
+          maxLength: 50
+          minLength: 0
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+    UserResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        userNo:
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        username:
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    AssignRolesRequest:
+      required:
+      - roleNames
+      type: object
+      properties:
+        roleNames:
+          type: array
+          items:
+            type: string
+    UpdateRoleRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 80
+          minLength: 0
+          type: string
+    RoleResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        privilegeCodes:
+          type: array
+          items:
+            type: string
+    ReplaceRolePrivilegesRequest:
+      required:
+      - privilegeCodes
+      type: object
+      properties:
+        privilegeCodes:
+          type: array
+          items:
+            type: string
+    BusinessDayDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        businessDate:
+          type: string
+          format: date
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+    ServicePriceRequest:
+      required:
+      - amount
+      - kind
+      type: object
+      properties:
+        planUid:
+          type: string
+        kind:
+          type: string
+          enum:
+          - REGISTRATION
+          - CONSULTATION
+          - LAB_TEST
+          - MEDICINE
+          - PROCEDURE
+          - RADIOLOGY
+          - WARD
+        serviceUid:
+          type: string
+        currency:
+          type: string
+        amount:
+          type: number
+        covered:
+          type: boolean
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+        active:
+          type: boolean
+    ServicePriceDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        planUid:
+          type: string
+        kind:
+          type: string
+          enum:
+          - REGISTRATION
+          - CONSULTATION
+          - LAB_TEST
+          - MEDICINE
+          - PROCEDURE
+          - RADIOLOGY
+          - WARD
+        serviceUid:
+          type: string
+        currency:
+          type: string
+        amount:
+          type: number
+        covered:
+          type: boolean
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+        active:
+          type: boolean
+    MdCurrencyRequest:
+      required:
+      - code
+      - name
+      type: object
+      properties:
+        code:
+          maxLength: 3
+          minLength: 3
+          type: string
+        name:
+          type: string
+        defaultCurrency:
+          type: boolean
+    MdCurrencyDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        defaultCurrency:
+          type: boolean
+    AffiliateClinicianRequest:
+      required:
+      - userUid
+      type: object
+      properties:
+        userUid:
+          type: string
+    CreateUserRequest:
+      required:
+      - firstName
+      - lastName
+      - nickname
+      - password
+      - username
+      type: object
+      properties:
+        username:
+          maxLength: 50
+          minLength: 3
+          type: string
+        password:
+          maxLength: 50
+          minLength: 4
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        roleNames:
+          type: array
+          items:
+            type: string
+    CreateRoleRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 80
+          minLength: 0
+          type: string
+    TokenRequest:
+      required:
+      - password
+      - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+        privileges:
+          type: array
+          items:
+            type: string
+    RevokeRequest:
+      required:
+      - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    RefreshRequest:
+      required:
+      - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    SupplierItemPriceListDto:
+      type: object
+      properties:
+        supplier:
+          $ref: "#/components/schemas/SupplierDto"
+        prices:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupplierItemPriceDto"
+    ServicePriceResult:
+      type: object
+      properties:
+        amount:
+          type: number
+        covered:
+          type: boolean
+        planUid:
+          type: string
+        kind:
+          type: string
+          enum:
+          - REGISTRATION
+          - CONSULTATION
+          - LAB_TEST
+          - MEDICINE
+          - PROCEDURE
+          - RADIOLOGY
+          - WARD
+        serviceUid:
+          type: string
+        currency:
+          type: string
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+    MdDocumentTypeDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        kind:
+          type: string
+        prefix:
+          type: string
+    UserSummary:
+      type: object
+      properties:
+        uid:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+    UserSummaryResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        userNo:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+    PrivilegeResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        category:
+          type: string
