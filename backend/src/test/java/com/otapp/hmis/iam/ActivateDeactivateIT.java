@@ -47,7 +47,16 @@ class ActivateDeactivateIT extends AbstractIntegrationTest {
 
         JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
         String uid = created.get("uid").asText();
-        assertThat(created.get("enabled").asBoolean()).isTrue();
+        // CR-21: newly created users are inactive (legacy-faithful). Activate first so the
+        // subsequent deactivate is a real true->false transition.
+        assertThat(created.get("enabled").asBoolean()).isFalse();
+
+        mockMvc.perform(put("/api/v1/iam/users/uid/" + uid)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"firstName\":\"Toggle\",\"lastName\":\"User\",\"nickname\":\"toggleuser\"," +
+                                "\"password\":\"\",\"enabled\":true,\"roleNames\":[]}"))
+                .andExpect(status().isOk());
 
         // Deactivate
         MvcResult deactivateResult = mockMvc.perform(put("/api/v1/iam/users/uid/" + uid)
@@ -116,6 +125,14 @@ class ActivateDeactivateIT extends AbstractIntegrationTest {
 
         String uid = objectMapper.readTree(createResult.getResponse().getContentAsString())
                 .get("uid").asText();
+
+        // CR-21: created inactive — activate so login works, then prove deactivate blocks it.
+        mockMvc.perform(put("/api/v1/iam/users/uid/" + uid)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"firstName\":\"Locked\",\"lastName\":\"User\",\"nickname\":\"lockeduser\"," +
+                                "\"password\":\"\",\"enabled\":true,\"roleNames\":[]}"))
+                .andExpect(status().isOk());
 
         // Verify login works
         mockMvc.perform(post("/api/v1/auth/token")

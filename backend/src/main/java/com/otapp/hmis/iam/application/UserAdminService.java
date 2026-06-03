@@ -263,6 +263,8 @@ public class UserAdminService {
                 c.activate();
                 clinicianRepository.save(c);
             } else {
+                // Reactivate: refresh code+names from current user (07-DECISIONS-RATIFIED §C).
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 clinicianRepository.save(existing.get());
             }
@@ -282,6 +284,7 @@ public class UserAdminService {
                 n.activate();
                 nurseRepository.save(n);
             } else {
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 nurseRepository.save(existing.get());
             }
@@ -301,6 +304,7 @@ public class UserAdminService {
                 p.activate();
                 pharmacistRepository.save(p);
             } else {
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 pharmacistRepository.save(existing.get());
             }
@@ -320,6 +324,7 @@ public class UserAdminService {
                 c.activate();
                 cashierRepository.save(c);
             } else {
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 cashierRepository.save(existing.get());
             }
@@ -339,6 +344,7 @@ public class UserAdminService {
                 sp.activate();
                 storePersonRepository.save(sp);
             } else {
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 storePersonRepository.save(existing.get());
             }
@@ -358,6 +364,7 @@ public class UserAdminService {
                 m.activate();
                 managementRepository.save(m);
             } else {
+                existing.get().copyFrom(user);
                 existing.get().activate();
                 managementRepository.save(existing.get());
             }

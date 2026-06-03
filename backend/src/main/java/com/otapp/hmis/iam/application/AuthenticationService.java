@@ -94,7 +94,10 @@ public class AuthenticationService {
      *   <li>Found + usable → rotate: old.replacedByUid=new.uid, old.revokedAt=now, issue new pair.
      * </ol>
      */
-    @Transactional
+    // noRollbackFor: the reuse branch revokes ALL the user's live tokens and THEN throws. Without this,
+    // the thrown RuntimeException would roll back the security-critical revoke-all, leaving sibling tokens
+    // live (caught by RefreshReuseIT). The exception still propagates to the handler → 401.
+    @Transactional(noRollbackFor = TokenReuseException.class)
     public TokenResponse refresh(String rawRefreshToken) {
         String hash = sha256(rawRefreshToken);
         RefreshToken stored = refreshTokenRepository.findByTokenHash(hash)

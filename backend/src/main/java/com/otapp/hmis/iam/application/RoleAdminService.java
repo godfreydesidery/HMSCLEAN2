@@ -33,11 +33,14 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Reproduces the legacy {@code UserServiceImpl.saveRole} and {@code UserResource.java}
  * role-management behaviour:
  * <ul>
- *   <li>Create: rejects the 15 reserved role names; sets {@code owner=ORGANIZATION}.
- *   <li>Update: same reserved-name guard; {@code owner} stays ORGANIZATION (cannot be changed).
+ *   <li>Create: rejects the 15 reserved role names (case-insensitive, legacy
+ *       {@code equalsIgnoreCase}); sets {@code owner=ORGANIZATION}.
+ *   <li>Update: rejects editing any reserved role (legacy {@code UserResource.java:295-316}
+ *       guards the existing role's name); additionally rejects renaming TO a reserved name
+ *       (hardening per §E). Both checks are case-insensitive. {@code owner} stays ORGANIZATION.
  *   <li>Delete: rejects role named {@code ROOT} (legacy: UserResource.java:323).
- *   <li>Replace privileges: full-replace semantics; {@code "ALL"} shortcut grants all 35 codes
- *       (legacy: UserResource.java:444-445).
+ *   <li>Replace privileges: full-replace semantics; every entry is an explicit privilege code
+ *       resolved via {@link PrivilegeRepository#findByCode} (CR-22: "ALL" shortcut dropped).
  * </ul>
  *
  * <p>CR-14: the reserved-name guard reproduces the legacy 15-name list verbatim (does NOT include
@@ -50,13 +53,19 @@ public class RoleAdminService {
 
     /**
      * Reserved role names (15). Verbatim from legacy {@code UserResource.java:228/285}.
-     * Comparison is case-sensitive string equality (legacy behaviour — no trim/uppercase).
+     * Comparison is case-INSENSITIVE (legacy uses {@code equalsIgnoreCase} — see
+     * UserResource.java:217,239,296,302). Stored in uppercase for normalised matching.
      */
     private static final Set<String> RESERVED_NAMES = Set.of(
             "ROOT", "ADMIN", "RECEPTION", "CASHIER", "HUMAN-RESOURCE",
             "PROCUREMENT", "MANAGER", "ACCOUNTANT", "STORE-PERSON",
             "CLINICIAN", "NURSE", "PHARMACIST", "LABORATORIST",
             "RADIOGRAPHER", "RADIOLOGIST");
+
+    /** Returns true when {@code name} matches any reserved name case-insensitively. */
+    private static boolean isReserved(String name) {
+        return RESERVED_NAMES.stream().anyMatch(r -> r.equalsIgnoreCase(name));
+    }
 
     private static final String ROOT_ROLE = "ROOT";
 
@@ -72,7 +81,7 @@ public class RoleAdminService {
 
     @Transactional
     public RoleResponse create(CreateRoleRequest request) {
-        if (RESERVED_NAMES.contains(request.name())) {
+        if (isReserved(request.name())) {
             throw new BusinessRuleException("Role name '" + request.name() + "' is reserved");
         }
         if (roleRepository.findByName(request.name()).isPresent()) {
@@ -111,7 +120,13 @@ public class RoleAdminService {
     @Transactional
     public RoleResponse update(String uid, UpdateRoleRequest request) {
         Role role = requireRole(uid);
-        if (RESERVED_NAMES.contains(request.name())) {
+        // Legacy guard (UserResource.java:295-316): cannot edit a reserved/system role at all.
+        if (isReserved(role.getName())) {
+            throw new BusinessRuleException(
+                    "Role '" + role.getName() + "' is a system role and cannot be modified");
+        }
+        // Hardening (§E): additionally reject renaming TO a reserved name.
+        if (isReserved(request.name())) {
             throw new BusinessRuleException("Role name '" + request.name() + "' is reserved");
         }
         // If name changed, check uniqueness
@@ -130,24 +145,28 @@ public class RoleAdminService {
     }
 
     // -----------------------------------------------------------------------
-    // Replace privileges (full-replace, decision #4 + CR-15)
+    // Replace privileges (full-replace, decision #4 + CR-15 + CR-22)
     // -----------------------------------------------------------------------
 
+    /**
+     * Full-replace the privilege set for a role.
+     *
+     * <p>CR-22: the {@code "ALL"} shortcut has been dropped. Every entry in
+     * {@code privilegeCodes} must be an explicit, known privilege code; unknown codes are
+     * rejected with a validation error. This avoids the unverified over-grant semantics of the
+     * legacy per-object {@code "ALL"} matrix (which was not reproduced — the modern API uses a
+     * flat 35-code list). Documented modern simplification (07-DECISIONS-RATIFIED §E).
+     */
     @Transactional
     public RoleResponse replacePrivileges(String uid, ReplaceRolePrivilegesRequest request) {
         Role role = requireRole(uid);
 
-        Set<Privilege> newPrivileges;
-        if (request.privilegeCodes().contains("ALL")) {
-            // "ALL" shortcut: grant every seeded privilege (legacy UserResource.java:444-445)
-            newPrivileges = new HashSet<>(privilegeRepository.findAll());
-        } else {
-            newPrivileges = new HashSet<>();
-            for (String code : request.privilegeCodes()) {
-                Privilege p = privilegeRepository.findByCode(code)
-                        .orElseThrow(() -> new NotFoundException("Privilege not found: " + code));
-                newPrivileges.add(p);
-            }
+        Set<Privilege> newPrivileges = new HashSet<>();
+        for (String code : request.privilegeCodes()) {
+            // `code` is effectively final inside the enhanced-for body — safe for lambda capture.
+            Privilege p = privilegeRepository.findByCode(code)
+                    .orElseThrow(() -> new ValidationException("Unknown privilege code: " + code));
+            newPrivileges.add(p);
         }
         role.replacePrivileges(newPrivileges);
         role = roleRepository.save(role);
@@ -204,6 +223,12 @@ public class RoleAdminService {
     private static class ConflictException extends HmisException {
         ConflictException(String detail) {
             super(ErrorCode.CONFLICT, detail);
+        }
+    }
+
+    private static class ValidationException extends HmisException {
+        ValidationException(String detail) {
+            super(ErrorCode.VALIDATION, detail);
         }
     }
 }

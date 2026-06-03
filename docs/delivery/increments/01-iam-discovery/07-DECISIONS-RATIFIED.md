@@ -74,3 +74,27 @@ synthesized spec is dropped (no ProviderProfile).
 - §7 tests: drop `ProviderProfileIT`; **add** `PersonnelExtensionLifecycleIT` (create user with CLINICIAN +
   CASHIER roles → both extensions created & active; remove a role → that extension deactivated; one-per-type
   enforced) and `ActivateDeactivateIT` / `UserDeleteIT` for decision #3.
+
+## E. Post-review resolutions (2026-06-03, after the 3-lens adversarial review)
+
+The review (verdicts: code-reviewer REQUEST_CHANGES, qa REQUEST_CHANGES, security APPROVE_WITH_NITS;
+full findings in `08-review-code.md`, `09-review-qa.md`, `10-review-security.md`) surfaced real
+exact-process drift and test gaps the green build masked. Resolutions:
+
+- **CR-21 (new-user enabled default):** REPRODUCE LEGACY — new users are created **inactive**
+  (`active=false`; legacy `User.java:69` + `saveUser` create branch never activates). Admin enables via
+  the (now real) activate endpoint. Tests that log in as a freshly-created user must activate first.
+- **CR-22 ('ALL' privilege shortcut):** DROP the shortcut. The legacy object/operation matrix that gave
+  `'ALL'` meaning was NOT reproduced (modern uses 35 flat codes), so `replacePrivileges` takes an explicit
+  list of privilege codes only. Avoids the unverified over-grant. Documented modern simplification.
+- **Reserved-role guard (code HIGH ×2):** make comparison **case-insensitive** (legacy `equalsIgnoreCase`)
+  on BOTH create and update; on update guard the **existing** role's name (legacy blocks editing a reserved
+  role), and additionally reject renaming TO a reserved name (documented hardening). Fix the wrong Javadoc.
+- **D-8 (cost-12 admin re-hash):** IMPLEMENT in V5 with the real cost-12 hash of the dev password.
+- **Test gaps (qa BLOCKER/HIGH):** add real positive-path personnel-lifecycle coverage, all-live-tokens-
+  revoked assertion, negative-auth (403/401) for user/role update+delete, blank-vs-non-blank password,
+  userNo immutability, sequential `USR-000-002`, audit_logs-row-per-mutation, revoke cross-user 403,
+  genuine expired-token, stronger CORS assertion, root-delete guard.
+- **Semgrep CI path (qa MEDIUM):** fix the wrong path reference in `ci.yml`.
+- **NOT a bug:** qa flagged `Management` triggering on `MANAGER` not `MANAGEMENT` — that is the **ratified
+  AMB-2 fix**, kept as-is.

@@ -38,8 +38,15 @@ public class User extends AuditableEntity {
     @Column(name = "password_hash", length = 100, nullable = false)
     private String passwordHash;
 
+    /**
+     * CR-21 (07-DECISIONS-RATIFIED §E): new users start INACTIVE, matching legacy
+     * {@code User.java:69} where {@code active} defaulted {@code false} and the saveUser
+     * create branch never set it to {@code true}. An admin must activate via the update
+     * endpoint before the user can log in. The seeded {@code admin} row is not affected —
+     * V2 sets {@code enabled=TRUE} explicitly via SQL.
+     */
     @Column(name = "enabled", nullable = false)
-    private boolean enabled = true;
+    private boolean enabled = false;
 
     // -----------------------------------------------------------------------
     // Increment-01: identity columns (legacy User.java: code/firstName/...)
