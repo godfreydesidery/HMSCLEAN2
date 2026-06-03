@@ -68,6 +68,12 @@ public class PatientRegistrationProcess {
     /** Stable audit entity-type string for Consultation (ADR-0007). */
     private static final String AUDIT_ENTITY_CONSULTATION = "registration.Consultation";
 
+    /** Stable audit entity-type string for Registration (ADR-0007 §182 scopes it in). */
+    private static final String AUDIT_ENTITY_REGISTRATION = "registration.Registration";
+
+    /** Stable audit entity-type string for Visit (ADR-0007 §182 scopes it in). */
+    private static final String AUDIT_ENTITY_VISIT = "registration.Visit";
+
     private final PatientRepository patientRepository;
     private final RegistrationRepository registrationRepository;
     private final VisitRepository visitRepository;
@@ -181,9 +187,12 @@ public class PatientRegistrationProcess {
         Visit visit = new Visit(patient, VisitSequence.FIRST, ctx.dayUid());
         visitRepository.save(visit);
 
-        // ---- Step 8: Audit (build-spec §2.3 step 8, ADR-0007) --------------------------
-        // Audit entityType strings per spec: AUDIT_ENTITY_PATIENT
+        // ---- Step 8: Audit Patient + Registration + Visit CREATE (ADR-0007 §182) -------
         auditRecorder.record(AUDIT_ENTITY_PATIENT, patient.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+        auditRecorder.record(AUDIT_ENTITY_REGISTRATION, registration.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+        auditRecorder.record(AUDIT_ENTITY_VISIT, visit.getUid(),
                 AuditAction.CREATE, ctx.actorUsername());
 
         return patientMapper.toDto(patient);
@@ -350,9 +359,15 @@ public class PatientRegistrationProcess {
 
         Patient patient = requirePatient(uid);
 
-        // DEFERRED-ENFORCEMENT (CR-19-style): the admissions guard from PatientResource.java:366-367
-        // ("Could not change. Patient has an ongoing medical operation") is a no-op stub in inc-03.
-        // When inc-06 lands, add: existsByPatientAndActiveAdmission check → InvalidPatientOperationException.
+        // Open-work guard (PatientResource.java:325-357). The CONSULTATION leg is LIVE in inc-03
+        // (sendToDoctor creates PENDING consultations) and MUST be enforced (review M1). The
+        // NonConsultation order-clearance leg (:335-353) and the admission leg (:354-357) reference
+        // entities that arrive in inc-05/06 → DEFERRED-ENFORCEMENT no-op stubs (documented).
+        if (consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)) {
+            // verbatim legacy message — note the trailing " s" typo (sic, PatientResource.java:356)
+            throw new InvalidPatientOperationException(
+                    "Could not change. Patient has an ongoing medical operation s");
+        }
 
         if (req.paymentType() == PaymentType.INSURANCE
                 && (req.insurancePlanUid() == null
@@ -475,6 +490,8 @@ public class PatientRegistrationProcess {
         // PatientServiceImpl.java:499-512 (subsequent visit creation)
         Visit visit = new Visit(patient, VisitSequence.SUBSEQUENT, ctx.dayUid());
         visitRepository.save(visit);
+        auditRecorder.record(AUDIT_ENTITY_VISIT, visit.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
 
         // Step 7 — persist Consultation (PENDING)
         // Consultation.java constructor: status defaults to PENDING (build-spec §3.2 step 7)

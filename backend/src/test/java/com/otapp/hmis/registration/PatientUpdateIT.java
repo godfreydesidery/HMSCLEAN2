@@ -75,6 +75,8 @@ class PatientUpdateIT extends AbstractIntegrationTest {
         Patient p = patientRepository.findByUid(uid).orElseThrow();
         assertThat(p.getLastName()).isEqualTo("Updated");
         assertThat(p.getKinFullName()).isEqualTo("Mary Kin");
+        // searchKey is recomputed from the new name (PatientServiceImpl.java:706-707)
+        assertThat(p.getSearchKey()).contains("Updated").contains("Johnny");
     }
 
     // ---- patient-type flips ----
@@ -94,11 +96,8 @@ class PatientUpdateIT extends AbstractIntegrationTest {
     void changePatientType_blockedByActiveConsultation_422() throws Exception {
         String uid = registerCash("FLIP-BLK");
         Patient p = patientRepository.findByUid(uid).orElseThrow();
-        // Seed a PENDING consultation directly (loose placeholder uids; column VARCHAR(26))
-        consultationRepository.save(new Consultation(
-                p, null, "CLINIC0000000000000000001", "CLINICIAN00000000000001",
-                "BILL000000000000000000001", PaymentType.CASH, false,
-                businessDayService.currentUid()));
+        // Seed a PENDING consultation directly (saveAndFlush so it's visible to the endpoint's tx)
+        seedPendingConsultation(p);
 
         mockMvc.perform(patch(PATIENTS_URL + "/uid/" + uid + "/patient-type")
                         .header("Authorization", "Bearer " + adminToken)
@@ -106,6 +105,30 @@ class PatientUpdateIT extends AbstractIntegrationTest {
                         .content("{\"targetType\":\"OUTSIDER\"}"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.type").value("urn:hmis:error:business-rule"));
+    }
+
+    @Test
+    void changePatientType_outsiderToOutpatient_200() throws Exception {
+        String uid = registerCash("FLIP-BACK");
+        // OUTPATIENT -> OUTSIDER then OUTSIDER -> OUTPATIENT (the reverse flip; REG-3 order check deferred)
+        mockMvc.perform(patch(PATIENTS_URL + "/uid/" + uid + "/patient-type")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetType\":\"OUTSIDER\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(PATIENTS_URL + "/uid/" + uid + "/patient-type")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetType\":\"OUTPATIENT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.type").value("OUTPATIENT"));
+    }
+
+    @Test
+    void changePatientType_deceasedTarget_422() throws Exception {
+        String uid = registerCash("FLIP-DEC");
+        mockMvc.perform(patch(PATIENTS_URL + "/uid/" + uid + "/patient-type")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"targetType\":\"DECEASED\"}"))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test
@@ -166,6 +189,30 @@ class PatientUpdateIT extends AbstractIntegrationTest {
         assertThat(patientRepository.findByUid(uid).orElseThrow().getInsurancePlanUid()).isNull();
     }
 
+    @Test
+    void changePaymentType_blockedByActiveConsultation_422() throws Exception {
+        // M1: the payment-type flip is blocked when the patient has a PENDING consultation
+        String uid = registerCash("PAY-BLK");
+        seedPendingConsultation(patientRepository.findByUid(uid).orElseThrow());
+
+        mockMvc.perform(patch(PATIENTS_URL + "/uid/" + uid + "/payment-type")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentType\":\"INSURANCE\",\"insurancePlanUid\":\"PLAN00000000000000000003\",\"membershipNo\":\"MEM-3\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:business-rule"));
+    }
+
+    @Test
+    void changePaymentType_returns403_withoutPatientUpdate() throws Exception {
+        // CR-03: the payment-type flip is now gated (legacy was ungated)
+        mockMvc.perform(patch(PATIENTS_URL + "/uid/SOMEUID/payment-type")
+                        .header("Authorization", "Bearer " + viewerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentType\":\"CASH\"}"))
+                .andExpect(status().isForbidden());
+    }
+
     // ---- RBAC / 404 ----
 
     @Test
@@ -207,6 +254,14 @@ class PatientUpdateIT extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
+    }
+
+    /** Seed a PENDING consultation for the patient (saveAndFlush so the endpoint tx sees it). */
+    private void seedPendingConsultation(Patient p) {
+        consultationRepository.saveAndFlush(new Consultation(
+                p, null, "CLINIC0000000000000000001", "CLINICIAN00000000000001",
+                "BILL000000000000000000001", PaymentType.CASH, false,
+                businessDayService.currentUid()));
     }
 
     private void ensureDayOpen() {

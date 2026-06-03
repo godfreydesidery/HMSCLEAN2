@@ -131,15 +131,18 @@ class RegisterPatientIT extends AbstractIntegrationTest {
         var bills = patientBillRepository.findByPatientUid(patientUid);
         assertThat(bills).hasSize(1);
         assertThat(bills.get(0).getKind().name()).isEqualTo("REGISTRATION");
+        assertThat(bills.get(0).getStatus().name()).isEqualTo("UNPAID"); // cash reg fee → UNPAID
         // The bill uid matches what Registration stores
         assertThat(bills.get(0).getUid()).isEqualTo(registration.getPatientBillUid());
 
-        // Audit log: CREATE row for the patient uid
-        var auditRows = auditLogRepository.findByEntityUidOrderByOccurredAtAsc(patientUid);
-        assertThat(auditRows)
-                .isNotEmpty()
+        // Audit log: CREATE rows for Patient + Registration + Visit (ADR-0007 §182)
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(patientUid))
                 .anyMatch(a -> "registration.Patient".equals(a.getEntityType())
                         && "CREATE".equals(a.getAction().name()));
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(registration.getUid()))
+                .anyMatch(a -> "registration.Registration".equals(a.getEntityType()));
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(visits.get(0).getUid()))
+                .anyMatch(a -> "registration.Visit".equals(a.getEntityType()));
     }
 
     // =========================================================================
@@ -181,6 +184,11 @@ class RegisterPatientIT extends AbstractIntegrationTest {
         var visits = visitRepository.findByPatientOrderByCreatedAtDesc(patient);
         assertThat(visits).hasSize(1);
         assertThat(visits.get(0).getSequence().name()).isEqualTo("FIRST");
+
+        // Insurance reg fee resolves to the covered plan price → COVERED bill
+        var insBills = patientBillRepository.findByPatientUid(patientUid);
+        assertThat(insBills).hasSize(1);
+        assertThat(insBills.get(0).getStatus().name()).isEqualTo("COVERED");
     }
 
     // =========================================================================

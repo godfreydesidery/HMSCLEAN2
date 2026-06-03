@@ -9,10 +9,11 @@
  * <ul>
  *   <li>{@code domain/} — JPA entities ({@code Patient, Registration, Visit, Consultation}),
  *       repositories, enums.  No public entity references cross module boundaries.</li>
- *   <li>{@code application/} — orchestration services ({@code PatientRegistrationProcess}),
- *       DTO records, MapStruct mappers, MR-number / searchKey infrastructure.</li>
- *   <li>{@code api/} — REST controllers ({@code PatientController}).</li>
- *   <li>{@code infrastructure/} — {@code MrNumberGenerator} wrapping {@code seq_mrno}.</li>
+     *   <li>{@code application/} — orchestration ({@code PatientRegistrationProcess}), read queries
+ *       ({@code PatientQueryService}), DTO records, MapStruct mappers, and the MR-number /
+ *       searchKey infrastructure ({@code MrNumberGenerator} wrapping {@code seq_mrno},
+ *       {@code SearchKeyBuilder}).</li>
+ *   <li>{@code web/} — REST controllers ({@code PatientController}).</li>
  * </ul>
  *
  * <p>Module dependencies (ADR-0008 §6, build-spec §7):
@@ -26,8 +27,8 @@
  *       ({@code ClinicianAffiliationService}).</li>
  * </ul>
  *
- * <p>Exposes a {@code registration :: api} named interface in a later chunk (C6/C7) for
- * inc-05 ({@code clinical}) consumption of PENDING-consultation reads.
+ * <p>A {@code registration :: api} named interface (PENDING-consultation reads for inc-05
+ * {@code clinical}, per CR-21/ADR-0008-R1) is DEFERRED to inc-05 when that consumer lands.
  *
  * <p>Legacy citations:
  * <ul>

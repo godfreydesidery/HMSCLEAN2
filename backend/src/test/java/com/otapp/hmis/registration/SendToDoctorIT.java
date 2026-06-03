@@ -17,6 +17,7 @@ import com.otapp.hmis.registration.domain.ConsultationStatus;
 import com.otapp.hmis.registration.domain.Patient;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.VisitRepository;
+import com.otapp.hmis.shared.audit.AuditLogRepository;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.NoDayOpenException;
 import com.otapp.hmis.support.AbstractIntegrationTest;
@@ -49,6 +50,7 @@ class SendToDoctorIT extends AbstractIntegrationTest {
     @Autowired ConsultationRepository consultationRepository;
     @Autowired VisitRepository visitRepository;
     @Autowired PatientBillRepository patientBillRepository;
+    @Autowired AuditLogRepository auditLogRepository;
     @Autowired BusinessDayService businessDayService;
 
     private String adminToken;
@@ -99,6 +101,11 @@ class SendToDoctorIT extends AbstractIntegrationTest {
         assertThat(visits).hasSize(2);
         assertThat(visits.stream().anyMatch(v -> v.getSequence().name().equals("SUBSEQUENT"))).isTrue();
         assertThat(consultationUid).isNotBlank();
+
+        // Audit: a Consultation CREATE row exists (ADR-0007)
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(consultationUid))
+                .anyMatch(a -> "registration.Consultation".equals(a.getEntityType())
+                        && "CREATE".equals(a.getAction().name()));
     }
 
     // =========================================================================
@@ -122,7 +129,8 @@ class SendToDoctorIT extends AbstractIntegrationTest {
         assertThat(bills)
                 .filteredOn(b -> b.getKind().name().equals("CONSULTATION"))
                 .isNotEmpty()
-                .allMatch(b -> b.getStatus() == BillStatus.NONE);
+                .allMatch(b -> b.getStatus() == BillStatus.NONE)
+                .allMatch(b -> b.amountValue().compareTo(java.math.BigDecimal.ZERO) == 0);
     }
 
     // =========================================================================
