@@ -48,7 +48,19 @@ public enum ErrorCode {
      * client can surface a specific "user must have CLINICIAN role" message.
      */
     CLINICIAN_ROLE_REQUIRED("urn:hmis:error:clinician-role-required",
-            HttpStatus.FORBIDDEN, "User must hold the CLINICIAN role for this operation");
+            HttpStatus.FORBIDDEN, "User must hold the CLINICIAN role for this operation"),
+
+    /**
+     * A {@code POST /api/v1/masterdata/company-profile} attempt when a company-profile row
+     * already exists (build-spec §1.5, CR-14).
+     *
+     * <p>The company-profile is a singleton: exactly one row is allowed. A second POST is
+     * rejected with 409 rather than silently replacing the existing row (improvement over
+     * legacy's {@code deleteAll()+keepOne} — CR-14 ratified).
+     * HTTP 409 Conflict.
+     */
+    COMPANY_PROFILE_EXISTS("urn:hmis:error:company-profile-exists",
+            HttpStatus.CONFLICT, "A company profile already exists; use PUT to update it");
 
     private final String type;
     private final HttpStatus status;
