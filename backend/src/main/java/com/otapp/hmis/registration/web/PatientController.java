@@ -1,9 +1,12 @@
 package com.otapp.hmis.registration.web;
 
+import com.otapp.hmis.registration.application.PatientQueryService;
 import com.otapp.hmis.registration.application.PatientRegistrationProcess;
 import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
 import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
+import com.otapp.hmis.registration.application.dto.LastVisitDto;
 import com.otapp.hmis.registration.application.dto.PatientDto;
+import com.otapp.hmis.registration.application.dto.PatientSearchResult;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
 import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
 import com.otapp.hmis.shared.domain.BusinessDayService;
@@ -16,12 +19,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -51,7 +56,40 @@ import org.springframework.web.bind.annotation.RestController;
 public class PatientController {
 
     private final PatientRegistrationProcess registrationProcess;
+    private final PatientQueryService patientQueryService;
     private final BusinessDayService businessDayService;
+
+    /**
+     * Paginated patient search (build-spec §6). Reads are authenticated-only — NO privilege gate
+     * (CR-04 parity: legacy patient reads were ungated). Matches no/names/phone/membership.
+     *
+     * @param query optional case-insensitive substring (blank matches all)
+     * @param page  zero-based page index
+     * @param size  page size
+     */
+    @GetMapping
+    public PatientSearchResult search(
+            @RequestParam(name = "query", required = false, defaultValue = "") String query,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size) {
+        return patientQueryService.search(query, page, size);
+    }
+
+    /**
+     * Get a patient by uid (incl. lastVisitAt). Authenticated-only (CR-04). 404 if absent.
+     */
+    @GetMapping("/uid/{uid}")
+    public PatientDto getByUid(@PathVariable("uid") String uid) {
+        return patientQueryService.getByUid(uid);
+    }
+
+    /**
+     * The patient's last-visit timestamp (build-spec §6, CR-08). Authenticated-only (CR-04).
+     */
+    @GetMapping("/uid/{uid}/last-visit")
+    public LastVisitDto lastVisit(@PathVariable("uid") String uid) {
+        return patientQueryService.lastVisit(uid);
+    }
 
     /**
      * Register a new patient (CASH or INSURANCE).

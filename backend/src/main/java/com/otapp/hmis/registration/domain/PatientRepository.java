@@ -1,8 +1,11 @@
 package com.otapp.hmis.registration.domain;
 
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Spring Data JPA repository for {@link Patient}.
@@ -38,4 +41,26 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
      */
     @Query(nativeQuery = true, value = "SELECT nextval('seq_mrno')")
     Long nextMrNo();
+
+    /**
+     * Paginated patient search (build-spec §6, CR-07; REG-1 closed). Case-insensitive
+     * {@code LIKE %q%} OR-match across {@code no}, names, {@code phoneNo}, AND {@code membershipNo}
+     * (the membership-card lookup) — mirrors legacy PatientRepository.java:41-42,:50-51, unified
+     * into one query. Backed by the GIN trigram index on {@code search_key} + per-field indexes.
+     * Nullable fields (middleName/phoneNo/membershipNo) simply don't match when null.
+     *
+     * @param q        the case-insensitive substring to match (empty matches all)
+     * @param pageable page request
+     * @return a page of matching patients
+     */
+    @Query("""
+           SELECT p FROM Patient p
+           WHERE LOWER(p.no)           LIKE LOWER(CONCAT('%', :q, '%'))
+              OR LOWER(p.firstName)    LIKE LOWER(CONCAT('%', :q, '%'))
+              OR LOWER(p.middleName)   LIKE LOWER(CONCAT('%', :q, '%'))
+              OR LOWER(p.lastName)     LIKE LOWER(CONCAT('%', :q, '%'))
+              OR LOWER(p.phoneNo)      LIKE LOWER(CONCAT('%', :q, '%'))
+              OR LOWER(p.membershipNo) LIKE LOWER(CONCAT('%', :q, '%'))
+           """)
+    Page<Patient> search(@Param("q") String q, Pageable pageable);
 }

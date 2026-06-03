@@ -2,6 +2,7 @@ package com.otapp.hmis.registration.application;
 
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.domain.Patient;
+import java.time.Instant;
 import org.mapstruct.InjectionStrategy;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -33,4 +34,11 @@ interface PatientMapper {
      */
     @Mapping(target = "lastVisitAt", ignore = true)
     PatientDto toDto(Patient patient);
+
+    /**
+     * Map a {@link Patient} to its DTO with the enriched {@code lastVisitAt} (C5 — build-spec §6).
+     * The {@code lastVisitAt} param is resolved by the query layer (most-recent Visit's createdAt).
+     */
+    @Mapping(target = "lastVisitAt", source = "lastVisitAt")
+    PatientDto toDto(Patient patient, Instant lastVisitAt);
 }
