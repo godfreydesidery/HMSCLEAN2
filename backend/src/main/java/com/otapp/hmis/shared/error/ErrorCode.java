@@ -39,7 +39,16 @@ public enum ErrorCode {
      * branch on this specific duplicate-price scenario.
      */
     DUPLICATE_SERVICE_PRICE("urn:hmis:error:duplicate-service-price",
-            HttpStatus.CONFLICT, "Duplicate service price");
+            HttpStatus.CONFLICT, "Duplicate service price"),
+
+    /**
+     * The target user does not hold the {@code CLINICIAN} role and therefore cannot be
+     * affiliated with a clinic (CR-08, build-spec §5.2, AC-4).
+     * HTTP 403 Forbidden — distinct from the generic access-denied FORBIDDEN so the Angular
+     * client can surface a specific "user must have CLINICIAN role" message.
+     */
+    CLINICIAN_ROLE_REQUIRED("urn:hmis:error:clinician-role-required",
+            HttpStatus.FORBIDDEN, "User must hold the CLINICIAN role for this operation");
 
     private final String type;
     private final HttpStatus status;

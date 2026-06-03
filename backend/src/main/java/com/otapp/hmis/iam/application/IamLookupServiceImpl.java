@@ -38,6 +38,14 @@ class IamLookupServiceImpl implements IamLookupService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserSummary> findUsersByRole(String roleName) {
+        return userRepository.findAllByRoleName(roleName).stream()
+                .map(this::toSummary)
+                .toList();
+    }
+
     private UserSummary toSummary(User user) {
         String first = user.getFirstName();
         String last  = user.getLastName();

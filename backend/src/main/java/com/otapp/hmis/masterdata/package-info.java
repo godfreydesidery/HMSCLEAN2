@@ -13,8 +13,9 @@
  *       clinical, and pharmacy increments (build-spec §2.2, ADR-0008).</li>
  * </ul>
  *
- * <p>{@code allowedDependencies = "iam"} — masterdata may call {@code iam.lookup} only;
- * it must not reference any other module's internals.
+ * <p>{@code allowedDependencies = "iam :: lookup"} — masterdata may call the {@code iam} module's
+ * {@code lookup} NAMED INTERFACE only (IamLookupService, ClinicianAffiliationService, UserSummary);
+ * it must not reference any other iam type or any other module's internals.
  */
-@org.springframework.modulith.ApplicationModule(allowedDependencies = "iam")
+@org.springframework.modulith.ApplicationModule(allowedDependencies = "iam :: lookup")
 package com.otapp.hmis.masterdata;
