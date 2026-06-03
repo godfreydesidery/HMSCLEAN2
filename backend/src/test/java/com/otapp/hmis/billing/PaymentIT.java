@@ -145,6 +145,25 @@ class PaymentIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // CR-05: the cash PAID transition marks the bill settled in the same tx
+    // (SettlementDispatcher — build-spec §4.2)
+    // =========================================================================
+
+    @Test
+    @Transactional
+    void recordPayment_marksBillSettled() {
+        PatientBill bill = makeBill("PAY-PAT-008", BillStatus.UNPAID, "6000.00");
+        assertThat(bill.isSettled()).as("unpaid bill starts unsettled").isFalse();
+
+        paymentService.recordPayment(
+                List.of(bill.getUid()), Money.of(new BigDecimal("6000.00")), PaymentMode.CASH, ctx);
+
+        PatientBill paid = billRepository.findByUid(bill.getUid()).orElseThrow();
+        assertThat(paid.isSettled()).as("paid bill is settled (CR-05)").isTrue();
+        assertThat(paid.getSettledAt()).as("settledAt stamped").isNotNull();
+    }
+
+    // =========================================================================
     // Status-not-payable → BILL_NOT_PAYABLE (PatientBillResource.java:295-296)
     // =========================================================================
 

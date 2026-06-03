@@ -87,7 +87,17 @@ public enum ErrorCode {
      */
     PAYMENT_AMOUNT_MISMATCH("urn:hmis:error:payment-amount-mismatch",
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "Tendered amount does not match total bill amount. Insufficient payment");
+            "Tendered amount does not match total bill amount. Insufficient payment"),
+
+    /**
+     * A CASH outpatient/outsider service was requested before its charge was settled (paid)
+     * (CR-05, RATIFIED scoped — NET-NEW hardening; legacy had only a UI filter, no hard gate).
+     * Scoped per {@link com.otapp.hmis.billing.api.SettlementPolicy}: insurance-covered, inpatient
+     * (settle at discharge), and emergency/unregistered charges bypass this gate. HTTP 422.
+     */
+    PAY_BEFORE_SERVICE("urn:hmis:error:pay-before-service",
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Payment is required before this service can be provided");
 
     private final String type;
     private final HttpStatus status;

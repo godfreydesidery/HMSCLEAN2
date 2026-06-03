@@ -5,7 +5,6 @@ import com.otapp.hmis.billing.domain.Collection;
 import com.otapp.hmis.billing.domain.CollectionRepository;
 import com.otapp.hmis.billing.domain.PatientBill;
 import com.otapp.hmis.billing.domain.PatientBillRepository;
-import com.otapp.hmis.billing.domain.PatientInvoiceDetail;
 import com.otapp.hmis.billing.domain.PatientInvoiceDetailRepository;
 import com.otapp.hmis.billing.domain.PatientPayment;
 import com.otapp.hmis.billing.domain.PatientPaymentDetail;
@@ -55,6 +54,7 @@ public class PaymentService {
     private final PatientPaymentDetailRepository paymentDetailRepository;
     private final PatientInvoiceDetailRepository invoiceDetailRepository;
     private final CollectionRepository collectionRepository;
+    private final SettlementDispatcher settlementDispatcher;
     private final AuditRecorder auditRecorder;
 
     /**
@@ -94,6 +94,8 @@ public class PaymentService {
 
             // Mark bill PAID — paid=amount, balance=0 (PatientBillResource.java:305-307)
             bill.markPaid();
+            // CR-05: propagate settlement in THIS tx (billing → encounter; no async, no reverse edge)
+            settlementDispatcher.onBillPaid(bill, ctx);
             billRepository.save(bill);
 
             // Create payment detail — no amount column (PARITY, PatientBillResource.java:310-320)

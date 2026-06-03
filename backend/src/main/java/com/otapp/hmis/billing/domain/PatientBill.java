@@ -152,6 +152,20 @@ public class PatientBill extends AuditableEntity {
     @Column(name = "business_day_uid", length = 26, nullable = false)
     private String businessDayUid;
 
+    /**
+     * Settlement flag (CR-05, RATIFIED scoped) — net-new; legacy has none. {@code true} once the
+     * charge's cash payment obligation has cleared at the cashier. Set by
+     * {@link com.otapp.hmis.billing.application.SettlementDispatcher} on the PAID transition.
+     * COVERED (insurance) bills leave this {@code false} — the pay-before-service policy auto-passes
+     * them on {@code paymentType} ({@link com.otapp.hmis.billing.api.SettlementPolicy}).
+     */
+    @Column(name = "settled", nullable = false)
+    private boolean settled = false;
+
+    /** Instant the bill was settled (cash collected); null until settled. */
+    @Column(name = "settled_at")
+    private java.time.Instant settledAt;
+
     // -------------------------------------------------------------------------
     // Business constructor — STEP 1: always build at CASH price, status=UNPAID
     // PatientServiceImpl.java:821-835 (lab exemplar)
@@ -234,6 +248,18 @@ public class PatientBill extends AuditableEntity {
      */
     public void cancel() {
         this.status = BillStatus.CANCELED;
+    }
+
+    /**
+     * Mark the charge settled (CR-05, RATIFIED scoped) — set by
+     * {@link com.otapp.hmis.billing.application.SettlementDispatcher} in the same tx as the cash
+     * PAID transition. Idempotent; net-new (no legacy equivalent).
+     *
+     * @param at the settlement instant (from the operation's audit context)
+     */
+    public void markSettled(java.time.Instant at) {
+        this.settled = true;
+        this.settledAt = at;
     }
 
     /**
