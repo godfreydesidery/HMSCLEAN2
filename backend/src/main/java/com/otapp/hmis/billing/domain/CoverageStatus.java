@@ -5,7 +5,11 @@ package com.otapp.hmis.billing.domain;
  * attached to its invoice (build-spec §1.2, §12).
  *
  * <p>Mirrors the PatientBill status subset relevant to claim-line tracking.
+ *
+ * <p>Exposed via the {@code billing :: api} named interface — the published {@code ChargeResult}
+ * record carries it for external callers.
  */
+@org.springframework.modulith.NamedInterface("api")
 public enum CoverageStatus {
 
     /** Bill is cash UNPAID (no coverage). */
