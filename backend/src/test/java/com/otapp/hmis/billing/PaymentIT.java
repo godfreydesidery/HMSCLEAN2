@@ -252,6 +252,91 @@ class PaymentIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // Cashier bill-collection queue — GET /billing/bills (the silent-cash-bill gap)
+    // =========================================================================
+
+    @Test
+    @Transactional
+    void listBills_byPatient_returnsBills_viaRest() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("cashier", List.of("BILL-A"));
+        makeBill("PAY-PAT-BILLS", BillStatus.UNPAID, "5000.00");
+        makeBill("PAY-PAT-BILLS", BillStatus.UNPAID, "3000.00");
+
+        mockMvc.perform(get("/api/v1/billing/bills?patientUid=PAY-PAT-BILLS")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").doesNotExist())
+                .andExpect(jsonPath("$[0].uid").exists());
+    }
+
+    @Test
+    @Transactional
+    void listBills_statusFilter_returnsOnlyMatching() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("cashier", List.of("BILL-A"));
+        makeBill("PAY-PAT-BILLS2", BillStatus.UNPAID, "1000.00");
+        makeBill("PAY-PAT-BILLS2", BillStatus.PAID, "2000.00");
+
+        mockMvc.perform(get("/api/v1/billing/bills?patientUid=PAY-PAT-BILLS2&status=UNPAID")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("UNPAID"));
+    }
+
+    @Test
+    void listBills_returns403_withoutBillA() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("user", List.of("DAY-ACCESS"));
+        mockMvc.perform(get("/api/v1/billing/bills?patientUid=X")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listBills_returns401_whenNoToken() throws Exception {
+        mockMvc.perform(get("/api/v1/billing/bills?patientUid=X"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // =========================================================================
+    // Non-invoice-anchored payment — POST /billing/payments (cashier cash collection)
+    // =========================================================================
+
+    @Test
+    @Transactional
+    void recordPayment_viaBillsEndpoint_paysBills_201() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("cashier", List.of("BILL-A"));
+        PatientBill bill = makeBill("PAY-PAT-DIRECT", BillStatus.UNPAID, "7000.00");
+
+        String body = """
+                {"billUids":["%s"],"tenderedTotal":{"amount":7000.00,"currency":"TZS"},"paymentMode":"CASH"}
+                """.formatted(bill.getUid());
+
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").exists())
+                .andExpect(jsonPath("$.id").doesNotExist());
+
+        assertThat(billRepository.findByUid(bill.getUid()).orElseThrow().getStatus())
+                .isEqualTo(BillStatus.PAID);
+    }
+
+    @Test
+    void recordPayment_viaBillsEndpoint_returns403_withoutBillA() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("user", List.of("DAY-ACCESS"));
+        // Valid body (passes @Valid) so the request reaches the @PreAuthorize gate → 403, not 400
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billUids\":[\"SOMEBILLUID0000000000000001\"],\"tenderedTotal\":{\"amount\":100,\"currency\":\"TZS\"},\"paymentMode\":\"CASH\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // =========================================================================
     // REST controller — no id in JSON response (ADR-0014 §1)
     // =========================================================================
 
