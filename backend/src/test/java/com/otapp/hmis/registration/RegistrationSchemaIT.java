@@ -1,0 +1,236 @@
+package com.otapp.hmis.registration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.otapp.hmis.registration.domain.Consultation;
+import com.otapp.hmis.registration.domain.ConsultationRepository;
+import com.otapp.hmis.registration.domain.ConsultationStatus;
+import com.otapp.hmis.registration.domain.Patient;
+import com.otapp.hmis.registration.domain.PatientRepository;
+import com.otapp.hmis.registration.domain.PatientType;
+import com.otapp.hmis.registration.domain.PaymentType;
+import com.otapp.hmis.registration.domain.Registration;
+import com.otapp.hmis.registration.domain.RegistrationRepository;
+import com.otapp.hmis.registration.domain.RegistrationStatus;
+import com.otapp.hmis.registration.domain.Visit;
+import com.otapp.hmis.registration.domain.VisitRepository;
+import com.otapp.hmis.registration.domain.VisitSequence;
+import com.otapp.hmis.registration.domain.VisitStatus;
+import com.otapp.hmis.support.AbstractIntegrationTest;
+import java.time.LocalDate;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Persistence smoke test for the inc-03 C1 schema and domain layer (build-spec §8 C1).
+ *
+ * <p>Verifies:
+ * <ol>
+ *   <li>Patient + Registration + FIRST Visit + PENDING Consultation persist and reload
+ *       correctly via the repositories.</li>
+ *   <li>UIDs are 26-character ULIDs assigned at {@code @PrePersist}.</li>
+ *   <li>The hidden {@code id} field is NOT reachable from the public API of any entity
+ *       ({@code getId()} must not compile — verified by the fact that no such call exists
+ *       here and ArchUnit enforces it globally).</li>
+ *   <li>Column mappings satisfy {@code ddl-auto=validate} (Hibernate validates against
+ *       V19 on context startup — if this test runs, the schema is consistent).</li>
+ * </ol>
+ *
+ * <p>Cross-module loose uids ({@code insurancePlanUid}, {@code patientBillUid},
+ * {@code clinicUid}, {@code clinicianUserUid}, {@code businessDayUid}) use placeholder
+ * strings — no real masterdata/billing/iam entities are needed for a pure persistence test
+ * (ADR-0008: loose uids, no FK constraints).
+ *
+ * <p>Uses the singleton-Testcontainer pattern via {@link AbstractIntegrationTest}.
+ * {@code @Transactional} rolls back after each test to avoid cross-test contamination.
+ */
+@Transactional
+class RegistrationSchemaIT extends AbstractIntegrationTest {
+
+    // Placeholder loose-uid values for cross-module refs — no FK, no validation (ADR-0008).
+    // 23-char strings; VARCHAR(26) has no format check in the DB.
+    private static final String FAKE_DAY_UID       = "01FAKE000000000000DAY01";
+    private static final String FAKE_REG_BILL_UID  = "01FAKE000000000000BIL01";
+    private static final String FAKE_CON_BILL_UID  = "01FAKE000000000000BIL02";
+    private static final String FAKE_CLINIC_UID    = "01FAKE000000000CLINIC01";
+    private static final String FAKE_CLINICIAN_UID = "01FAKE000000CLINICIAN01";
+    private static final String FAKE_PLAN_UID      = "01FAKE000000000000PLN01";
+
+    @Autowired PatientRepository      patientRepository;
+    @Autowired RegistrationRepository registrationRepository;
+    @Autowired VisitRepository        visitRepository;
+    @Autowired ConsultationRepository consultationRepository;
+
+    // -------------------------------------------------------------------------
+    // Helper: build a minimal CASH outpatient patient
+    // -------------------------------------------------------------------------
+
+    private Patient cashPatient(String mrn, String searchKey,
+                                String first, String middle, String last,
+                                LocalDate dob, String gender, String phone) {
+        return new Patient(mrn, searchKey, first, middle, last, dob, gender,
+                PatientType.OUTPATIENT, PaymentType.CASH, "", phone, null, FAKE_DAY_UID);
+    }
+
+    // -------------------------------------------------------------------------
+    // Round-trip part 1: Patient + Registration
+    // -------------------------------------------------------------------------
+
+    @Test
+    void roundTrip_patient_and_registration_persist_and_reload() {
+        Patient patient = cashPatient(
+                "MRNO/2026/1",
+                "MRNO/2026/1 John Michael Doe 0712345678",
+                "John", "Michael", "Doe",
+                LocalDate.of(1990, 5, 15), "MALE", "0712345678");
+        Patient saved = patientRepository.saveAndFlush(patient);
+
+        // Patient assertions
+        Patient loaded = patientRepository.findByUid(saved.getUid()).orElseThrow();
+        assertThat(loaded.getUid()).isNotNull().hasSize(26);
+        assertThat(loaded.getNo()).isEqualTo("MRNO/2026/1");
+        assertThat(loaded.getFirstName()).isEqualTo("John");
+        assertThat(loaded.getMiddleName()).isEqualTo("Michael");
+        assertThat(loaded.getLastName()).isEqualTo("Doe");
+        assertThat(loaded.getDateOfBirth()).isEqualTo(LocalDate.of(1990, 5, 15));
+        assertThat(loaded.getGender()).isEqualTo("MALE");
+        assertThat(loaded.getType()).isEqualTo(PatientType.OUTPATIENT);
+        assertThat(loaded.getPaymentType()).isEqualTo(PaymentType.CASH);
+        assertThat(loaded.getMembershipNo()).isEmpty();
+        assertThat(loaded.getPhoneNo()).isEqualTo("0712345678");
+        assertThat(loaded.getInsurancePlanUid()).isNull();
+        assertThat(loaded.isActive()).isTrue();
+        // id must NOT be accessible — ArchUnit "no id exposure" gate enforces this globally.
+
+        // Registration assertions
+        Registration reg = new Registration(saved, FAKE_REG_BILL_UID, FAKE_DAY_UID);
+        Registration savedReg = registrationRepository.saveAndFlush(reg);
+
+        Registration loadedReg = registrationRepository.findByUid(savedReg.getUid()).orElseThrow();
+        assertThat(loadedReg.getUid()).hasSize(26);
+        assertThat(loadedReg.getPatient().getUid()).isEqualTo(saved.getUid());
+        assertThat(loadedReg.getPatientBillUid()).isEqualTo(FAKE_REG_BILL_UID);
+        assertThat(loadedReg.getStatus()).isEqualTo(RegistrationStatus.ACTIVE);
+        // OneToOne: findByPatient resolves to the same record
+        assertThat(registrationRepository.findByPatient(saved)).isPresent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Round-trip part 2: FIRST Visit + PENDING Consultation
+    // -------------------------------------------------------------------------
+
+    @Test
+    void roundTrip_visit_and_consultation_persist_and_reload() {
+        Patient patient = cashPatient(
+                "MRNO/2026/4",
+                "MRNO/2026/4 Tom  Lee 0744444444",
+                "Tom", null, "Lee",
+                LocalDate.of(1988, 9, 3), "MALE", "0744444444");
+        Patient saved = patientRepository.saveAndFlush(patient);
+
+        // FIRST Visit
+        Visit visit = new Visit(saved, VisitSequence.FIRST, FAKE_DAY_UID);
+        Visit savedVisit = visitRepository.saveAndFlush(visit);
+
+        Visit loadedVisit = visitRepository.findByUid(savedVisit.getUid()).orElseThrow();
+        assertThat(loadedVisit.getUid()).hasSize(26);
+        assertThat(loadedVisit.getPatient().getUid()).isEqualTo(saved.getUid());
+        assertThat(loadedVisit.getSequence()).isEqualTo(VisitSequence.FIRST);
+        assertThat(loadedVisit.getType()).isEqualTo(PatientType.OUTPATIENT.name());
+        assertThat(loadedVisit.getStatus()).isEqualTo(VisitStatus.PENDING);
+        assertThat(visitRepository.findFirstByPatientOrderByCreatedAtDesc(saved)).isPresent();
+        assertThat(visitRepository.findByPatientOrderByCreatedAtDesc(saved)).hasSize(1);
+
+        // PENDING Consultation
+        Consultation consultation = new Consultation(
+                saved, savedVisit,
+                FAKE_CLINIC_UID, FAKE_CLINICIAN_UID,
+                FAKE_CON_BILL_UID, PaymentType.CASH,
+                false, FAKE_DAY_UID);
+        Consultation savedConsult = consultationRepository.saveAndFlush(consultation);
+
+        Consultation loadedConsult =
+                consultationRepository.findByUid(savedConsult.getUid()).orElseThrow();
+        assertThat(loadedConsult.getUid()).hasSize(26);
+        assertThat(loadedConsult.getPatient().getUid()).isEqualTo(saved.getUid());
+        assertThat(loadedConsult.getVisit().getUid()).isEqualTo(savedVisit.getUid());
+        assertThat(loadedConsult.getStatus()).isEqualTo(ConsultationStatus.PENDING);
+        assertThat(loadedConsult.getPaymentType()).isEqualTo(PaymentType.CASH);
+        assertThat(loadedConsult.isFollowUp()).isFalse();
+        assertThat(loadedConsult.getPatientBillUid()).isEqualTo(FAKE_CON_BILL_UID);
+        // Guard query: one PENDING consultation now exists for this patient
+        assertThat(consultationRepository.existsByPatientAndStatusIn(
+                saved, List.of(ConsultationStatus.PENDING))).isTrue();
+    }
+
+    // -------------------------------------------------------------------------
+    // ULID uid assignment
+    // -------------------------------------------------------------------------
+
+    @Test
+    void patient_uid_is_assigned_as_26_char_ulid_at_persist() {
+        Patient patient = cashPatient(
+                "MRNO/2026/99",
+                "MRNO/2026/99 Alice  Smith 0799999999",
+                "Alice", null, "Smith",
+                LocalDate.of(1985, 1, 1), "FEMALE", null);
+        Patient saved = patientRepository.saveAndFlush(patient);
+
+        assertThat(saved.getUid())
+                .isNotNull()
+                .hasSize(26)
+                .doesNotContain(" ");
+    }
+
+    // -------------------------------------------------------------------------
+    // Insurance patient: plan uid and membership no present
+    // -------------------------------------------------------------------------
+
+    @Test
+    void persist_insurance_patient_with_plan_and_membership() {
+        Patient patient = new Patient(
+                "MRNO/2026/2",
+                "MRNO/2026/2 Mary Jane Jones 0711111111",
+                "Mary", "Jane", "Jones",
+                LocalDate.of(1978, 3, 22), "FEMALE",
+                PatientType.OUTPATIENT,
+                PaymentType.INSURANCE, "INS-MEMBER-001",
+                "0711111111",
+                FAKE_PLAN_UID,
+                FAKE_DAY_UID);
+        patientRepository.saveAndFlush(patient);
+
+        Patient loaded = patientRepository.findByNo("MRNO/2026/2").orElseThrow();
+        assertThat(loaded.getPaymentType()).isEqualTo(PaymentType.INSURANCE);
+        assertThat(loaded.getMembershipNo()).isEqualTo("INS-MEMBER-001");
+        assertThat(loaded.getInsurancePlanUid()).isEqualTo(FAKE_PLAN_UID);
+    }
+
+    // -------------------------------------------------------------------------
+    // SUBSEQUENT_FOR_ADMISSION enum stored correctly (underscore form — build-spec §7)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void visit_subsequentForAdmission_sequence_stored_and_reloaded() {
+        Patient patient = new Patient(
+                "MRNO/2026/3",
+                "MRNO/2026/3 Bob  Brown 0733333333",
+                "Bob", null, "Brown",
+                LocalDate.of(1995, 7, 10), "MALE",
+                PatientType.INPATIENT,
+                PaymentType.CASH, "",
+                "0733333333", null, FAKE_DAY_UID);
+        Patient savedPatient = patientRepository.saveAndFlush(patient);
+
+        Visit admissionVisit = new Visit(
+                savedPatient, VisitSequence.SUBSEQUENT_FOR_ADMISSION, FAKE_DAY_UID);
+        Visit savedVisit = visitRepository.saveAndFlush(admissionVisit);
+
+        Visit loaded = visitRepository.findByUid(savedVisit.getUid()).orElseThrow();
+        // Stored as 'SUBSEQUENT_FOR_ADMISSION' (underscore) — see V19 ck_visits_sequence
+        // and VisitSequence javadoc for the hyphen-to-underscore decision.
+        assertThat(loaded.getSequence()).isEqualTo(VisitSequence.SUBSEQUENT_FOR_ADMISSION);
+    }
+}

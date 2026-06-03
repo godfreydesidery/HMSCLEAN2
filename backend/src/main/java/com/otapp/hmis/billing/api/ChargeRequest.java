@@ -20,6 +20,9 @@ import java.math.BigDecimal;
  * @param qty          quantity (1 for most services; multiplied for MEDICINE)
  * @param paymentType  requested payment mode
  * @param inpatient    whether the patient is currently admitted
+ * @param followUp     true if this is a follow-up consultation (no charge — CR-20);
+ *                     only meaningful when {@code kind == CONSULTATION}; must be
+ *                     {@code false} for all other service kinds
  */
 public record ChargeRequest(
         String patientUid,
@@ -29,6 +32,7 @@ public record ChargeRequest(
         String serviceUid,
         BigDecimal qty,
         PaymentMode paymentType,
-        boolean inpatient
+        boolean inpatient,
+        boolean followUp
 ) {
 }

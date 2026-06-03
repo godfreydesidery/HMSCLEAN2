@@ -97,7 +97,16 @@ public enum ErrorCode {
      */
     PAY_BEFORE_SERVICE("urn:hmis:error:pay-before-service",
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "Payment is required before this service can be provided");
+            "Payment is required before this service can be provided"),
+
+    /**
+     * An INSURANCE registration request is missing a required {@code insurancePlanUid} or
+     * {@code membershipNo} (build-spec §2.3 step 1, §5.3; PatientResource.java:299-301).
+     * HTTP 422 Unprocessable Entity.
+     */
+    MISSING_INSURANCE_INFORMATION("urn:hmis:error:missing-insurance-information",
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Insurance plan and membership number are required for insurance patients");
 
     private final String type;
     private final HttpStatus status;

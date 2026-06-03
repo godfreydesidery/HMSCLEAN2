@@ -101,7 +101,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-001", planUid, "MEM-001",
                 ServiceKind.LAB_TEST, svcUid,
-                BigDecimal.ONE, PaymentMode.INSURANCE, false);
+                BigDecimal.ONE, PaymentMode.INSURANCE, false, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -133,7 +133,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-002", null, null,
                 ServiceKind.LAB_TEST, svcUid,
-                BigDecimal.ONE, PaymentMode.CASH, false);
+                BigDecimal.ONE, PaymentMode.CASH, false, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -160,7 +160,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-003", planUid, "MEM-003",
                 ServiceKind.MEDICINE, svcUid,
-                new BigDecimal("3"), PaymentMode.INSURANCE, false);
+                new BigDecimal("3"), PaymentMode.INSURANCE, false, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -187,7 +187,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-004", planUid, "MEM-004",
                 ServiceKind.CONSULTATION, svcUid,
-                BigDecimal.ONE, PaymentMode.INSURANCE, false);
+                BigDecimal.ONE, PaymentMode.INSURANCE, false, false);
 
         // Verbatim legacy message (PatientServiceImpl.java:599-601); tx rolls back → no bill persists
         assertThatThrownBy(() -> billingCommands.recordClinicalCharge(req, ctx))
@@ -213,7 +213,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-005", planUid, "MEM-005",
                 ServiceKind.LAB_TEST, svcUid,
-                BigDecimal.ONE, PaymentMode.INSURANCE, true /* inpatient */);
+                BigDecimal.ONE, PaymentMode.INSURANCE, true /* inpatient */, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -248,7 +248,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-006", planUid, "MEM-006",
                 ServiceKind.LAB_TEST, svcUid,
-                BigDecimal.ONE, PaymentMode.INSURANCE, false /* outpatient */);
+                BigDecimal.ONE, PaymentMode.INSURANCE, false /* outpatient */, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -279,7 +279,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-007", null, null,
                 ServiceKind.REGISTRATION, null,
-                BigDecimal.ONE, PaymentMode.CASH, false);
+                BigDecimal.ONE, PaymentMode.CASH, false, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -301,7 +301,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-008", planUid, "MEM-008",
                 ServiceKind.REGISTRATION, null,
-                BigDecimal.ONE, PaymentMode.INSURANCE, false);
+                BigDecimal.ONE, PaymentMode.INSURANCE, false, false);
 
         ChargeResult result = billingCommands.recordClinicalCharge(req, ctx);
 
@@ -324,7 +324,7 @@ class BillingChargeIT extends AbstractIntegrationTest {
         ChargeRequest req = new ChargeRequest(
                 "PATIENT-UID-009", null, null,
                 ServiceKind.LAB_TEST, "NONEXISTENT-SVC-UID-00000000",
-                BigDecimal.ONE, PaymentMode.CASH, false);
+                BigDecimal.ONE, PaymentMode.CASH, false, false);
 
         // PriceLookupImpl throws ServicePriceNotFoundException (maps to HTTP 422
         // SERVICE_PRICE_NOT_FOUND). In tests we verify via the shared HmisException base.
@@ -354,9 +354,9 @@ class BillingChargeIT extends AbstractIntegrationTest {
         TxAuditContext ctx = new TxAuditContext(dayUid, Instant.now(), "cashier1");
 
         ChargeRequest req1 = new ChargeRequest("PATIENT-ACC-001", planUid, "MEM-ACC",
-                ServiceKind.LAB_TEST, svc1, BigDecimal.ONE, PaymentMode.INSURANCE, false);
+                ServiceKind.LAB_TEST, svc1, BigDecimal.ONE, PaymentMode.INSURANCE, false, false);
         ChargeRequest req2 = new ChargeRequest("PATIENT-ACC-001", planUid, "MEM-ACC",
-                ServiceKind.LAB_TEST, svc2, BigDecimal.ONE, PaymentMode.INSURANCE, false);
+                ServiceKind.LAB_TEST, svc2, BigDecimal.ONE, PaymentMode.INSURANCE, false, false);
 
         billingCommands.recordClinicalCharge(req1, ctx);
         billingCommands.recordClinicalCharge(req2, ctx);

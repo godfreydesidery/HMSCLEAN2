@@ -16,7 +16,11 @@ package com.otapp.hmis.billing.domain;
  *
  * <p>Cashier collection gate: only {@code UNPAID} or {@code VERIFIED} are payable
  * (PatientBillResource.java:295-296).
+ *
+ * <p>Exposed via the {@code billing :: api} named interface — the published {@code ChargeResult}
+ * record carries it for external callers.
  */
+@org.springframework.modulith.NamedInterface("api")
 public enum BillStatus {
 
     /** Cash charge awaiting cashier collection. Default for all new charges. */
