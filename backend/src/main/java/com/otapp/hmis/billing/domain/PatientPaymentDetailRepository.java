@@ -22,4 +22,14 @@ public interface PatientPaymentDetailRepository extends JpaRepository<PatientPay
              AND d.status = 'RECEIVED'
            """)
     Optional<PatientPaymentDetail> findReceivedByBillUid(@Param("billUid") String billUid);
+
+    /**
+     * Find the payment detail for a bill regardless of status. Used to confirm a refunded detail
+     * row is KEPT (status REFUNDED) rather than hard-deleted (PHI/audit preservation, CR-13).
+     */
+    @Query("""
+           SELECT d FROM PatientPaymentDetail d
+           WHERE d.bill.uid = :billUid
+           """)
+    Optional<PatientPaymentDetail> findByBillUid(@Param("billUid") String billUid);
 }

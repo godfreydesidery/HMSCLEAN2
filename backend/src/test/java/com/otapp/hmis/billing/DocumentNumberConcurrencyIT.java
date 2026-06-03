@@ -124,6 +124,8 @@ class DocumentNumberConcurrencyIT extends AbstractIntegrationTest {
 
         assertThat(errors).as("no unique-violation or other errors under contention").isEmpty();
         assertThat(numbers).as("every concurrent cancellation produced a distinct PCN").hasSize(n);
+        assertThat(numbers).as("each PCN keeps the legacy EAT format under contention")
+                .allMatch(no -> no.matches("^PCN\\d{8}-\\d+$"));
     }
 
     // -------------------------------------------------------------------------

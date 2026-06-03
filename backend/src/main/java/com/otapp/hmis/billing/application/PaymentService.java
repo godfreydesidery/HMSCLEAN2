@@ -42,8 +42,9 @@ import org.springframework.transaction.annotation.Transactional;
  * pharmacy→APPROVED) are DEFERRED to inc-05/06. A documented seam is left via
  * {@link #applyPaymentSideEffects(PatientBill)} — do not call downstream from P1.
  *
- * <p>CashierShift gate is [GATED:CR-04 — DEFERRED]. Payment is NOT gated on an open shift in P1.
- * SettlementDispatcher is P4 — not called here.
+ * <p>CashierShift gate is [GATED:CR-04 — DEFERRED]. Payment is NOT gated on an open shift.
+ * On the PAID transition the {@link SettlementDispatcher} marks the bill settled in this same tx
+ * (CR-05; billing → encounter only).
  */
 @Service
 @RequiredArgsConstructor
@@ -135,7 +136,8 @@ public class PaymentService {
         auditRecorder.record("billing.PatientPayment", payment.getUid(),
                              AuditAction.CREATE, ctx.actorUsername());
 
-        // [GATED:CR-05] SettlementDispatcher.dispatch(paidBills) — NOT in P1
+        // CR-05 settlement is dispatched per-bill above (settlementDispatcher.onBillPaid),
+        // in this same tx — no batched post-loop dispatch needed.
 
         return payment;
     }

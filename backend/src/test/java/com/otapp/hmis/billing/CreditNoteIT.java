@@ -111,15 +111,13 @@ class CreditNoteIT extends AbstractIntegrationTest {
         assertThat(cancelled.getStatus()).isEqualTo(BillStatus.CANCELED);
 
         // Payment detail flipped to REFUNDED (kept, NOT deleted — PHI/audit preserved)
-        PatientPaymentDetail pd = paymentDetailRepository
-                .findReceivedByBillUid(bill.getUid()).orElse(null);
-        assertThat(pd).as("no RECEIVED payment detail remains — it was refunded").isNull();
-        // The row still exists, now REFUNDED
-        assertThat(paymentDetailRepository.findAll().stream()
-                .anyMatch(d -> d.getBill().getUid().equals(bill.getUid())
-                        && d.getStatus() == PaymentDetailStatus.REFUNDED))
-                .as("payment detail row kept and marked REFUNDED")
-                .isTrue();
+        assertThat(paymentDetailRepository.findReceivedByBillUid(bill.getUid()))
+                .as("no RECEIVED payment detail remains — it was refunded").isEmpty();
+        PatientPaymentDetail pd = paymentDetailRepository.findByBillUid(bill.getUid())
+                .orElseThrow(() -> new AssertionError("payment detail row was hard-deleted"));
+        assertThat(pd.getStatus())
+                .as("payment detail row KEPT and marked REFUNDED (no hard-delete of PHI/audit)")
+                .isEqualTo(PaymentDetailStatus.REFUNDED);
 
         // Full-amount PENDING credit note with a PCN number
         assertThat(note).isPresent();
@@ -191,6 +189,65 @@ class CreditNoteIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // CR-10 single-detail: cancelling the only COVERED line removes the detail AND
+    // deletes the (now-empty) parent invoice — no PCN (never cash-paid). This exercises
+    // the isEmpty()->delete branch on a single-detail invoice (the j=j++ bug's blast radius).
+    // =========================================================================
+
+    @Test
+    @Transactional
+    void cancelCoveredCharge_removesDetailAndDeletesInvoice_noCreditNote() {
+        PatientInvoice invoice = invoiceRepository.save(
+                new PatientInvoice("CN-PAT-COV", "PLAN-COV", dayUid));
+        PatientBill bill = makeBill("CN-PAT-COV", BillStatus.COVERED, "9000.00");
+        invoice.addDetail(new PatientInvoiceDetail(invoice, bill, CoverageStatus.COVERED));
+        invoiceRepository.save(invoice);
+        String invoiceUid = invoice.getUid();
+
+        var note = creditNoteService.cancelCharge(bill.getUid(), "Canceled covered service", ctx);
+
+        assertThat(note).as("COVERED bill was never cash-paid → no PCN").isEmpty();
+        assertThat(billRepository.findByUid(bill.getUid()).orElseThrow().getStatus())
+                .isEqualTo(BillStatus.CANCELED);
+        assertThat(invoiceDetailRepository.findByBillUid(bill.getUid())).isEmpty();
+        assertThat(invoiceRepository.findByUid(invoiceUid))
+                .as("single-detail invoice deleted once its only line is removed (CR-10 isEmpty branch)")
+                .isEmpty();
+    }
+
+    // =========================================================================
+    // GATED:CR-03b parity — amountPaid is NEVER decremented on refund/cancel
+    // (legacy only deletes the detail / parent; it never adjusts amount_paid)
+    // =========================================================================
+
+    @Test
+    @Transactional
+    void cancel_doesNotDecrementInvoiceAmountPaid() {
+        // Two paid bills on one surviving invoice → amountPaid accumulates to 7000
+        PatientInvoice invoice = invoiceRepository.save(
+                new PatientInvoice("CN-PAT-AP", null, dayUid));
+        PatientBill b1 = makeBill("CN-PAT-AP", BillStatus.VERIFIED, "4000.00");
+        PatientBill b2 = makeBill("CN-PAT-AP", BillStatus.VERIFIED, "3000.00");
+        invoice.addDetail(new PatientInvoiceDetail(invoice, b1, CoverageStatus.VERIFIED));
+        invoice.addDetail(new PatientInvoiceDetail(invoice, b2, CoverageStatus.VERIFIED));
+        invoiceRepository.save(invoice);
+        String invoiceUid = invoice.getUid();
+
+        paymentService.recordPayment(List.of(b1.getUid()),
+                Money.of(new java.math.BigDecimal("4000.00")), PaymentMode.CASH, ctx);
+        paymentService.recordPayment(List.of(b2.getUid()),
+                Money.of(new java.math.BigDecimal("3000.00")), PaymentMode.CASH, ctx);
+
+        // Cancel b1 — its detail is removed but the invoice survives (b2 remains)
+        creditNoteService.cancelCharge(b1.getUid(), "Canceled one of two", ctx);
+
+        PatientInvoice after = invoiceRepository.findByUid(invoiceUid).orElseThrow();
+        assertThat(after.getAmountPaid())
+                .as("amountPaid is NOT decremented on refund (GATED:CR-03b)")
+                .isEqualByComparingTo("7000.00");
+    }
+
+    // =========================================================================
     // REST — cancellation endpoint (200, no id in JSON), gated BILL-A
     // =========================================================================
 
@@ -246,6 +303,18 @@ class CreditNoteIT extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/billing/credit-notes?patientUid=X")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listCreditNotes_returns401_whenNoToken() throws Exception {
+        mockMvc.perform(get("/api/v1/billing/credit-notes?patientUid=X"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getCreditNote_returns401_whenNoToken() throws Exception {
+        mockMvc.perform(get("/api/v1/billing/credit-notes/uid/SOMEUID"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

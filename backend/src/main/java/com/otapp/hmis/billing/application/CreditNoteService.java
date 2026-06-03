@@ -115,7 +115,8 @@ public class CreditNoteService {
 
         // 3) Detach from the insurance claim: remove the invoice detail, delete the parent invoice
         //    ONLY when zero details remain (CR-10 FIX) — PatientResource.java:659-673
-        invoiceDetailRepository.findByBillUid(billUid).ifPresent(this::detachInvoiceDetail);
+        invoiceDetailRepository.findByBillUid(billUid)
+                .ifPresent(detail -> detachInvoiceDetail(detail, ctx));
 
         return creditNote;
     }
@@ -148,6 +149,9 @@ public class CreditNoteService {
         // Soft-reverse the payment — the REFUNDED flag IS the reversal signal (no negative row)
         detail.markRefunded();
         paymentDetailRepository.save(detail);
+        // Audit the money reversal (ADR-0007 — a refund is a financial mutation)
+        auditRecorder.record("billing.PatientPaymentDetail", detail.getUid(),
+                             AuditAction.UPDATE, ctx.actorUsername());
 
         // Full bill amount, PENDING, with a collision-free PCN number (CR-09)
         PatientCreditNote note = new PatientCreditNote(
@@ -166,14 +170,21 @@ public class CreditNoteService {
      * Remove the claim detail from its parent invoice; delete the parent invoice only when it has
      * no remaining details (CR-10 FIX). Removing from the {@code orphanRemoval=true} collection
      * deletes the detail row on flush; {@link PatientInvoice#isEmpty()} then reflects the true
-     * remaining-detail count (the collection is fully initialised by the removal).
+     * remaining-detail count (the collection is fully initialised by the removal). Audits the
+     * invoice mutation — DELETE when the last line goes, UPDATE when the claim is merely trimmed
+     * (ADR-0007 — the invoice is a mandatory-chain billing entity).
      */
-    private void detachInvoiceDetail(PatientInvoiceDetail detail) {
+    private void detachInvoiceDetail(PatientInvoiceDetail detail, TxAuditContext ctx) {
         PatientInvoice invoice = detail.getInvoice();
         invoice.removeDetail(detail);
         invoiceRepository.save(invoice);
         if (invoice.isEmpty()) {
             invoiceRepository.delete(invoice);
+            auditRecorder.record("billing.PatientInvoice", invoice.getUid(),
+                                 AuditAction.DELETE, ctx.actorUsername());
+        } else {
+            auditRecorder.record("billing.PatientInvoice", invoice.getUid(),
+                                 AuditAction.UPDATE, ctx.actorUsername());
         }
     }
 }

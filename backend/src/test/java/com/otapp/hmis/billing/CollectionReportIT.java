@@ -221,6 +221,18 @@ class CollectionReportIT extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void collectionsReport_returns401_whenNoToken() throws Exception {
+        mockMvc.perform(get("/api/v1/billing/reports/collections?from=2026-06-01&to=2026-06-03"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void receipt_returns401_whenNoToken() throws Exception {
+        mockMvc.perform(get("/api/v1/billing/payments/uid/SOMEUID/receipt"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================

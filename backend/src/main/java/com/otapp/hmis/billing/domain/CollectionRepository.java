@@ -14,35 +14,6 @@ import org.springframework.data.repository.query.Param;
  */
 public interface CollectionRepository extends JpaRepository<Collection, Long> {
 
-    /**
-     * Find all collections in a date range (for EOD report).
-     * Range: from.atStartOfDay()..to.atStartOfDay().plusDays(1) (inclusive of to).
-     * PatientBillResource.java:415+ (read-time aggregation — P3 scope).
-     */
-    @Query("""
-           SELECT c FROM Collection c
-           WHERE c.createdAt >= :from
-             AND c.createdAt < :to
-           ORDER BY c.createdAt
-           """)
-    List<Collection> findByDateRange(@Param("from") Instant from, @Param("to") Instant to);
-
-    /**
-     * Find collections in a date range attributed to a specific cashier (by username).
-     * PatientBillResource.java:532+ (per-cashier filter — P3 scope).
-     */
-    @Query("""
-           SELECT c FROM Collection c
-           WHERE c.createdAt >= :from
-             AND c.createdAt < :to
-             AND c.createdBy = :username
-           ORDER BY c.createdAt
-           """)
-    List<Collection> findByDateRangeAndCashier(
-            @Param("from") Instant from,
-            @Param("to") Instant to,
-            @Param("username") String username);
-
     // -------------------------------------------------------------------------
     // EOD collections report (P3) — read-time SUM aggregation over collections
     // (CollectionRepository.java:21-59; build-spec §5.1). Aggregates across ALL
