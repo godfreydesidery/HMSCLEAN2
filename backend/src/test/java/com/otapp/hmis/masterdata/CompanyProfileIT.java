@@ -32,7 +32,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * </ul>
  *
  * <h2>Gate coverage</h2>
- * GET/POST/PUT without ADMIN-ACCESS → 403; without token → 401.
+ * GET requires a valid JWT but no role gate (RF-3 — matches legacy); GET without token → 401;
+ * GET with any valid token (including non-admin DAY-ACCESS) → 200.
+ * POST/PUT require {@code ADMIN-ACCESS}; without ADMIN-ACCESS → 403; without token → 401.
  */
 class CompanyProfileIT extends AbstractIntegrationTest {
 
@@ -70,12 +72,19 @@ class CompanyProfileIT extends AbstractIntegrationTest {
         assertThat(last.getChecksum()).isNotBlank();
     }
 
+    /**
+     * RF-3: GET is now JWT-only / role-ungated (matches legacy CompanyProfileResource GET,
+     * build-spec §3 "reads require a valid JWT but carry NO role gate").
+     * A non-admin token (e.g. DAY-ACCESS) must succeed with 200.
+     */
     @Test
-    void get_withoutAdminAccess_returns403() throws Exception {
+    void get_withDayAccessToken_returns200() throws Exception {
         String token = jwtFactory.tokenWithPrivileges("clerk", List.of("DAY-ACCESS"));
         mockMvc.perform(get(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid").exists())
+                .andExpect(jsonPath("$.name").isNotEmpty());
     }
 
     @Test

@@ -39,8 +39,10 @@ public class SupplierItemPriceService {
     public SupplierItemPriceDto create(SupplierItemPriceRequest request) {
         Supplier supplier = resolveSupplier(request.supplierUid());
         Item item = resolveItem(request.itemUid());
+        // RF-4: null active defaults to true (legacy SupplierItemPrice.java:42)
+        boolean active = !Boolean.FALSE.equals(request.active());
         SupplierItemPrice sip = new SupplierItemPrice(
-                request.price(), request.terms(), request.active(), supplier, item);
+                request.price(), request.terms(), active, supplier, item);
         repository.save(sip);
         auditRecorder.record("masterdata.SupplierItemPrice", sip.getUid(), AuditAction.CREATE);
         return priceMapper.toDto(sip);
@@ -50,7 +52,9 @@ public class SupplierItemPriceService {
     public SupplierItemPriceDto update(String uid, SupplierItemPriceRequest request) {
         SupplierItemPrice sip = repository.findByUid(uid)
                 .orElseThrow(() -> new NotFoundException("SupplierItemPrice not found: " + uid));
-        sip.update(request.price(), request.terms(), request.active());
+        // RF-4: null active defaults to true (legacy SupplierItemPrice.java:42)
+        boolean active = !Boolean.FALSE.equals(request.active());
+        sip.update(request.price(), request.terms(), active);
         auditRecorder.record("masterdata.SupplierItemPrice", sip.getUid(), AuditAction.UPDATE);
         return priceMapper.toDto(sip);
     }

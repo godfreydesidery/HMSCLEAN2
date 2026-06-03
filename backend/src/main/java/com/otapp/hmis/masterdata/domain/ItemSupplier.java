@@ -57,8 +57,12 @@ public class ItemSupplier extends AuditableEntity {
     @Column(name = "cost_price_vat_excl", nullable = false, precision = 19, scale = 2)
     private BigDecimal costPriceVatExcl = BigDecimal.ZERO;
 
+    /**
+     * Active flag. Legacy default is {@code true} (legacy ItemSupplier.java:49 {@code active=true}).
+     * RF-4: reverted from the erroneous FALSE default that was applied during build.
+     */
     @Column(name = "active", nullable = false)
-    private boolean active = false;
+    private boolean active = true;
 
     /** Business constructor — FKs immutable after creation. */
     public ItemSupplier(Item item, Supplier supplier,

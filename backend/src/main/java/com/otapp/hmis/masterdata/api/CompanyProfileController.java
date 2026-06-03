@@ -20,11 +20,14 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <ul>
  *   <li>{@code GET  /api/v1/masterdata/company-profile} — returns the single row; 404 if absent.
- *       Gated {@code ADMIN-ACCESS} (legacy gate map §3).</li>
+ *       JWT-authenticated only — NO role gate (RF-3: matches legacy
+ *       {@code CompanyProfileResource} GET which has no {@code @PreAuthorize}, and build-spec §3
+ *       which mandates ungated masterdata reads; cashier and clinical roles read this for
+ *       receipt/invoice rendering).</li>
  *   <li>{@code POST /api/v1/masterdata/company-profile} — creates the row if absent → 201;
- *       409 if a row already exists (CR-14 single-row invariant).</li>
+ *       409 if a row already exists (CR-14 single-row invariant). Gated {@code ADMIN-ACCESS}.</li>
  *   <li>{@code PUT  /api/v1/masterdata/company-profile} — updates the single existing row → 200;
- *       404 if no row exists yet.</li>
+ *       404 if no row exists yet. Gated {@code ADMIN-ACCESS}.</li>
  * </ul>
  *
  * <p>No {@code @Transactional} on this controller (ArchUnit gate — ADR-0014 §5).
@@ -38,7 +41,6 @@ public class CompanyProfileController {
     private final CompanyProfileService service;
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN-ACCESS')")
     public CompanyProfileDto current() {
         return service.current();
     }

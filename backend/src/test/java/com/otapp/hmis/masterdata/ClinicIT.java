@@ -141,7 +141,7 @@ class ClinicIT extends AbstractIntegrationTest {
     // ------------------------------------------------------------------
 
     @Test
-    void update_withAdminAccess_returns200WithUpdatedFields() throws Exception {
+    void update_withAdminAccess_returns200WithUpdatedFieldsAndAuditRow() throws Exception {
         String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
         // Create
         MvcResult created = mockMvc.perform(post(BASE)
@@ -166,6 +166,11 @@ class ClinicIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.name").value("IT Update Clinic After"))
                 .andExpect(jsonPath("$.active").value(true))
                 .andExpect(jsonPath("$.id").doesNotExist());
+
+        // Audit: UPDATE row must be written for the same uid
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(uid))
+                .as("audit_logs must contain an UPDATE row after clinic update")
+                .anyMatch(r -> r.getAction() == AuditAction.UPDATE);
     }
 
     // ------------------------------------------------------------------

@@ -33,8 +33,12 @@ public class SupplierItemPrice extends AuditableEntity {
     @Column(name = "terms", columnDefinition = "TEXT")
     private String terms;
 
+    /**
+     * Active flag. Legacy default is {@code true} (legacy SupplierItemPrice.java:42 {@code active=true}).
+     * RF-4: reverted from the erroneous FALSE default that was applied during build.
+     */
     @Column(name = "active", nullable = false)
-    private boolean active = false;
+    private boolean active = true;
 
     /**
      * The supplier (legacy {@code @ManyToOne ... optional=false, updatable=false},

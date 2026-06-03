@@ -84,5 +84,25 @@ public interface ServicePriceRepository extends JpaRepository<ServicePrice, Long
         return countByCompositeKey(planUid, kind, serviceUid, currency) > 0;
     }
 
+    /**
+     * Fetches the single row matching the composite key (plan_uid, kind, service_uid, currency)
+     * using the same NULL-equality semantics as the COALESCE unique index (AC-5).
+     * Used by the upsert path to load the existing row for in-place UPDATE.
+     */
+    @Query("""
+            SELECT sp FROM ServicePrice sp
+            WHERE (:planUid IS NULL AND sp.planUid IS NULL
+                   OR sp.planUid = :planUid)
+              AND sp.kind = :kind
+              AND (:serviceUid IS NULL AND sp.serviceUid IS NULL
+                   OR sp.serviceUid = :serviceUid)
+              AND sp.currency = :currency
+            """)
+    Optional<ServicePrice> findByCompositeKey(
+            @Param("planUid") String planUid,
+            @Param("kind") ServiceKind kind,
+            @Param("serviceUid") String serviceUid,
+            @Param("currency") String currency);
+
     List<ServicePrice> findAllByOrderByKindAscPlanUidAsc();
 }

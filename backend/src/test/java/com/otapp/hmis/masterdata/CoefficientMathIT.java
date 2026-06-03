@@ -1,13 +1,16 @@
 package com.otapp.hmis.masterdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otapp.hmis.masterdata.application.ItemMedicineCoefficientService;
+import com.otapp.hmis.shared.audit.AuditAction;
+import com.otapp.hmis.shared.audit.AuditLogRepository;
 import com.otapp.hmis.support.AbstractIntegrationTest;
 import com.otapp.hmis.support.TestJwtFactory;
 import java.math.BigDecimal;
@@ -27,24 +30,63 @@ import org.springframework.test.web.servlet.MvcResult;
  *   <li><b>AC-3a:</b> itemQty=3, medicineQty=1 → stored coefficient reads back EXACTLY
  *       {@code 0.333333} (scale 6, HALF_UP — no truncation to 4dp).
  *   <li><b>AC-3b:</b> lossless {@code convert(3, medicineQty=1, itemQty=3) = 1.000000} (qty ×
- *       medicineQty / itemQty, rounded at the end) — NOT 3 × rounded-coefficient, which is 0.999999.
+ *       medicineQty / itemQty, rounded at the end) — NOT 3 × rounded-coefficient (0.999999).
  *   <li><b>AC-3c:</b> zero itemQty or medicineQty → 400.
  *   <li><b>AC-3d:</b> duplicate (item, medicine) pair → 409.
+ *   <li><b>AC-3 gate:</b> POST without token → 401; POST without ADMIN-ACCESS → 403.
+ *   <li><b>AC-3 missing:</b> GET unknown uid → 404.
+ *   <li><b>AC-3 update:</b> PUT recalculates coefficient; 403 without ADMIN-ACCESS; audit UPDATE row.
  * </ul>
  */
 class CoefficientMathIT extends AbstractIntegrationTest {
 
-    private static final String ITEMS    = "/api/v1/masterdata/items";
-    private static final String MEDICINES = "/api/v1/masterdata/medicines";
+    private static final String ITEMS        = "/api/v1/masterdata/items";
+    private static final String MEDICINES    = "/api/v1/masterdata/medicines";
     private static final String COEFFICIENTS = "/api/v1/masterdata/item-medicine-coefficients";
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired TestJwtFactory jwtFactory;
+    @Autowired AuditLogRepository auditLogRepository;
 
-    // -------------------------------------------------------------------------
-    // AC-3a + AC-3b: coefficient precision golden-master
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // AC-3 gate tests (401 / 403)
+    // =========================================================================
+
+    @Test
+    void create_withoutToken_returns401() throws Exception {
+        mockMvc.perform(post(COEFFICIENTS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemUid\":\"X\",\"medicineUid\":\"Y\",\"itemQty\":1,\"medicineQty\":1}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void create_withoutAdminAccess_returns403() throws Exception {
+        // DAY-ACCESS is not sufficient — gate requires ADMIN-ACCESS (CR-15 DEVIATION-2)
+        String token = jwtFactory.tokenWithPrivileges("clerk", List.of("DAY-ACCESS"));
+        mockMvc.perform(post(COEFFICIENTS)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemUid\":\"X\",\"medicineUid\":\"Y\",\"itemQty\":1,\"medicineQty\":1}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // =========================================================================
+    // AC-3: GET unknown uid → 404
+    // =========================================================================
+
+    @Test
+    void getByUid_unknownUid_returns404() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        mockMvc.perform(get(COEFFICIENTS + "/uid/NONEXISTENT-UID-00000000000")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    // =========================================================================
+    // AC-3a + AC-3b: coefficient precision golden-master + audit CREATE row
+    // =========================================================================
 
     @Test
     void coefficient_oneThird_storedAndReadBackAsScale6_andMultiplyReturnsExact() throws Exception {
@@ -67,6 +109,11 @@ class CoefficientMathIT extends AbstractIntegrationTest {
 
         String uid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("uid").asText();
+
+        // Audit: CREATE row must exist
+        assertThat(auditLogRepository.findByEntityTypeOrderByOccurredAtAsc("masterdata.ItemMedicineCoefficient"))
+                .as("audit_logs must contain a CREATE row for the new coefficient uid")
+                .anyMatch(r -> r.getEntityUid().equals(uid) && r.getAction() == AuditAction.CREATE);
 
         // Read back and verify exact 6-decimal precision
         MvcResult getResult = mockMvc.perform(get(COEFFICIENTS + "/uid/" + uid)
@@ -102,9 +149,9 @@ class CoefficientMathIT extends AbstractIntegrationTest {
                 .isLessThan(new BigDecimal("1.000000"));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Static unit test for the computation method itself (no DB required)
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     @Test
     void computeCoefficient_oneThird_returnsExact0point333333() {
@@ -121,9 +168,9 @@ class CoefficientMathIT extends AbstractIntegrationTest {
         assertThat(result).isEqualByComparingTo(new BigDecimal("0.500000"));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // AC-3c: zero quantities → 400
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     @Test
     void create_withZeroItemQty_returns400() throws Exception {
@@ -173,9 +220,9 @@ class CoefficientMathIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // AC-3d: duplicate (item, medicine) pair → 409
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     @Test
     void create_duplicatePair_returns409() throws Exception {
@@ -199,12 +246,73 @@ class CoefficientMathIT extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:conflict"))
+                .andExpect(jsonPath("$.status").value(409));
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // AC-3 UPDATE path: coefficient recalculated; 403 without ADMIN-ACCESS; audit UPDATE row
+    // =========================================================================
+
+    @Test
+    void update_withAdminAccess_recomputesCoefficientAndReturns200() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String itemUid = createItem(token, "COEF-ITEM-UPD", "Coef Item Upd");
+        String medUid  = createMedicine(token, "COEF-MED-UPD", "Coef Med Upd");
+
+        // Create: itemQty=3, medicineQty=1 → coefficient=0.333333
+        String createBody = """
+                {"itemUid":"%s","medicineUid":"%s","itemQty":3,"medicineQty":1}
+                """.formatted(itemUid, medUid);
+        MvcResult created = mockMvc.perform(post(COEFFICIENTS)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String uid = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("uid").asText();
+
+        // Update: itemQty=2, medicineQty=1 → coefficient=0.500000
+        String updateBody = """
+                {"itemUid":"%s","medicineUid":"%s","itemQty":2,"medicineQty":1}
+                """.formatted(itemUid, medUid);
+        MvcResult updated = mockMvc.perform(put(COEFFICIENTS + "/uid/" + uid)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid").value(uid))
+                .andExpect(jsonPath("$.id").doesNotExist())
+                .andReturn();
+
+        // Verify recomputed coefficient = 0.500000 using BigDecimal comparison (AC-3b style)
+        String updatedCoef = objectMapper.readTree(updated.getResponse().getContentAsString())
+                .get("coefficient").asText();
+        assertThat(new BigDecimal(updatedCoef))
+                .isEqualByComparingTo(new BigDecimal("0.500000"));
+
+        // Audit: UPDATE row written
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(uid))
+                .as("audit_logs must contain both CREATE and UPDATE rows for the coefficient uid")
+                .anyMatch(r -> r.getAction() == AuditAction.CREATE)
+                .anyMatch(r -> r.getAction() == AuditAction.UPDATE);
+    }
+
+    @Test
+    void update_withoutAdminAccess_returns403() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("clerk", List.of("DAY-ACCESS"));
+        mockMvc.perform(put(COEFFICIENTS + "/uid/SOMEUID")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemUid\":\"X\",\"medicineUid\":\"Y\",\"itemQty\":1,\"medicineQty\":1}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // =========================================================================
     // Helpers
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     private String createItem(String token, String code, String name) throws Exception {
         String body = """

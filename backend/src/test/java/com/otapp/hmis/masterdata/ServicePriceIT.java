@@ -1,6 +1,7 @@
 package com.otapp.hmis.masterdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -10,8 +11,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otapp.hmis.masterdata.lookup.PriceLookup;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.masterdata.lookup.ServicePriceResult;
+import com.otapp.hmis.shared.audit.AuditAction;
+import com.otapp.hmis.shared.audit.AuditLogRepository;
 import com.otapp.hmis.support.AbstractIntegrationTest;
 import com.otapp.hmis.support.TestJwtFactory;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * Golden-master tests for {@code ServicePrice} (build-spec §5.7, AC-1, AC-5).
+ * Golden-master tests for {@code ServicePrice} (build-spec §5.7, AC-1, AC-5, RF-1, RF-2).
  *
  * <h2>AC-1 — PriceLookup resolve, all 7 kinds</h2>
  * For each of the 7 {@link ServiceKind} values the test:
@@ -31,12 +35,16 @@ import org.springframework.test.web.servlet.MvcResult;
  *       cash amount; missing both → HTTP 422 {@code service-price-not-found}.</li>
  * </ul>
  *
- * <h2>AC-5 — Uniqueness 409 with NULL plan_uid and NULL service_uid</h2>
- * Duplicate POST with the same composite key → 409 (not 500, not silent), including
- * the edge cases where plan_uid IS NULL (cash) and service_uid IS NULL (REGISTRATION).
+ * <h2>AC-5 (RF-1) — True upsert: same composite key → UPDATE (200), not 409</h2>
+ * A second POST with the same (plan_uid, kind, service_uid, currency) key updates the
+ * existing row in-place and returns 200 OK. The row count stays 1.
+ *
+ * <h2>RF-2 — price/coverage coupling</h2>
+ * {@code amount=0} → stored {@code covered=false} regardless of caller; {@code amount<0} → 400.
  *
  * <h2>Inert fields</h2>
  * A row with min_amount/max_amount set resolves to {@code amount} only (CR-11).
+ * The {@code active} flag is inert in resolve — a {@code active=false} row still resolves (CR-11).
  */
 class ServicePriceIT extends AbstractIntegrationTest {
 
@@ -48,8 +56,11 @@ class ServicePriceIT extends AbstractIntegrationTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired TestJwtFactory jwtFactory;
     @Autowired PriceLookup priceLookup;
+    @Autowired AuditLogRepository auditLogRepository;
 
+    // =========================================================================
     // AC-1: REGISTRATION (service_uid NULL — CR-18)
+    // =========================================================================
 
     @Test
     void ac1_registration_insuranceHitAndCashFallback() throws Exception {
@@ -58,12 +69,14 @@ class ServicePriceIT extends AbstractIntegrationTest {
 
         // Cash row — plan_uid NULL, service_uid NULL
         seedPrice(token, null, "REGISTRATION", null, "TZS", "500.00", true, null, null);
-        // Insurance covered row — plan_uid set, service_uid NULL
-        seedPrice(token, planUid, "REGISTRATION", null, "TZS", "0.00", true, null, null);
+        // Insurance covered row — plan_uid set, service_uid NULL.
+        // RF-2: amount must be > 0 to keep covered=true and trigger an insurance hit on resolve.
+        // (amount=0 would force covered=false, making this row a non-hit — tested separately.)
+        seedPrice(token, planUid, "REGISTRATION", null, "TZS", "200.00", true, null, null);
 
-        // Insurance hit
+        // Insurance hit — covered row is found; returns the plan amount
         ServicePriceResult insResult = priceLookup.resolve(planUid, ServiceKind.REGISTRATION, null, "TZS");
-        assertThat(insResult.amount()).isEqualByComparingTo("0.00");
+        assertThat(insResult.amount()).isEqualByComparingTo("200.00");
         assertThat(insResult.covered()).isTrue();
         assertThat(insResult.planUid()).isEqualTo(planUid);
         assertThat(insResult.kind()).isEqualTo(ServiceKind.REGISTRATION);
@@ -75,7 +88,9 @@ class ServicePriceIT extends AbstractIntegrationTest {
         assertThat(cashResult.planUid()).isNull();
     }
 
+    // =========================================================================
     // AC-1: CONSULTATION (service_uid = Clinic.uid)
+    // =========================================================================
 
     @Test
     void ac1_consultation_insuranceHitAndCashFallback() throws Exception {
@@ -96,7 +111,9 @@ class ServicePriceIT extends AbstractIntegrationTest {
         assertThat(cashResult.planUid()).isNull();
     }
 
+    // =========================================================================
     // AC-1: LAB_TEST
+    // =========================================================================
 
     @Test
     void ac1_labTest_insuranceHitAndCashFallback() throws Exception {
@@ -107,14 +124,15 @@ class ServicePriceIT extends AbstractIntegrationTest {
         seedPrice(token, null,    "LAB_TEST", svcUid, "TZS", "8000.00", true,  null, null);
         seedPrice(token, planUid, "LAB_TEST", svcUid, "TZS", "5000.00", true,  null, null);
 
-        ServicePriceResult insResult = priceLookup.resolve(planUid, ServiceKind.LAB_TEST, svcUid, "TZS");
-        assertThat(insResult.amount()).isEqualByComparingTo("5000.00");
-
-        ServicePriceResult cashResult = priceLookup.resolve(null, ServiceKind.LAB_TEST, svcUid, "TZS");
-        assertThat(cashResult.amount()).isEqualByComparingTo("8000.00");
+        assertThat(priceLookup.resolve(planUid, ServiceKind.LAB_TEST, svcUid, "TZS").amount())
+                .isEqualByComparingTo("5000.00");
+        assertThat(priceLookup.resolve(null, ServiceKind.LAB_TEST, svcUid, "TZS").amount())
+                .isEqualByComparingTo("8000.00");
     }
 
+    // =========================================================================
     // AC-1: MEDICINE
+    // =========================================================================
 
     @Test
     void ac1_medicine_insuranceHitAndCashFallback() throws Exception {
@@ -131,7 +149,9 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .isEqualByComparingTo("200.00");
     }
 
+    // =========================================================================
     // AC-1: PROCEDURE
+    // =========================================================================
 
     @Test
     void ac1_procedure_insuranceHitAndCashFallback() throws Exception {
@@ -148,7 +168,9 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .isEqualByComparingTo("15000.00");
     }
 
+    // =========================================================================
     // AC-1: RADIOLOGY
+    // =========================================================================
 
     @Test
     void ac1_radiology_insuranceHitAndCashFallback() throws Exception {
@@ -165,7 +187,9 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .isEqualByComparingTo("25000.00");
     }
 
+    // =========================================================================
     // AC-1: WARD (service_uid = WardType.uid — CR-12)
+    // =========================================================================
 
     @Test
     void ac1_ward_insuranceHitAndCashFallback() throws Exception {
@@ -182,11 +206,13 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .isEqualByComparingTo("50000.00");
     }
 
+    // =========================================================================
     // AC-1: missing both rows → 422 service-price-not-found
+    // =========================================================================
 
     @Test
     void ac1_missingBoth_resolve_returns422() throws Exception {
-        String token = jwtFactory.tokenWithPrivileges("user", List.of("DAY-ACCESS"));
+        String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
         mockMvc.perform(get(BASE + "/resolve")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .param("kind", "LAB_TEST")
@@ -196,7 +222,22 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.type").value("urn:hmis:error:service-price-not-found"));
     }
 
+    // =========================================================================
+    // AC-1: resolve without token → 401
+    // =========================================================================
+
+    @Test
+    void resolve_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get(BASE + "/resolve")
+                        .param("kind", "LAB_TEST")
+                        .param("serviceUid", "SOME-UID")
+                        .param("currency", "TZS"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // =========================================================================
     // AC-1: covered=false placeholder row falls through to cash fallback
+    // =========================================================================
 
     @Test
     void ac1_coveredFalseRow_doesNotTriggerInsuranceHit_fallsThroughToCash() throws Exception {
@@ -215,7 +256,70 @@ class ServicePriceIT extends AbstractIntegrationTest {
         assertThat(result.planUid()).isNull();  // came from cash row
     }
 
+    // =========================================================================
+    // AC-1: active=false row is still resolved (active is inert in PriceLookup — CR-11)
+    // =========================================================================
+
+    @Test
+    void ac1_activeInert_falseActiveRowStillResolves() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-INACT-IT", "Provider Inact",
+                "IPLAN-INACT-IT", "Plan Inact");
+        String svcUid  = createRadiologyTypeAndGetUid(token, "RT-INACT-IT", "Radiology Inact IT");
+
+        // Seed with active=false — the resolve must still find it (active is inert)
+        String body = """
+                {"planUid":"%s","kind":"RADIOLOGY","serviceUid":"%s","currency":"TZS",
+                 "amount":12345.00,"covered":true,"minAmount":null,"maxAmount":null,"active":false}
+                """.formatted(planUid, svcUid);
+        mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+
+        ServicePriceResult result = priceLookup.resolve(planUid, ServiceKind.RADIOLOGY, svcUid, "TZS");
+        assertThat(result.amount())
+                .as("active=false row must still be resolved; active is inert (CR-11)")
+                .isEqualByComparingTo("12345.00");
+    }
+
+    // =========================================================================
+    // AC-1: currency mismatch → 422 (currency is a lookup discriminator, not a multiplier)
+    // =========================================================================
+
+    @Test
+    void ac1_currencyMismatch_returns422() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-CURR-IT", "Provider Curr",
+                "IPLAN-CURR-IT", "Plan Curr");
+        String svcUid  = createLabTestTypeAndGetUid(token, "LTT-CURR-IT", "Lab Curr IT");
+
+        // Seed a row in USD
+        String body = """
+                {"planUid":"%s","kind":"LAB_TEST","serviceUid":"%s","currency":"USD",
+                 "amount":99.00,"covered":true,"minAmount":null,"maxAmount":null,"active":true}
+                """.formatted(planUid, svcUid);
+        mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+
+        // Resolve with TZS → miss (currency is a discriminator, not converted)
+        mockMvc.perform(get(BASE + "/resolve")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .param("planUid", planUid)
+                        .param("kind", "LAB_TEST")
+                        .param("serviceUid", svcUid)
+                        .param("currency", "TZS"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:service-price-not-found"));
+    }
+
+    // =========================================================================
     // Inert fields: min/max do not affect resolve amount (CR-11)
+    // =========================================================================
 
     @Test
     void inertFields_minMaxDoNotAffectResolveAmount() throws Exception {
@@ -235,100 +339,252 @@ class ServicePriceIT extends AbstractIntegrationTest {
         assertThat(result.maxAmount()).isEqualByComparingTo("20000.00");
     }
 
-    // AC-5: uniqueness 409 — duplicate composite key
+    // =========================================================================
+    // AC-5 / RF-1: TRUE UPSERT — second POST with same key → UPDATE (200), not 409
+    // =========================================================================
 
     @Test
-    void ac5_duplicatePost_sameKey_returns409() throws Exception {
+    void ac5_upsertUpdate_sameKeySecondPost_returns200AndAmountChanged() throws Exception {
         String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
-        String planUid = createPlanAndGetUid(token, "IP-DUP-IT", "Provider Dup", "IPLAN-DUP-IT", "Plan Dup");
-        String svcUid  = createLabTestTypeAndGetUid(token, "LTT-DUP-IT", "Lab Dup IT");
+        String planUid = createPlanAndGetUid(token, "IP-UPS-IT", "Provider Ups", "IPLAN-UPS-IT", "Plan Ups");
+        String svcUid  = createLabTestTypeAndGetUid(token, "LTT-UPS-IT", "Lab Ups IT");
 
-        String body = servicePriceJson(planUid, "LAB_TEST", svcUid, "TZS", "6000.00", true, null, null);
+        String bodyFirst = servicePriceJson(planUid, "LAB_TEST", svcUid, "TZS", "6000.00", true, null, null);
+        String bodySecond = servicePriceJson(planUid, "LAB_TEST", svcUid, "TZS", "7777.00", true, null, null);
 
-        // First create succeeds
-        mockMvc.perform(post(BASE)
+        // First POST → 201 Created
+        MvcResult first = mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isCreated());
+                        .content(bodyFirst))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String uid = objectMapper.readTree(first.getResponse().getContentAsString()).get("uid").asText();
 
-        // Second create with same composite key → 409
-        mockMvc.perform(post(BASE)
+        // Second POST with same key → 200 OK (UPDATE path), amount changed
+        MvcResult second = mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:hmis:error:duplicate-service-price"));
+                        .content(bodySecond))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid").value(uid))   // same uid — same row
+                .andReturn();
+        BigDecimal returnedAmount = new BigDecimal(
+                objectMapper.readTree(second.getResponse().getContentAsString())
+                        .get("amount").asText());
+        assertThat(returnedAmount).isEqualByComparingTo("7777.00");
+
+        // Resolve confirms the updated value is live
+        ServicePriceResult resolved = priceLookup.resolve(planUid, ServiceKind.LAB_TEST, svcUid, "TZS");
+        assertThat(resolved.amount()).isEqualByComparingTo("7777.00");
+
+        // Audit: CREATE row then UPDATE row, both for the same uid
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(uid))
+                .as("audit must have CREATE then UPDATE rows")
+                .anyMatch(r -> r.getAction() == AuditAction.CREATE)
+                .anyMatch(r -> r.getAction() == AuditAction.UPDATE);
     }
 
     @Test
-    void ac5_duplicateCashRow_nullPlanUid_returns409() throws Exception {
-        // NULL plan_uid (cash) must also be caught by the COALESCE pre-check
+    void ac5_upsertUpdate_nullPlanUid_secondPost_returns200() throws Exception {
+        // NULL plan_uid (cash) upsert — same COALESCE bucket logic applies
         String token  = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
-        String svcUid = createProcedureTypeAndGetUid(token, "PT-DUP-CASH-IT", "Procedure Dup Cash IT");
+        String svcUid = createProcedureTypeAndGetUid(token, "PT-UPS-CASH-IT", "Procedure Ups Cash IT");
 
-        String body = servicePriceJson(null, "PROCEDURE", svcUid, "TZS", "12000.00", true, null, null);
+        String bodyFirst  = servicePriceJson(null, "PROCEDURE", svcUid, "TZS", "12000.00", true, null, null);
+        String bodySecond = servicePriceJson(null, "PROCEDURE", svcUid, "TZS", "13500.00", true, null, null);
 
         mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(bodyFirst))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post(BASE)
+        MvcResult secondCash = mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:hmis:error:duplicate-service-price"));
+                        .content(bodySecond))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(new BigDecimal(objectMapper.readTree(
+                secondCash.getResponse().getContentAsString()).get("amount").asText()))
+                .isEqualByComparingTo("13500.00");
     }
 
     @Test
-    void ac5_duplicateRegistrationRow_nullServiceUid_returns409() throws Exception {
-        // NULL service_uid (REGISTRATION) must also be caught — CR-18
+    void ac5_upsertUpdate_nullServiceUid_secondPost_returns200() throws Exception {
+        // NULL service_uid (REGISTRATION) upsert
         String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
-        String planUid = createPlanAndGetUid(token, "IP-DUP-REG-IT", "Provider Dup Reg",
-                "IPLAN-DUP-REG-IT", "Plan Dup Reg");
+        String planUid = createPlanAndGetUid(token, "IP-UPS-REG-IT", "Provider Ups Reg",
+                "IPLAN-UPS-REG-IT", "Plan Ups Reg");
 
-        String body = servicePriceJson(planUid, "REGISTRATION", null, "TZS", "0.00", true, null, null);
+        String bodyFirst  = servicePriceJson(planUid, "REGISTRATION", null, "TZS", "300.00", true, null, null);
+        String bodySecond = servicePriceJson(planUid, "REGISTRATION", null, "TZS", "350.00", true, null, null);
 
         mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(bodyFirst))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(post(BASE)
+        MvcResult secondReg = mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:hmis:error:duplicate-service-price"));
+                        .content(bodySecond))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(new BigDecimal(objectMapper.readTree(
+                secondReg.getResponse().getContentAsString()).get("amount").asText()))
+                .isEqualByComparingTo("350.00");
     }
 
     @Test
-    void ac5_duplicateCashRegistrationRow_bothNulls_returns409() throws Exception {
+    void ac5_upsertUpdate_bothNulls_secondPost_returns200() throws Exception {
         // NULL plan_uid AND NULL service_uid (cash REGISTRATION) — both COALESCE buckets active.
-        // Use a test-only currency ("ZZZ") so this both-NULL row does not collide with the TZS
-        // REGISTRATION cash row created by the AC-1 tests in the shared singleton-container DB.
+        // Use currency "ZZZ" to avoid collisions with TZS rows seeded by AC-1 tests.
         String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
-        String body  = servicePriceJson(null, "REGISTRATION", null, "ZZZ", "500.00", true, null, null);
+
+        String bodyFirst  = servicePriceJson(null, "REGISTRATION", null, "ZZZ", "500.00", true, null, null);
+        String bodySecond = servicePriceJson(null, "REGISTRATION", null, "ZZZ", "600.00", true, null, null);
 
         mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
+                        .content(bodyFirst))
                 .andExpect(status().isCreated());
 
+        MvcResult secondBoth = mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(bodySecond))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(new BigDecimal(objectMapper.readTree(
+                secondBoth.getResponse().getContentAsString()).get("amount").asText()))
+                .isEqualByComparingTo("600.00");
+    }
+
+    // =========================================================================
+    // RF-1: DELETE → 204; idempotent second delete also 204; resolve after delete → 422
+    // =========================================================================
+
+    @Test
+    void delete_existingRow_returns204_thenResolveReturns422() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-DEL-IT", "Provider Del", "IPLAN-DEL-IT", "Plan Del");
+        String svcUid  = createProcedureTypeAndGetUid(token, "PT-DEL-IT", "Procedure Del IT");
+
+        // Seed
+        MvcResult created = mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(servicePriceJson(planUid, "PROCEDURE", svcUid, "TZS", "9000.00", true, null, null)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String uid = objectMapper.readTree(created.getResponse().getContentAsString()).get("uid").asText();
+
+        // DELETE → 204
+        mockMvc.perform(delete(BASE + "/uid/" + uid)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        // Idempotent: second DELETE → 204 (not 404)
+        mockMvc.perform(delete(BASE + "/uid/" + uid)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        // Resolve now misses → 422
+        mockMvc.perform(get(BASE + "/resolve")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .param("planUid", planUid)
+                        .param("kind", "PROCEDURE")
+                        .param("serviceUid", svcUid)
+                        .param("currency", "TZS"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:service-price-not-found"));
+
+        // Audit: DELETE row present
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(uid))
+                .anyMatch(r -> r.getAction() == AuditAction.DELETE);
+    }
+
+    @Test
+    void delete_unknownUid_returns204_idempotent() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        mockMvc.perform(delete(BASE + "/uid/NONEXISTENT-UID-00000000000")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNoContent());
+    }
+
+    // =========================================================================
+    // RF-2: price/coverage coupling
+    // =========================================================================
+
+    @Test
+    void rf2_amountZero_forcesCoveredFalse() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-RF2Z-IT", "Provider RF2Z",
+                "IPLAN-RF2Z-IT", "Plan RF2Z");
+        String svcUid  = createLabTestTypeAndGetUid(token, "LTT-RF2Z-IT", "Lab RF2Z IT");
+
+        // Send covered=true but amount=0 → service must store covered=false
+        MvcResult result = mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(servicePriceJson(planUid, "LAB_TEST", svcUid, "TZS", "0.00", true, null, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.covered").value(false))   // RF-2: forced false
+                .andReturn();
+
+        // Verify the stored row: covered=false means no insurance hit → cash fallback needed
+        // (if no cash row exists, resolve will 422)
+        String uid = objectMapper.readTree(result.getResponse().getContentAsString()).get("uid").asText();
+        assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(uid))
+                .anyMatch(r -> r.getAction() == AuditAction.CREATE);
+    }
+
+    @Test
+    void rf2_amountNegative_returns400() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-RF2N-IT", "Provider RF2N",
+                "IPLAN-RF2N-IT", "Plan RF2N");
+        String svcUid  = createLabTestTypeAndGetUid(token, "LTT-RF2N-IT", "Lab RF2N IT");
+
+        // amount=-1 → 400 (legacy: "Invalid Price value. Price should not be less than zero")
         mockMvc.perform(post(BASE)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.type").value("urn:hmis:error:duplicate-service-price"));
+                        .content(servicePriceJson(planUid, "LAB_TEST", svcUid, "TZS", "-1.00", true, null, null)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:validation"));
     }
 
+    // =========================================================================
+    // Audit: CREATE row is written on first seed
+    // =========================================================================
+
+    @Test
+    void audit_createRow_isWrittenOnInsert() throws Exception {
+        String token   = jwtFactory.tokenWithPrivileges("admin", List.of("ADMIN-ACCESS"));
+        String planUid = createPlanAndGetUid(token, "IP-AUD-IT", "Provider Aud", "IPLAN-AUD-IT", "Plan Aud");
+        String svcUid  = createRadiologyTypeAndGetUid(token, "RT-AUD-IT", "Radiology Aud IT");
+
+        MvcResult result = mockMvc.perform(post(BASE)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(servicePriceJson(planUid, "RADIOLOGY", svcUid, "TZS", "3000.00", true, null, null)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String uid = objectMapper.readTree(result.getResponse().getContentAsString()).get("uid").asText();
+
+        assertThat(auditLogRepository.findByEntityTypeOrderByOccurredAtAsc("masterdata.ServicePrice"))
+                .as("audit_logs must contain a CREATE row for the new ServicePrice uid")
+                .anyMatch(r -> r.getEntityUid().equals(uid) && r.getAction() == AuditAction.CREATE);
+    }
+
+    // =========================================================================
     // Authorization gates
+    // =========================================================================
 
     @Test
     void post_withoutToken_returns401() throws Exception {
@@ -348,8 +604,27 @@ class ServicePriceIT extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
-    // Helpers
+    @Test
+    void delete_withoutToken_returns401() throws Exception {
+        mockMvc.perform(delete(BASE + "/uid/SOMEUID"))
+                .andExpect(status().isUnauthorized());
+    }
 
+    @Test
+    void delete_withoutAdminAccess_returns403() throws Exception {
+        String token = jwtFactory.tokenWithPrivileges("clerk", List.of("DAY-ACCESS"));
+        mockMvc.perform(delete(BASE + "/uid/SOMEUID")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+
+    /**
+     * Seeds a price row and asserts the response is 2xx (201 on first create, 200 on upsert-update).
+     */
     private void seedPrice(String token, String planUid, String kind, String serviceUid,
                            String currency, String amount, boolean covered,
                            String minAmount, String maxAmount) throws Exception {
@@ -358,7 +633,7 @@ class ServicePriceIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(servicePriceJson(planUid, kind, serviceUid, currency,
                                 amount, covered, minAmount, maxAmount)))
-                .andExpect(status().isCreated());
+                .andExpect(status().is2xxSuccessful());
     }
 
     private String servicePriceJson(String planUid, String kind, String serviceUid,

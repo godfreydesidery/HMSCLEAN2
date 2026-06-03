@@ -150,10 +150,7 @@ CREATE TABLE suppliers (
 -- items_suppliers
 -- Legacy ItemSupplier has NO audit columns (ItemSupplier.java:31-50).
 -- HMSCLEAN2 includes full AuditableEntity cols for target-side consistency (build-spec §1.2 note).
--- active default FALSE (legacy: true — build-spec overrides to FALSE as safer default; note: legacy
--- sets it true, but item/supplier relationship record is inactive until confirmed — use FALSE).
--- NOTE: legacy has active=true; we follow the build-spec which says "active BOOLEAN NOT NULL DEFAULT FALSE"
--- per the DDL sketch in 07-design-schema §2.2 line items_suppliers table.
+-- active DEFAULT TRUE matches legacy ItemSupplier.java:49 (RF-4: corrected from erroneous FALSE).
 -- -------------------------------------------------------------------------------------
 CREATE TABLE items_suppliers (
     id                    BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -162,7 +159,7 @@ CREATE TABLE items_suppliers (
     supplier_id           BIGINT          NOT NULL,
     cost_price_vat_incl   NUMERIC(19,2)   NOT NULL DEFAULT 0,
     cost_price_vat_excl   NUMERIC(19,2)   NOT NULL DEFAULT 0,
-    active                BOOLEAN         NOT NULL DEFAULT FALSE,
+    active                BOOLEAN         NOT NULL DEFAULT TRUE,
     created_at            TIMESTAMPTZ     NOT NULL,
     updated_at            TIMESTAMPTZ,
     created_by            VARCHAR(80),
@@ -178,8 +175,8 @@ CREATE INDEX idx_items_suppliers_supplier ON items_suppliers (supplier_id);
 
 -- -------------------------------------------------------------------------------------
 -- supplier_item_prices
--- price default 0, active default FALSE (legacy SupplierItemPrice.java:40-42 has active=true,
--- but the build-spec DDL sketch uses FALSE as the safer catalogue-default — see above note).
+-- price default 0.  active DEFAULT TRUE matches legacy SupplierItemPrice.java:42
+-- (RF-4: corrected from erroneous FALSE).
 -- SupplierItemPriceList is a non-persistent DTO only (no table).
 -- -------------------------------------------------------------------------------------
 CREATE TABLE supplier_item_prices (
@@ -187,7 +184,7 @@ CREATE TABLE supplier_item_prices (
     uid         VARCHAR(26)     NOT NULL,
     price       NUMERIC(19,2)   NOT NULL DEFAULT 0,
     terms       TEXT,
-    active      BOOLEAN         NOT NULL DEFAULT FALSE,
+    active      BOOLEAN         NOT NULL DEFAULT TRUE,
     supplier_id BIGINT          NOT NULL,
     item_id     BIGINT          NOT NULL,
     created_at  TIMESTAMPTZ     NOT NULL,
