@@ -14,6 +14,7 @@ import { Observable }                                        from 'rxjs';
 import { CompanyProfile } from '../model/models';
 import { ProblemDetail } from '../model/models';
 import { RefreshRequest } from '../model/models';
+import { RevokeRequest } from '../model/models';
 import { TokenRequest } from '../model/models';
 import { TokenResponse } from '../model/models';
 
@@ -27,6 +28,10 @@ export interface IssueTokenRequestParams {
 
 export interface RefreshTokenRequestParams {
     refreshRequest: RefreshRequest;
+}
+
+export interface RevokeTokenRequestParams {
+    revokeRequest: RevokeRequest;
 }
 
 
@@ -53,5 +58,12 @@ export interface DefaultServiceInterface {
 * @param requestParameters
      */
     refreshToken(requestParameters: RefreshTokenRequestParams, extraHttpRequestParams?: any): Observable<TokenResponse>;
+
+    /**
+     * Revoke the caller\&#39;s current refresh token (logout)
+     * 
+* @param requestParameters
+     */
+    revokeToken(requestParameters: RevokeTokenRequestParams, extraHttpRequestParams?: any): Observable<{}>;
 
 }

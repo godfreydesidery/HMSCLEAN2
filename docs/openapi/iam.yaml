@@ -1,0 +1,516 @@
+openapi: 3.0.1
+info:
+  title: OpenAPI definition
+  version: v0
+servers:
+- url: http://localhost
+  description: Generated server url
+paths:
+  /api/v1/iam/users/uid/{uid}:
+    get:
+      tags:
+      - user-admin-controller
+      operationId: get
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    put:
+      tags:
+      - user-admin-controller
+      operationId: update
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+    delete:
+      tags:
+      - user-admin-controller
+      operationId: delete
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/iam/users/uid/{uid}/roles:
+    put:
+      tags:
+      - user-admin-controller
+      operationId: assignRoles
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRolesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/iam/roles/uid/{uid}:
+    get:
+      tags:
+      - role-admin-controller
+      operationId: get_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+    put:
+      tags:
+      - role-admin-controller
+      operationId: update_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+    delete:
+      tags:
+      - role-admin-controller
+      operationId: delete_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/iam/roles/uid/{uid}/privileges:
+    put:
+      tags:
+      - role-admin-controller
+      operationId: replacePrivileges
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceRolePrivilegesRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+  /api/v1/iam/users:
+    get:
+      tags:
+      - user-admin-controller
+      operationId: list
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummaryResponse"
+    post:
+      tags:
+      - user-admin-controller
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/iam/roles:
+    get:
+      tags:
+      - role-admin-controller
+      operationId: list_1
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleResponse"
+    post:
+      tags:
+      - role-admin-controller
+      operationId: create_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RoleResponse"
+  /api/v1/auth/token:
+    post:
+      tags:
+      - auth-controller
+      operationId: token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+  /api/v1/auth/token/revoke:
+    post:
+      tags:
+      - auth-controller
+      operationId: revoke
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+  /api/v1/auth/token/refresh:
+    post:
+      tags:
+      - auth-controller
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+  /api/v1/iam/privileges:
+    get:
+      tags:
+      - privilege-query-controller
+      operationId: list_2
+      parameters:
+      - name: roleName
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrivilegeResponse"
+  /api/v1/company-profile:
+    get:
+      tags:
+      - company-profile-controller
+      operationId: current
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CompanyProfileDto"
+components:
+  schemas:
+    UpdateUserRequest:
+      required:
+      - firstName
+      - lastName
+      - nickname
+      type: object
+      properties:
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        password:
+          maxLength: 50
+          minLength: 0
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+    UserResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        userNo:
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        username:
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    AssignRolesRequest:
+      required:
+      - roleNames
+      type: object
+      properties:
+        roleNames:
+          type: array
+          items:
+            type: string
+    UpdateRoleRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 80
+          minLength: 0
+          type: string
+    RoleResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        privilegeCodes:
+          type: array
+          items:
+            type: string
+    ReplaceRolePrivilegesRequest:
+      required:
+      - privilegeCodes
+      type: object
+      properties:
+        privilegeCodes:
+          type: array
+          items:
+            type: string
+    CreateUserRequest:
+      required:
+      - firstName
+      - lastName
+      - nickname
+      - password
+      - username
+      type: object
+      properties:
+        username:
+          maxLength: 50
+          minLength: 3
+          type: string
+        password:
+          maxLength: 50
+          minLength: 4
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+        lastName:
+          type: string
+        nickname:
+          type: string
+        roleNames:
+          type: array
+          items:
+            type: string
+    CreateRoleRequest:
+      required:
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 80
+          minLength: 0
+          type: string
+    TokenRequest:
+      required:
+      - password
+      - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+        privileges:
+          type: array
+          items:
+            type: string
+    RevokeRequest:
+      required:
+      - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    RefreshRequest:
+      required:
+      - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    UserSummaryResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        userNo:
+          type: string
+        username:
+          type: string
+        displayName:
+          type: string
+        enabled:
+          type: boolean
+        roleNames:
+          type: array
+          items:
+            type: string
+    PrivilegeResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+        code:
+          type: string
+        category:
+          type: string
+    CompanyProfileDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
