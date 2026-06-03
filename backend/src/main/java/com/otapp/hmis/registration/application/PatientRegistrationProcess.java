@@ -4,12 +4,16 @@ import com.otapp.hmis.billing.api.BillingCommands;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.iam.lookup.ClinicianAffiliationService;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
 import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
+import com.otapp.hmis.registration.application.dto.ConsultationDto;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
+import com.otapp.hmis.registration.application.dto.SendToDoctorRequest;
 import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
+import com.otapp.hmis.registration.domain.Consultation;
 import com.otapp.hmis.registration.domain.ConsultationRepository;
 import com.otapp.hmis.registration.domain.ConsultationStatus;
 import com.otapp.hmis.registration.domain.Patient;
@@ -61,6 +65,9 @@ public class PatientRegistrationProcess {
     /** Stable audit entity-type string for Patient (ADR-0007). */
     private static final String AUDIT_ENTITY_PATIENT = "registration.Patient";
 
+    /** Stable audit entity-type string for Consultation (ADR-0007). */
+    private static final String AUDIT_ENTITY_CONSULTATION = "registration.Consultation";
+
     private final PatientRepository patientRepository;
     private final RegistrationRepository registrationRepository;
     private final VisitRepository visitRepository;
@@ -69,6 +76,8 @@ public class PatientRegistrationProcess {
     private final BillingCommands billingCommands;
     private final AuditRecorder auditRecorder;
     private final PatientMapper patientMapper;
+    private final ClinicianAffiliationService clinicianAffiliationService;
+    private final ConsultationMapper consultationMapper;
 
     /**
      * Register a new patient — 8-step atomic workflow (build-spec §2.3).
@@ -159,7 +168,8 @@ public class PatientRegistrationProcess {
                 null,                       // serviceUid null for REGISTRATION (ChargeRequest.java:19)
                 BigDecimal.ONE,
                 mapPaymentMode(req.paymentType()),
-                false);
+                false,                      // inpatient: always false at registration (CR-12)
+                false);                     // followUp: REGISTRATION is never a follow-up
 
         ChargeResult result = billingCommands.recordClinicalCharge(chargeReq, ctx);
 
@@ -366,6 +376,127 @@ public class PatientRegistrationProcess {
                 AuditAction.UPDATE, ctx.actorUsername());
 
         return patientMapper.toDto(patient);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // C6 — send-to-doctor (consultation booking + consultation-fee charge)
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Send a patient to a doctor — creates a PENDING consultation and the associated
+     * consultation-fee charge in one atomic transaction (build-spec §3.2, CR-22).
+     *
+     * <p>Equivalent to legacy {@code do_consultation} (PatientServiceImpl.java:425-475).
+     * Steps:
+     * <ol>
+     *   <li>Load patient (404 if absent).</li>
+     *   <li>Guard: patient must be OUTPATIENT (422).</li>
+     *   <li>Guard: clinician must be affiliated with the selected clinic (422).</li>
+     *   <li>Guard: no existing PENDING consultation for the patient (422).</li>
+     *   <li>Record consultation-fee charge via billing engine; for follow-up the bill is
+     *       NONE / zero (CR-20, PatientServiceImpl.java:467-469).</li>
+     *   <li>Persist a SUBSEQUENT Visit unconditionally (no same-day dedup, AC3.6).</li>
+     *   <li>Persist Consultation (PENDING).</li>
+     *   <li>Audit Consultation CREATE.</li>
+     * </ol>
+     *
+     * <p>Atomicity: the charge call runs in this method's transaction (propagation REQUIRED).
+     * A charge failure (e.g. missing CONSULTATION price) rolls back the entire unit —
+     * no Consultation row and no SUBSEQUENT Visit are persisted. The bill uid is obtained
+     * before persisting either, so a charge failure leaves no orphan rows.
+     *
+     * <p>DEFERRED stubs (inc-05/06):
+     * <ul>
+     *   <li>ConsultationTransfer guard (TRANSFERED status) — inc-05</li>
+     *   <li>IN-PROCESS status guard — inc-05</li>
+     *   <li>Admission / inpatient guard — inc-06</li>
+     * </ul>
+     *
+     * @param uid  the patient ULID
+     * @param req  the send-to-doctor request (clinicUid, clinicianUserUid, followUp)
+     * @param ctx  transaction audit context
+     * @return the mapped {@link ConsultationDto} for the 201 response
+     * @throws NotFoundException               (404) if no patient with the given uid exists
+     * @throws InvalidPatientOperationException (422) on any guard violation
+     * Legacy citation: PatientServiceImpl.java:425-475 (do_consultation).
+     */
+    @Transactional
+    public ConsultationDto sendToDoctor(String uid, SendToDoctorRequest req, TxAuditContext ctx) {
+
+        // Step 1 — load patient (404)
+        Patient patient = requirePatient(uid);
+
+        // Step 2 — OUTPATIENT guard (PatientServiceImpl.java:432-438)
+        if (patient.getType() != PatientType.OUTPATIENT) {
+            throw new InvalidPatientOperationException(
+                    "Please change patient type to OUTPATIENT to continue with operation");
+        }
+
+        // Step 3 — clinician affiliation gate (CR-08, build-spec §3.2)
+        // Equivalent to legacy clinician-active + clinic-pairing check. The iam module
+        // owns the affiliation set; registration depends only on iam::lookup (ADR-0008).
+        if (!clinicianAffiliationService.clinicUidsOf(req.clinicianUserUid())
+                .contains(req.clinicUid())) {
+            throw new InvalidPatientOperationException(
+                    "Clinician is not affiliated with the selected clinic");
+        }
+
+        // Step 4 — no existing PENDING consultation guard (PatientServiceImpl.java:443-448)
+        // inc-05/06: widen to TRANSFERED + IN-PROCESS statuses; add admission guard
+        if (consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)) {
+            throw new InvalidPatientOperationException(
+                    "Patient has pending or held consultation, please consider freeing the patient");
+        }
+        // inc-05: TRANSFERED status guard (ConsultationTransfer) — DEFERRED
+        // inc-05: IN-PROCESS status guard — DEFERRED
+        // inc-06: admission / inpatient guard — DEFERRED
+
+        // Step 5 — consultation-fee charge via billing engine (build-spec §3.2 step 5)
+        // For follow-up: billing engine creates a NONE bill with zero amounts (CR-20).
+        // For non-followUp INSURANCE patient not covered at clinic: billing hard-fails 422
+        // (PlanNotAvailableForClinicException) — intentional PARITY, rolls back entire tx.
+        // NOTE: charge is called BEFORE Visit + Consultation persist so that a charge failure
+        // leaves no orphan Visit or Consultation rows in the database (atomicity by ordering).
+        ChargeResult chargeResult = billingCommands.recordClinicalCharge(
+                new ChargeRequest(
+                        patient.getUid(),
+                        patient.getInsurancePlanUid(),
+                        patient.getMembershipNo() != null && !patient.getMembershipNo().isBlank()
+                                ? patient.getMembershipNo() : null,
+                        ServiceKind.CONSULTATION,
+                        req.clinicUid(),          // serviceUid = clinicUid for CONSULTATION pricing
+                        BigDecimal.ONE,
+                        mapPaymentMode(patient.getPaymentType()),
+                        false,                    // inpatient: always false for OPD send-to-doctor
+                        req.followUp()),
+                ctx);
+
+        // Step 6 — persist SUBSEQUENT Visit unconditionally (no same-day dedup, AC3.6)
+        // PatientServiceImpl.java:499-512 (subsequent visit creation)
+        Visit visit = new Visit(patient, VisitSequence.SUBSEQUENT, ctx.dayUid());
+        visitRepository.save(visit);
+
+        // Step 7 — persist Consultation (PENDING)
+        // Consultation.java constructor: status defaults to PENDING (build-spec §3.2 step 7)
+        Consultation consultation = new Consultation(
+                patient,
+                visit,
+                req.clinicUid(),
+                req.clinicianUserUid(),
+                chargeResult.billUid(),
+                patient.getPaymentType(),
+                req.followUp(),
+                ctx.dayUid());
+        consultationRepository.save(consultation);
+
+        // Step 8 — audit Consultation CREATE (ADR-0007)
+        auditRecorder.record(AUDIT_ENTITY_CONSULTATION, consultation.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+
+        // ConsultationBooked after-commit event is reporting-only → SKIP/defer in inc-03
+        // (build-spec §3.2 note; do not add an event publisher here)
+
+        return consultationMapper.toDto(consultation);
     }
 
     // ---------------------------------------------------------------------------------

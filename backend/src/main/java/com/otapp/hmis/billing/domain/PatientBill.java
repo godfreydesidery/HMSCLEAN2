@@ -243,6 +243,20 @@ public class PatientBill extends AuditableEntity {
     }
 
     /**
+     * Mark this bill as a follow-up no-charge (CR-20 — PatientServiceImpl.java:467-469).
+     * Sets status=NONE with amount/paid/balance all zero, satisfying the invariant.
+     * Called when {@code followUp == true} on a CONSULTATION charge — no price resolution
+     * is performed; the bill is created with {@code Money.zero()} and immediately marked NONE.
+     */
+    public void markNoCharge() {
+        this.amount  = Money.zero();
+        this.paid    = Money.zero();
+        this.balance = Money.zero();
+        this.status  = BillStatus.NONE;
+        assertInvariant();
+    }
+
+    /**
      * Soft-cancel (CR-13 standard pattern for all kinds).
      * Sets status=CANCELED; does NOT delete. PatientResource.java:627.
      */

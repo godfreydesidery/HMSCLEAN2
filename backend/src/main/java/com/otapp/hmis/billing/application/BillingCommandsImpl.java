@@ -52,6 +52,7 @@ class BillingCommandsImpl implements BillingCommands {
                 req.paymentType(),
                 req.qty() != null ? req.qty() : java.math.BigDecimal.ONE,
                 req.inpatient(),
+                req.followUp(),
                 ctx);
 
         // Derive coverage status from bill status for the result record

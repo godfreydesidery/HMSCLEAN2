@@ -4,10 +4,12 @@ import com.otapp.hmis.registration.application.PatientQueryService;
 import com.otapp.hmis.registration.application.PatientRegistrationProcess;
 import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
 import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
+import com.otapp.hmis.registration.application.dto.ConsultationDto;
 import com.otapp.hmis.registration.application.dto.LastVisitDto;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.PatientSearchResult;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
+import com.otapp.hmis.registration.application.dto.SendToDoctorRequest;
 import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
@@ -171,6 +173,27 @@ public class PatientController {
             @Valid @RequestBody ChangePaymentTypeRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return registrationProcess.changePaymentType(uid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Send an OUTPATIENT to the doctor — atomically creates a PENDING Consultation + a
+     * consultation-fee bill (NONE for follow-ups) + a SUBSEQUENT Visit (build-spec §3,
+     * ≡ legacy do_consultation, PatientResource.java:508). RBAC: PATIENT-ALL/CREATE/UPDATE.
+     *
+     * @param uid     the patient uid
+     * @param request the clinic uid + clinician (user) uid + followUp flag
+     * @param jwt     the authenticated principal
+     * @return 201 with the created consultation + a Location header
+     */
+    @PostMapping("/uid/{uid}/send-to-doctor")
+    @PreAuthorize("hasAnyAuthority('PATIENT-ALL','PATIENT-CREATE','PATIENT-UPDATE')")
+    public ResponseEntity<ConsultationDto> sendToDoctor(
+            @PathVariable("uid") String uid,
+            @Valid @RequestBody SendToDoctorRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        ConsultationDto dto = registrationProcess.sendToDoctor(uid, request, ctxFrom(jwt));
+        URI location = URI.create("/api/v1/patients/uid/" + uid + "/consultations/uid/" + dto.uid());
+        return ResponseEntity.created(location).body(dto);
     }
 
     /** Build the per-operation audit context at the controller edge (ADR-0008 §3). */

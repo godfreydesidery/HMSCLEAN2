@@ -74,6 +74,11 @@ class BillingChargeService {
      * @param paymentType  requested payment mode
      * @param qty          quantity (must be 1 for non-MEDICINE; multiplied for MEDICINE)
      * @param isInpatient  whether the patient is currently admitted
+     * @param followUp     true if this is a follow-up CONSULTATION (no charge — CR-20,
+     *                     PatientServiceImpl.java:467-469); SKIP price resolution +
+     *                     invoice/claim; create a {@link com.otapp.hmis.billing.domain.PatientBill}
+     *                     with {@code Money.zero()} + {@code markNoCharge()} (status NONE), persist,
+     *                     return it. Must be {@code false} for all non-CONSULTATION kinds.
      * @param ctx          transaction audit context
      * @return the persisted PatientBill
      */
@@ -81,7 +86,22 @@ class BillingChargeService {
     PatientBill recordCharge(ServiceKind kind, String serviceUid,
                              String patientUid, String planUid, String membershipNo,
                              PaymentMode paymentType, BigDecimal qty,
-                             boolean isInpatient, TxAuditContext ctx) {
+                             boolean isInpatient, boolean followUp, TxAuditContext ctx) {
+
+        // -----------------------------------------------------------------------
+        // FOLLOW-UP SHORT-CIRCUIT — CR-20, PatientServiceImpl.java:467-469
+        // When followUp==true and kind==CONSULTATION: skip price resolution entirely;
+        // create a NONE bill with zero amounts and return immediately.
+        // -----------------------------------------------------------------------
+        if (followUp && kind == ServiceKind.CONSULTATION) {
+            PatientBill followUpBill = new PatientBill(
+                    patientUid, kind, labelFor(kind), labelFor(kind),
+                    qty != null ? qty : BigDecimal.ONE,
+                    Money.zero(), ctx.dayUid());
+            followUpBill.markNoCharge();
+            billRepository.save(followUpBill);
+            return followUpBill;
+        }
 
         // -----------------------------------------------------------------------
         // STEP 1 — always build at CASH first
