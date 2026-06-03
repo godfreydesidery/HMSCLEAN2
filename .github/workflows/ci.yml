@@ -58,3 +58,32 @@ jobs:
             backend/target/surefire-reports/**
             backend/target/failsafe-reports/**
           if-no-files-found: ignore
+
+  # Runs in parallel with build-and-test — no inter-job dependency.
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          # Path is relative to the repository root, not working-directory.
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production)
+        run: npm run build
+
+      # ESLint (@angular-eslint flat config) with @typescript-eslint/no-explicit-any
+      # as an error (ADR-0004 §8); the generated client is excluded in eslint.config.js.
+      - name: Lint
+        run: npm run lint

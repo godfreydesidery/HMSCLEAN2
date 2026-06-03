@@ -54,5 +54,15 @@ services:
       timeout: 5s
       retries: 12
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "4200:80"
+
 volumes:
   pgdata:
