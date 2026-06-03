@@ -11,8 +11,17 @@ import { HttpHeaders }                                       from '@angular/comm
 
 import { Observable }                                        from 'rxjs';
 
+import { CancelChargeRequest } from '../model/models';
+import { CancellationResultDto } from '../model/models';
+import { CollectionReportRow } from '../model/models';
 import { CompanyProfile } from '../model/models';
+import { CreditNoteDto } from '../model/models';
+import { PatientBillDto } from '../model/models';
+import { PatientInvoiceDto } from '../model/models';
+import { PatientPaymentDto } from '../model/models';
 import { ProblemDetail } from '../model/models';
+import { ReceiptDto } from '../model/models';
+import { RecordPaymentRequest } from '../model/models';
 import { RefreshRequest } from '../model/models';
 import { RevokeRequest } from '../model/models';
 import { TokenRequest } from '../model/models';
@@ -22,8 +31,54 @@ import { TokenResponse } from '../model/models';
 import { Configuration }                                     from '../configuration';
 
 
+export interface CancelChargeRequestParams {
+    billUid: string;
+    cancelChargeRequest: CancelChargeRequest;
+}
+
+export interface GetCollectionsReportRequestParams {
+    from: string;
+    to: string;
+    cashier?: string;
+}
+
+export interface GetCreditNoteRequestParams {
+    uid: string;
+}
+
+export interface GetInvoiceRequestParams {
+    uid: string;
+}
+
+export interface GetReceiptRequestParams {
+    uid: string;
+}
+
 export interface IssueTokenRequestParams {
     tokenRequest: TokenRequest;
+}
+
+export interface ListBillsRequestParams {
+    patientUid: string;
+    status?: 'UNPAID' | 'VERIFIED' | 'COVERED' | 'PAID' | 'NONE' | 'CANCELED';
+}
+
+export interface ListCreditNotesRequestParams {
+    patientUid: string;
+}
+
+export interface ListInvoicesRequestParams {
+    patientUid: string;
+    status?: 'PENDING' | 'APPROVED';
+}
+
+export interface RecordBillsPaymentRequestParams {
+    recordPaymentRequest: RecordPaymentRequest;
+}
+
+export interface RecordPaymentRequestParams {
+    uid: string;
+    recordPaymentRequest: RecordPaymentRequest;
 }
 
 export interface RefreshTokenRequestParams {
@@ -40,10 +95,45 @@ export interface DefaultServiceInterface {
     configuration: Configuration;
 
     /**
+     * Cancel a charge (soft-flag) and issue a credit note if it was paid
+     * 
+* @param requestParameters
+     */
+    cancelCharge(requestParameters: CancelChargeRequestParams, extraHttpRequestParams?: any): Observable<CancellationResultDto>;
+
+    /**
+     * EOD collections (cash-up) report aggregated by item and channel
+     * 
+* @param requestParameters
+     */
+    getCollectionsReport(requestParameters: GetCollectionsReportRequestParams, extraHttpRequestParams?: any): Observable<Array<CollectionReportRow>>;
+
+    /**
      * Get the company profile
      * 
 */
     getCompanyProfile(extraHttpRequestParams?: any): Observable<CompanyProfile>;
+
+    /**
+     * Get a credit note by uid
+     * 
+* @param requestParameters
+     */
+    getCreditNote(requestParameters: GetCreditNoteRequestParams, extraHttpRequestParams?: any): Observable<CreditNoteDto>;
+
+    /**
+     * Get an invoice by uid
+     * 
+* @param requestParameters
+     */
+    getInvoice(requestParameters: GetInvoiceRequestParams, extraHttpRequestParams?: any): Observable<PatientInvoiceDto>;
+
+    /**
+     * POS receipt for a recorded payment
+     * 
+* @param requestParameters
+     */
+    getReceipt(requestParameters: GetReceiptRequestParams, extraHttpRequestParams?: any): Observable<ReceiptDto>;
 
     /**
      * Issue an access + refresh token pair (login)
@@ -51,6 +141,41 @@ export interface DefaultServiceInterface {
 * @param requestParameters
      */
     issueToken(requestParameters: IssueTokenRequestParams, extraHttpRequestParams?: any): Observable<TokenResponse>;
+
+    /**
+     * List a patient\&#39;s bills (cashier collection queue)
+     * 
+* @param requestParameters
+     */
+    listBills(requestParameters: ListBillsRequestParams, extraHttpRequestParams?: any): Observable<Array<PatientBillDto>>;
+
+    /**
+     * List a patient\&#39;s credit notes (newest first)
+     * 
+* @param requestParameters
+     */
+    listCreditNotes(requestParameters: ListCreditNotesRequestParams, extraHttpRequestParams?: any): Observable<Array<CreditNoteDto>>;
+
+    /**
+     * List a patient\&#39;s invoices (cashier queue)
+     * 
+* @param requestParameters
+     */
+    listInvoices(requestParameters: ListInvoicesRequestParams, extraHttpRequestParams?: any): Observable<Array<PatientInvoiceDto>>;
+
+    /**
+     * Record a payment for a list of selected bills (cashier cash collection)
+     * 
+* @param requestParameters
+     */
+    recordBillsPayment(requestParameters: RecordBillsPaymentRequestParams, extraHttpRequestParams?: any): Observable<PatientPaymentDto>;
+
+    /**
+     * Record a full payment for one or more bills on the invoice
+     * 
+* @param requestParameters
+     */
+    recordPayment(requestParameters: RecordPaymentRequestParams, extraHttpRequestParams?: any): Observable<PatientPaymentDto>;
 
     /**
      * Rotate the refresh token and reissue an access token (privileges claim)

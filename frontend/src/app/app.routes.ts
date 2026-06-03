@@ -43,6 +43,13 @@ export const routes: Routes = [
         (m) => m.ForbiddenComponent,
       ),
   },
+  {
+    path: 'billing',
+    canActivate: [privilegeGuard],
+    data: { privilege: 'BILL-A' },
+    loadChildren: () =>
+      import('./features/billing/billing.routes').then((m) => m.BILLING_ROUTES),
+  },
   { path: '', pathMatch: 'full', redirectTo: 'home' },
   { path: '**', redirectTo: 'home' },
 ];

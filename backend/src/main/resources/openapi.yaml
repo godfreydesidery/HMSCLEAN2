@@ -87,6 +87,294 @@ paths:
           $ref: '#/components/responses/Problem'
         '404':
           $ref: '#/components/responses/Problem'
+  /billing/invoices:
+    get:
+      summary: List a patient's invoices (cashier queue)
+      operationId: listInvoices
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patientUid
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, APPROVED]
+      responses:
+        '200':
+          description: Invoices for the patient
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PatientInvoiceDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+  /billing/invoices/uid/{uid}:
+    get:
+      summary: Get an invoice by uid
+      operationId: getInvoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientInvoiceDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /billing/invoices/uid/{uid}/payments:
+    post:
+      summary: Record a full payment for one or more bills on the invoice
+      operationId: recordPayment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPaymentRequest'
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientPaymentDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /billing/bills/uid/{billUid}/cancellation:
+    post:
+      summary: Cancel a charge (soft-flag) and issue a credit note if it was paid
+      operationId: cancelCharge
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: billUid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelChargeRequest'
+      responses:
+        '200':
+          description: Cancellation result (bill status + optional credit note)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancellationResultDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /billing/credit-notes:
+    get:
+      summary: List a patient's credit notes (newest first)
+      operationId: listCreditNotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patientUid
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credit notes for the patient
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CreditNoteDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+  /billing/credit-notes/uid/{uid}:
+    get:
+      summary: Get a credit note by uid
+      operationId: getCreditNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The credit note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreditNoteDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /billing/reports/collections:
+    get:
+      summary: EOD collections (cash-up) report aggregated by item and channel
+      operationId: getCollectionsReport
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: cashier
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Aggregated collection rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CollectionReportRow'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+  /billing/payments/uid/{uid}/receipt:
+    get:
+      summary: POS receipt for a recorded payment
+      operationId: getReceipt
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /billing/payments:
+    post:
+      summary: Record a payment for a list of selected bills (cashier cash collection)
+      operationId: recordBillsPayment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordPaymentRequest'
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientPaymentDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /billing/bills:
+    get:
+      summary: List a patient's bills (cashier collection queue)
+      operationId: listBills
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patientUid
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [UNPAID, VERIFIED, COVERED, PAID, NONE, CANCELED]
+      responses:
+        '200':
+          description: The patient's bills
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PatientBillDto'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -160,6 +448,172 @@ components:
         currency:
           type: string
           example: TZS
+    PatientBillDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        patientUid:
+          type: string
+        billItem:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum: [REGISTRATION, CONSULTATION, LAB_TEST, MEDICINE, PROCEDURE, RADIOLOGY, WARD]
+        qty:
+          type: number
+        amount:
+          $ref: '#/components/schemas/MoneyDto'
+        paid:
+          $ref: '#/components/schemas/MoneyDto'
+        balance:
+          $ref: '#/components/schemas/MoneyDto'
+        status:
+          type: string
+          enum: [UNPAID, VERIFIED, COVERED, PAID, NONE, CANCELED]
+        paymentType:
+          type: string
+          enum: [CASH, INSURANCE]
+        membershipNo:
+          type: string
+        planUid:
+          type: string
+        businessDayUid:
+          type: string
+    PatientInvoiceDetailDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        billUid:
+          type: string
+        description:
+          type: string
+        qty:
+          type: number
+        amount:
+          type: number
+        status:
+          type: string
+        coverageStatus:
+          type: string
+          enum: [UNPAID, COVERED, VERIFIED]
+    PatientInvoiceDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        patientUid:
+          type: string
+        planUid:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED]
+        amountPaid:
+          type: number
+        businessDayUid:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/PatientInvoiceDetailDto'
+    RecordPaymentRequest:
+      type: object
+      required: [billUids, paymentMode, tenderedTotal]
+      properties:
+        billUids:
+          type: array
+          items:
+            type: string
+        tenderedTotal:
+          $ref: '#/components/schemas/MoneyDto'
+        paymentMode:
+          type: string
+          enum: [CASH, INSURANCE]
+    PatientPaymentDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        patientUid:
+          type: string
+        amount:
+          $ref: '#/components/schemas/MoneyDto'
+        paymentType:
+          type: string
+          enum: [CASH, INSURANCE]
+        status:
+          type: string
+        businessDayUid:
+          type: string
+    CancelChargeRequest:
+      type: object
+      required: [reference]
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 255
+    CreditNoteDto:
+      type: object
+      properties:
+        uid:
+          type: string
+        'no':
+          type: string
+        patientUid:
+          type: string
+        amount:
+          $ref: '#/components/schemas/MoneyDto'
+        reference:
+          type: string
+        status:
+          type: string
+        patientBillUid:
+          type: string
+        businessDayUid:
+          type: string
+    CancellationResultDto:
+      type: object
+      properties:
+        billUid:
+          type: string
+        billStatus:
+          type: string
+        creditNote:
+          $ref: '#/components/schemas/CreditNoteDto'
+    CollectionReportRow:
+      type: object
+      properties:
+        itemName:
+          type: string
+        paymentChannel:
+          type: string
+        amount:
+          type: number
+    ReceiptDto:
+      type: object
+      properties:
+        receiptNo:
+          type: string
+        patientUid:
+          type: string
+        amount:
+          $ref: '#/components/schemas/MoneyDto'
+        paymentMode:
+          type: string
+        status:
+          type: string
+        cashier:
+          type: string
+        businessDayUid:
+          type: string
+        businessDate:
+          type: string
+          format: date
     ProblemDetail:
       type: object
       properties:

@@ -81,4 +81,18 @@ public class InvoiceQueryService {
 
         return paymentMapper.toDto(payment);
     }
+
+    /**
+     * Record a payment for a list of bills WITHOUT an invoice anchor (the cashier cash-collection
+     * flow — legacy {@code confirm_bills_payment}, PatientBillResource.java:269). Outpatient CASH
+     * bills are not attached to any invoice, so the invoice-anchored variant above cannot pay them.
+     * POST /billing/payments.
+     */
+    @Transactional
+    public PatientPaymentDto recordPayment(RecordPaymentRequest request, TxAuditContext ctx) {
+        Money tendered = moneyMapper.toDomain(request.tenderedTotal());
+        PaymentMode mode = request.paymentMode() != null ? request.paymentMode() : PaymentMode.CASH;
+        var payment = paymentService.recordPayment(request.billUids(), tendered, mode, ctx);
+        return paymentMapper.toDto(payment);
+    }
 }

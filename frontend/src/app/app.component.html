@@ -1,5 +1,12 @@
 <mat-toolbar color="primary" class="app-toolbar">
   <a routerLink="/home" class="app-title">Zana HMIS</a>
+  <a
+    *appCan="'BILL-A'"
+    mat-button
+    routerLink="/billing/cashier"
+    routerLinkActive="active-nav-link"
+    aria-label="Billing and cashiering workspace"
+  >Billing</a>
   <span class="toolbar-spacer"></span>
   <app-health-indicator />
   @if (authStore.isAuthenticated()) {
