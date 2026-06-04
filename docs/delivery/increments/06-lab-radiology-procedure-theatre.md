@@ -1,3 +1,15 @@
+> ⚠️ **SUPERSEDED IN PART (2026-06-04).** This planning doc is heavily drifted. The clinical
+> Lab/Radiology/Procedure/Theatre **order + result + attachment + worklist loops were already
+> shipped in inc-05** under legacy-accurate names, and ~80% of this doc's "new" scope is either
+> already-built or **phantom** (polymorphic `ClinicalOrder`, `COMPLETED`/`CANCELLED` states,
+> procedure `APPROVED`/surgeon-approval, `OperativeRecord`, per-analyte `LabResultLine` + server-side
+> flag computation, `LabBatch`/`seq_lab_batch_no`, theatre scheduling, `ORDER_NOT_SETTLED` hard gate,
+> "177 privilege codes", MinIO/S3/ClamAV-as-legacy-parity). The genuine remainder is a thin set of
+> inc-05 closure items ("inc-06A"). **Do NOT build against this doc.** See the authoritative
+> reconciliation + scope: [06-lrp-discovery/01-RECONCILIATION-AND-SCOPE.md](06-lrp-discovery/01-RECONCILIATION-AND-SCOPE.md)
+> (workflow run `wf_3d82df11-0d0`). Acceptance criteria must be re-authored from the verified legacy
+> extractions, never from this doc.
+
 # Increment 06 — Laboratory, Radiology, Procedures & Theatre
 
 ## Goal
