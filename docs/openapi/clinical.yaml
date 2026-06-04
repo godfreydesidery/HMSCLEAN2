@@ -196,6 +196,29 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RadiologyDto"
+  /api/v1/clinical/radiologies/uid/{uid}/reject-comment:
+    post:
+      tags:
+      - radiology-controller
+      operationId: saveRejectComment
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadiologyRejectRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyDto"
   /api/v1/clinical/radiologies/uid/{uid}/hold:
     post:
       tags:
@@ -257,6 +280,88 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/RadiologyAttachmentDto"
+  /api/v1/clinical/radiologies/uid/{uid}/attachments/upload:
+    post:
+      tags:
+      - radiology-controller
+      operationId: uploadAttachment
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: query
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+              - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyAttachmentDto"
+  /api/v1/clinical/radiologies/uid/{uid}/amend-report:
+    post:
+      tags:
+      - radiology-controller
+      operationId: amendReport
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadiologyReportRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyDto"
+  /api/v1/clinical/radiologies/uid/{uid}/add-report:
+    post:
+      tags:
+      - radiology-controller
+      operationId: addReport_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RadiologyReportRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RadiologyDto"
   /api/v1/clinical/radiologies/uid/{uid}/accept:
     post:
       tags:
@@ -603,6 +708,29 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/LabTestDto"
+  /api/v1/clinical/lab-tests/uid/{uid}/reject-comment:
+    post:
+      tags:
+      - lab-test-controller
+      operationId: saveRejectComment_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestRejectRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestDto"
   /api/v1/clinical/lab-tests/uid/{uid}/hold:
     post:
       tags:
@@ -682,6 +810,64 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/LabTestAttachmentDto"
+  /api/v1/clinical/lab-tests/uid/{uid}/attachments/upload:
+    post:
+      tags:
+      - lab-test-controller
+      operationId: uploadAttachment_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: name
+        in: query
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+              - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestAttachmentDto"
+  /api/v1/clinical/lab-tests/uid/{uid}/amend-report:
+    post:
+      tags:
+      - lab-test-controller
+      operationId: amendReport_1
+      parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LabTestReportRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LabTestDto"
   /api/v1/clinical/lab-tests/uid/{uid}/accept:
     post:
       tags:
@@ -1399,6 +1585,25 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/clinical/radiologies/attachments/uid/{attachmentUid}/download:
+    get:
+      tags:
+      - radiology-controller
+      operationId: downloadAttachment
+      parameters:
+      - name: attachmentUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
   /api/v1/clinical/procedures:
     get:
       tags:
@@ -1625,6 +1830,25 @@ paths:
       responses:
         "204":
           description: No Content
+  /api/v1/clinical/lab-tests/attachments/uid/{attachmentUid}/download:
+    get:
+      tags:
+      - lab-test-controller
+      operationId: downloadAttachment_1
+      parameters:
+      - name: attachmentUid
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
   /api/v1/clinical/deceased-notes:
     get:
       tags:
@@ -2932,6 +3156,15 @@ components:
           type: string
         description:
           type: string
+        priorReport:
+          type: string
+        reportAmendedByUserUid:
+          type: string
+        reportAmendedOnDayUid:
+          type: string
+        reportAmendedAt:
+          type: string
+          format: date-time
         hasAttachment:
           type: boolean
         orderedByUserUid:
@@ -3151,6 +3384,15 @@ components:
           type: string
         unit:
           type: string
+        priorReport:
+          type: string
+        reportAmendedByUserUid:
+          type: string
+        reportAmendedOnDayUid:
+          type: string
+        reportAmendedAt:
+          type: string
+          format: date-time
         orderedByUserUid:
           type: string
         orderedOnDayUid:
@@ -3531,6 +3773,11 @@ components:
         createdAt:
           type: string
           format: date-time
+    RadiologyReportRequest:
+      type: object
+      properties:
+        report:
+          type: string
     ProcedureNoteRequest:
       required:
       - note
