@@ -2,6 +2,7 @@ package com.otapp.hmis.registration.domain;
 
 import com.otapp.hmis.shared.domain.AuditableEntity;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -108,10 +109,13 @@ public class Consultation extends AuditableEntity {
     private boolean followUp = false;
 
     /**
-     * Lifecycle status.  Only {@link ConsultationStatus#PENDING} in inc-03 (CR-18, CR-21).
+     * Lifecycle status.  inc-05 (CR-21) widens this to the full 6-value legacy set; the
+     * registration send-to-doctor flow still creates it {@link ConsultationStatus#PENDING}.
+     * Mapped via {@link ConsultationStatusConverter} (not {@code @Enumerated}) because the
+     * hyphenated legacy values (IN-PROCESS, SIGNED-OUT) are not valid enum constant names.
      */
     @NotNull
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = ConsultationStatusConverter.class)
     @Column(name = "status", length = 20, nullable = false)
     private ConsultationStatus status = ConsultationStatus.PENDING;
 

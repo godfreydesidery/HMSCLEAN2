@@ -8,6 +8,7 @@ Thumbs.db
 
 # Claude Code local settings (keep agents/ and docs/ tracked)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Java / Maven
 target/
