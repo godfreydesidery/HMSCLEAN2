@@ -12,6 +12,12 @@ import com.otapp.hmis.clinical.domain.ConsultationRepository;
 import com.otapp.hmis.clinical.domain.ConsultationStatus;
 import com.otapp.hmis.clinical.domain.LabTest;
 import com.otapp.hmis.clinical.domain.LabTestRepository;
+import com.otapp.hmis.clinical.domain.Prescription;
+import com.otapp.hmis.clinical.domain.PrescriptionRepository;
+import com.otapp.hmis.clinical.domain.Procedure;
+import com.otapp.hmis.clinical.domain.ProcedureRepository;
+import com.otapp.hmis.clinical.domain.Radiology;
+import com.otapp.hmis.clinical.domain.RadiologyRepository;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.Money;
 import com.otapp.hmis.shared.domain.NoDayOpenException;
@@ -78,6 +84,9 @@ class SettlementSeamIT extends AbstractIntegrationTest {
     @Autowired PatientBillRepository  billRepository;
     @Autowired ConsultationRepository consultationRepository;
     @Autowired LabTestRepository      labTestRepository;
+    @Autowired RadiologyRepository    radiologyRepository;
+    @Autowired ProcedureRepository    procedureRepository;
+    @Autowired PrescriptionRepository prescriptionRepository;
     @Autowired BusinessDayService     businessDayService;
 
     private String adminToken;
@@ -191,6 +200,106 @@ class SettlementSeamIT extends AbstractIntegrationTest {
         LabTest afterPayment = labTestRepository.findByUid(labTestUid).orElseThrow();
         assertThat(afterPayment.isSettled())
                 .as("LabTest.settled must be true after bill payment (CR-05 seam)")
+                .isTrue();
+    }
+
+    // =========================================================================
+    // Seam test (c): CASH radiology — order (settled=false) → pay bill → settled=true
+    //
+    // QA-02: the ConsultationSettlementListener flips ALL FIVE clinical entity types.
+    // The Consultation + LabTest legs are covered above; this covers the Radiology leg.
+    // =========================================================================
+
+    @Test
+    void cashRadiologyBillPaid_flipsRadiologySettled() throws Exception {
+        String tag = uniq();
+
+        String radBillUid = makeCashBill(tag + "RAD", "4200.00").getUid();
+        String consultationUid = seedOpenedCashConsultation(tag);
+        String radiologyUid = seedCashRadiologyWithBill(tag, consultationUid, radBillUid);
+
+        Radiology beforePayment = radiologyRepository.findByUid(radiologyUid).orElseThrow();
+        assertThat(beforePayment.isSettled()).as("CASH radiology starts unsettled").isFalse();
+
+        String payBody = """
+                {"billUids":["%s"],"tenderedTotal":{"amount":4200.00,"currency":"TZS"},"paymentMode":"CASH"}
+                """.formatted(radBillUid);
+        mockMvc.perform(post(PAYMENTS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").exists());
+
+        Radiology afterPayment = radiologyRepository.findByUid(radiologyUid).orElseThrow();
+        assertThat(afterPayment.isSettled())
+                .as("Radiology.settled must be true after bill payment (CR-05 seam)")
+                .isTrue();
+    }
+
+    // =========================================================================
+    // Seam test (d): CASH procedure — order (settled=false) → pay bill → settled=true
+    //
+    // QA-02: covers the Procedure leg of ConsultationSettlementListener.
+    // =========================================================================
+
+    @Test
+    void cashProcedureBillPaid_flipsProcedureSettled() throws Exception {
+        String tag = uniq();
+
+        String procBillUid = makeCashBill(tag + "PRC", "9800.00").getUid();
+        String consultationUid = seedOpenedCashConsultation(tag);
+        String procedureUid = seedCashProcedureWithBill(tag, consultationUid, procBillUid);
+
+        Procedure beforePayment = procedureRepository.findByUid(procedureUid).orElseThrow();
+        assertThat(beforePayment.isSettled()).as("CASH procedure starts unsettled").isFalse();
+
+        String payBody = """
+                {"billUids":["%s"],"tenderedTotal":{"amount":9800.00,"currency":"TZS"},"paymentMode":"CASH"}
+                """.formatted(procBillUid);
+        mockMvc.perform(post(PAYMENTS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").exists());
+
+        Procedure afterPayment = procedureRepository.findByUid(procedureUid).orElseThrow();
+        assertThat(afterPayment.isSettled())
+                .as("Procedure.settled must be true after bill payment (CR-05 seam)")
+                .isTrue();
+    }
+
+    // =========================================================================
+    // Seam test (e): CASH prescription — order (settled=false) → pay bill → settled=true
+    //
+    // QA-02: covers the Prescription leg of ConsultationSettlementListener.
+    // =========================================================================
+
+    @Test
+    void cashPrescriptionBillPaid_flipsPrescriptionSettled() throws Exception {
+        String tag = uniq();
+
+        String rxBillUid = makeCashBill(tag + "RX", "1250.00").getUid();
+        String consultationUid = seedOpenedCashConsultation(tag);
+        String prescriptionUid = seedCashPrescriptionWithBill(tag, consultationUid, rxBillUid);
+
+        Prescription beforePayment = prescriptionRepository.findByUid(prescriptionUid).orElseThrow();
+        assertThat(beforePayment.isSettled()).as("CASH prescription starts unsettled").isFalse();
+
+        String payBody = """
+                {"billUids":["%s"],"tenderedTotal":{"amount":1250.00,"currency":"TZS"},"paymentMode":"CASH"}
+                """.formatted(rxBillUid);
+        mockMvc.perform(post(PAYMENTS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").exists());
+
+        Prescription afterPayment = prescriptionRepository.findByUid(prescriptionUid).orElseThrow();
+        assertThat(afterPayment.isSettled())
+                .as("Prescription.settled must be true after bill payment (CR-05 seam)")
                 .isTrue();
     }
 
@@ -351,5 +460,78 @@ class SettlementSeamIT extends AbstractIntegrationTest {
                 dayUid,
                 java.time.Instant.now());
         return labTestRepository.save(lt).getUid();
+    }
+
+    /**
+     * Seed a PENDING CASH radiology order whose {@code patientBillUid} is the provided bill uid.
+     * Mirrors {@link #seedCashLabTestWithBill} for the radiology leg of the settlement seam.
+     */
+    private String seedCashRadiologyWithBill(String tag, String consultationUid, String radBillUid) {
+        Consultation consultation = consultationRepository.findByUid(consultationUid).orElseThrow();
+        Radiology r = Radiology.forConsultation(
+                consultation,
+                fakeUid("RTT", tag),        // dummy radiology type uid (no FK — ADR-0008 loose ref)
+                radBillUid,                  // reference the REAL radiology bill uid — seam relies on this
+                false,                       // settled=false — CASH gate active
+                "CASH",
+                "",
+                null,
+                null,
+                fakeUid("DOC", tag),
+                fakeUid("DOC", tag),
+                dayUid,
+                java.time.Instant.now());
+        return radiologyRepository.save(r).getUid();
+    }
+
+    /**
+     * Seed a PENDING CASH procedure order whose {@code patientBillUid} is the provided bill uid.
+     * Mirrors {@link #seedCashLabTestWithBill} for the procedure leg of the settlement seam.
+     */
+    private String seedCashProcedureWithBill(String tag, String consultationUid, String procBillUid) {
+        Consultation consultation = consultationRepository.findByUid(consultationUid).orElseThrow();
+        Procedure p = Procedure.forConsultation(
+                consultation,
+                fakeUid("PTT", tag),        // dummy procedure type uid (no FK — ADR-0008 loose ref)
+                procBillUid,                 // reference the REAL procedure bill uid — seam relies on this
+                false,                       // settled=false — CASH gate active
+                "CASH",
+                "",
+                null,
+                null,
+                fakeUid("DOC", tag),
+                null,                        // theatreUid — not under test
+                fakeUid("DOC", tag),
+                dayUid,
+                java.time.Instant.now());
+        return procedureRepository.save(p).getUid();
+    }
+
+    /**
+     * Seed a NOT-GIVEN CASH prescription whose {@code patientBillUid} is the provided bill uid.
+     * Mirrors {@link #seedCashLabTestWithBill} for the prescription leg of the settlement seam.
+     */
+    private String seedCashPrescriptionWithBill(String tag, String consultationUid, String rxBillUid) {
+        Consultation consultation = consultationRepository.findByUid(consultationUid).orElseThrow();
+        Prescription p = Prescription.forConsultation(
+                consultation,
+                fakeUid("MED", tag),        // dummy medicine uid (no FK — ADR-0008 loose ref)
+                rxBillUid,                   // reference the REAL prescription bill uid — seam relies on this
+                false,                       // settled=false — CASH gate active
+                BigDecimal.ONE,              // qty
+                "1 tab",                     // dosage
+                "BD",                        // frequency
+                "PO",                        // route
+                "5",                         // days
+                "",                          // reference
+                "",                          // instructions
+                "CASH",
+                "",
+                null,
+                fakeUid("DOC", tag),
+                fakeUid("DOC", tag),
+                dayUid,
+                java.time.Instant.now());
+        return prescriptionRepository.save(p).getUid();
     }
 }

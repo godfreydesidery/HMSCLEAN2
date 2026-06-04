@@ -437,6 +437,67 @@ class RadiologyIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // QA-06: worklist excludes VERIFIED; a settled ACCEPTED order is present.
+    // The radiology worklist query is settled=true AND status IN {PENDING,ACCEPTED}
+    // (RadiologyRepository.findBySettledAndStatusInOrderByCreatedAtAsc) — radiology has
+    // no live COLLECTED state (ACCEPTED → VERIFIED direct), and VERIFIED is terminal.
+    // =========================================================================
+
+    @Test
+    void worklist_excludesVerified_includesAccepted() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        String planUid    = createPlan(tag + "WV");
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+
+        // Order A (INSURANCE → settled): drive to ACCEPTED → must be ON the worklist.
+        String consultAccepted = seedConsultation(tag + "WVA", PaymentMode.INSURANCE, planUid, true);
+        String acceptedUid     = orderRadiology(consultAccepted, radTypeUid);
+        mockMvc.perform(post(RAD_BASE + "/uid/" + acceptedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        // Order B (INSURANCE → settled): drive to VERIFIED → must be ABSENT from the worklist.
+        String consultVerified = seedConsultation(tag + "WVV", PaymentMode.INSURANCE, planUid, true);
+        String verifiedUid     = orderRadiology(consultVerified, radTypeUid);
+        mockMvc.perform(post(RAD_BASE + "/uid/" + verifiedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(RAD_BASE + "/uid/" + verifiedUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("Normal chest", "Full report here", null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+
+        MvcResult wl = mockMvc.perform(get(RAD_BASE + "/worklist")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode array = objectMapper.readTree(wl.getResponse().getContentAsString());
+        assertThat(array.isArray()).isTrue();
+
+        boolean foundAccepted = false;
+        boolean foundVerified = false;
+        for (JsonNode node : array) {
+            if (acceptedUid.equals(node.get("uid").asText())) {
+                foundAccepted = true;
+                assertThat(node.get("status").asText()).isEqualTo("ACCEPTED");
+            }
+            if (verifiedUid.equals(node.get("uid").asText())) {
+                foundVerified = true;
+            }
+        }
+        assertThat(foundAccepted)
+                .as("settled ACCEPTED order must be in the worklist").isTrue();
+        assertThat(foundVerified)
+                .as("VERIFIED order must NOT be in the worklist").isFalse();
+    }
+
+    // =========================================================================
     // Attachments: add only when ACCEPTED (PENDING → 422); max 5; delete blocked when VERIFIED
     // =========================================================================
 
