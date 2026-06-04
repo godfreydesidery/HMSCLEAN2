@@ -521,6 +521,40 @@ class ClosureIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // 11b. approve_referral: unsettled clinical order → 422 (approve-gate re-runs the check)
+    //      QA-05: the save-gate is covered by test 10; the approve path re-runs
+    //      hasUnsettledOrdersForReferralGate and throws the approve-summary message
+    //      (ClosureService.approveReferral, PatientResource referral-approve gate).
+    // =========================================================================
+
+    @Test
+    void approveReferral_unsettledOrder_422_unclearedBills() throws Exception {
+        String tag = uniq();
+        Patient patient = seedRealPatient(tag + "AG");
+        String consultUid = seedConsultationInProcess(tag + "AG", patient.getUid());
+        String extProviderUid = fakeUid("EXT", tag);
+
+        // Save the referral while there are NO unsettled orders (so save passes → PENDING plan).
+        String planUid = postReferralPlan(consultUid, extProviderUid, "Hypertension");
+
+        // Now introduce an unsettled order, then approve → the approve-gate must fire.
+        Consultation c = consultationRepository.findByUid(consultUid).orElseThrow();
+        seedUnsettledLabTest(c, tag);
+
+        mockMvc.perform(
+                        post(REFERRAL_BASE + "/uid/" + planUid + "/approve")
+                                .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                // approve-gate uses the "summary" wording (distinct from the per-type save messages)
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not get referral summary. Patient have uncleared bills."));
+
+        // Plan must remain PENDING (approval blocked)
+        assertThat(referralPlanRepository.findByUid(planUid).orElseThrow().getStatus())
+                .isEqualTo(ReferralPlanStatus.PENDING);
+    }
+
+    // =========================================================================
     // 12. list_referrals: returns PENDING|APPROVED
     // =========================================================================
 

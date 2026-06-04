@@ -425,6 +425,73 @@ class LabTestIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // QA-06: worklist excludes VERIFIED; a settled COLLECTED order is present.
+    // The lab worklist query is settled=true AND status IN {PENDING,ACCEPTED,COLLECTED}
+    // (LabTestRepository.findBySettledAndStatusInOrderByCreatedAtAsc) — VERIFIED is
+    // terminal and must drop off the queue.
+    // =========================================================================
+
+    @Test
+    void worklist_excludesVerified_includesCollected() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        String planUid    = createPlan(tag + "WV");
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+
+        // Order A (INSURANCE → settled): drive to COLLECTED → must be ON the worklist.
+        String consultCollected = seedConsultation(tag + "WVC", PaymentMode.INSURANCE, planUid, true);
+        String collectedUid     = orderLabTest(consultCollected, labTypeUid);
+        mockMvc.perform(post(LAB_BASE + "/uid/" + collectedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + collectedUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COLLECTED"));
+
+        // Order B (INSURANCE → settled): drive to VERIFIED → must be ABSENT from the worklist.
+        String consultVerified = seedConsultation(tag + "WVV", PaymentMode.INSURANCE, planUid, true);
+        String verifiedUid     = orderLabTest(consultVerified, labTypeUid);
+        mockMvc.perform(post(LAB_BASE + "/uid/" + verifiedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + verifiedUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + verifiedUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("13.0", "NORMAL", "10-15", "g/dL")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+
+        MvcResult wl = mockMvc.perform(get(LAB_BASE + "/worklist")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode array = objectMapper.readTree(wl.getResponse().getContentAsString());
+        assertThat(array.isArray()).isTrue();
+
+        boolean foundCollected = false;
+        boolean foundVerified  = false;
+        for (JsonNode node : array) {
+            if (collectedUid.equals(node.get("uid").asText())) {
+                foundCollected = true;
+                assertThat(node.get("status").asText()).isEqualTo("COLLECTED");
+            }
+            if (verifiedUid.equals(node.get("uid").asText())) {
+                foundVerified = true;
+            }
+        }
+        assertThat(foundCollected)
+                .as("settled COLLECTED order must be in the worklist").isTrue();
+        assertThat(foundVerified)
+                .as("VERIFIED order must NOT be in the worklist").isFalse();
+    }
+
+    // =========================================================================
     // Attachments: add only when COLLECTED; max 5; delete blocked when VERIFIED
     // =========================================================================
 

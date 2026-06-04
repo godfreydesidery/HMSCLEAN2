@@ -485,6 +485,68 @@ class ProcedureIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // QA-06: worklist excludes VERIFIED; a settled ACCEPTED order is present.
+    // The procedure worklist query is settled=true AND status IN {PENDING,ACCEPTED}
+    // (ProcedureRepository.findBySettledAndStatusInOrderByCreatedAtAsc). A procedure
+    // reaches VERIFIED via add_note on a settled ACCEPTED order (the one in-method bill
+    // gate); VERIFIED is terminal and must drop off the queue.
+    // =========================================================================
+
+    @Test
+    void worklist_excludesVerified_includesAccepted() throws Exception {
+        String tag = uniq();
+        String procTypeUid = createProcedureType(tag);
+        String planUid     = createPlan(tag + "WV");
+        seedPrice(null,    "PROCEDURE", procTypeUid, "18000.00", true);
+        seedPrice(planUid, "PROCEDURE", procTypeUid, "13000.00", true);
+
+        // Order A (INSURANCE → settled): drive to ACCEPTED → must be ON the worklist.
+        String consultAccepted = seedConsultation(tag + "WVA", PaymentMode.INSURANCE, planUid, true);
+        String acceptedUid     = orderProcedure(consultAccepted, procTypeUid);
+        mockMvc.perform(post(PROC_BASE + "/uid/" + acceptedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        // Order B (INSURANCE → settled): drive to VERIFIED via add_note → must be ABSENT.
+        String consultVerified = seedConsultation(tag + "WVV", PaymentMode.INSURANCE, planUid, true);
+        String verifiedUid     = orderProcedure(consultVerified, procTypeUid);
+        mockMvc.perform(post(PROC_BASE + "/uid/" + verifiedUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(PROC_BASE + "/uid/" + verifiedUid + "/note")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Procedure completed.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+
+        MvcResult wl = mockMvc.perform(get(PROC_BASE + "/worklist")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode array = objectMapper.readTree(wl.getResponse().getContentAsString());
+        assertThat(array.isArray()).isTrue();
+
+        boolean foundAccepted = false;
+        boolean foundVerified = false;
+        for (JsonNode node : array) {
+            if (acceptedUid.equals(node.get("uid").asText())) {
+                foundAccepted = true;
+                assertThat(node.get("status").asText()).isEqualTo("ACCEPTED");
+            }
+            if (verifiedUid.equals(node.get("uid").asText())) {
+                foundVerified = true;
+            }
+        }
+        assertThat(foundAccepted)
+                .as("settled ACCEPTED order must be in the worklist").isTrue();
+        assertThat(foundVerified)
+                .as("VERIFIED order must NOT be in the worklist").isFalse();
+    }
+
+    // =========================================================================
     // By-patient returns consultation procedures
     // =========================================================================
 
