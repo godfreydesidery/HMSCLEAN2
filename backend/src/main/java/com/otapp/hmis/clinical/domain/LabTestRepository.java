@@ -24,6 +24,19 @@ public interface LabTestRepository extends JpaRepository<LabTest, Long> {
     Optional<LabTest> findByUid(String uid);
 
     /**
+     * Find the lab test order whose local bill reference matches {@code patientBillUid}.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSettlementListener}
+     * to flip {@code LabTest.settled = true} when the billing module publishes a
+     * {@code BillSettledEvent}. At most one lab test matches a given bill uid (each lab test
+     * order has exactly one bill; ADR-0022 D2).
+     *
+     * @param patientBillUid the ULID of the PatientBill that was just paid
+     * @return the matching lab test, or empty if this bill is not a lab test charge
+     */
+    Optional<LabTest> findByPatientBillUid(String patientBillUid);
+
+    /**
      * Duplicate guard — consultation path.
      *
      * <p>Returns true if a LabTest already exists for the same consultation and same

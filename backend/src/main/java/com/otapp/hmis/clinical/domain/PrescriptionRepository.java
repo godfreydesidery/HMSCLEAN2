@@ -37,6 +37,23 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, Long
     Optional<Prescription> findByUid(String uid);
 
     // -------------------------------------------------------------------------
+    // Settlement seam finder (inc-05 §5 — BillSettledEvent consumer)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Find the prescription whose local bill reference matches {@code patientBillUid}.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSettlementListener}
+     * to flip {@code Prescription.settled = true} when the billing module publishes a
+     * {@code BillSettledEvent}. At most one prescription matches a given bill uid (each
+     * prescription has exactly one bill; ADR-0022 D2).
+     *
+     * @param patientBillUid the ULID of the PatientBill that was just paid
+     * @return the matching prescription, or empty if this bill is not a prescription charge
+     */
+    Optional<Prescription> findByPatientBillUid(String patientBillUid);
+
+    // -------------------------------------------------------------------------
     // Duplicate-drug guards (exactly one per encounter type — CR-INC05-05)
     // -------------------------------------------------------------------------
 

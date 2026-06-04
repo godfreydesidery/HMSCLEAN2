@@ -2,49 +2,72 @@ package com.otapp.hmis.billing.application;
 
 import com.otapp.hmis.billing.domain.PatientBill;
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import com.otapp.hmis.shared.event.BillSettledEvent;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
- * Propagates settlement on the cash PAID transition (CR-05, RATIFIED scoped; build-spec §4.2).
+ * Propagates settlement on the cash PAID transition (CR-05, inc-05; build-spec §4.2).
  *
  * <p>Called by {@link PaymentService} in the SAME transaction as the bill's PAID transition —
  * <strong>billing → encounter direction only</strong> (ADR-0008 §6): no {@code @Async}, no
- * {@code REQUIRES_NEW}, no reverse edge. Today it sets billing's own {@code settled} flag on the
- * bill (a managed entity — the change is dirty-checked into the caller's tx).
+ * {@code REQUIRES_NEW}, no reverse edge.
  *
- * <p><strong>inc-05/06 seam:</strong> when the clinical modules exist, this dispatcher will ALSO
- * write {@code settled=true} onto the downstream encounter/order's LOCAL projection in this same tx.
- * Downstream clinical modules read ONLY their local flag; they NEVER call {@code billing.api} to
- * check it (the pay-before-service decision is {@link com.otapp.hmis.billing.api.SettlementPolicy},
- * evaluated against that local flag at the clinical {@code accept()}). The propagation must remain
- * billing → encounter, enforced by {@code ApplicationModules.verify()} + ArchUnit.
+ * <p>This dispatcher:
+ * <ol>
+ *   <li>Sets billing's own {@code settled} flag on the bill (managed entity — dirty-checked into
+ *       the caller's transaction).</li>
+ *   <li>Publishes a {@link BillSettledEvent} via Spring's {@link ApplicationEventPublisher} in the
+ *       SAME transaction. The event type is in {@code shared.event} (OPEN module) — no
+ *       billing→clinical compile edge is introduced.</li>
+ * </ol>
+ *
+ * <p><strong>Settlement seam design (ADR-0022 D5, inc-05 §5):</strong>
+ * The {@link BillSettledEvent} is consumed by the clinical module's
+ * {@code ConsultationSettlementListener} with
+ * {@code @TransactionalEventListener(phase = BEFORE_COMMIT)}, which executes WITHIN the billing
+ * transaction before commit. The listener flips the local {@code settled} flag on whichever
+ * clinical row (Consultation, LabTest, Radiology, Procedure, or Prescription) references this
+ * bill uid. Because both the billing PAID transition and the clinical flag flip execute in the
+ * same transaction, they commit atomically — or both roll back.
+ *
+ * <p><strong>No cycle:</strong>
+ * Billing publishes {@code BillSettledEvent} (from {@code shared.event}, an OPEN module).
+ * Clinical consumes it. Billing never imports any clinical type. Clinical already depends on
+ * {@code billing::api}; it does NOT depend on {@code billing} internals. The event in
+ * {@code shared.event} introduces no new compile edge in either direction.
+ * {@code ApplicationModules.verify()} stays green.
  */
 @Service
+@RequiredArgsConstructor
 public class SettlementDispatcher {
 
+    private static final Logger log = LoggerFactory.getLogger(SettlementDispatcher.class);
+
+    private final ApplicationEventPublisher eventPublisher;
+
     /**
-     * Mark a just-paid bill settled within the caller's transaction.
+     * Mark a just-paid bill settled within the caller's transaction, and publish a
+     * {@link BillSettledEvent} so the clinical module can flip its own local settled flag
+     * in the same transaction.
      *
      * @param bill the bill that transitioned to PAID
      * @param ctx  the operation's audit context (supplies the settlement instant)
      */
     public void onBillPaid(PatientBill bill, TxAuditContext ctx) {
+        // Step 1: Mark billing's own settled flag (managed entity — dirty-checked into caller's tx)
         bill.markSettled(ctx.timestamp());
-        // DEFERRED SEAM (inc-05 C2): when a CASH consultation bill is paid, the clinical
-        // module's Consultation.settled flag must also be flipped to true in this same tx.
-        //
-        // The chosen design (ADR-0022 D5, clinical-Consultation.java deferred note):
-        // billing publishes a Spring ApplicationEvent<ConsultationSettledEvent>(billUid)
-        // and the clinical module's ConsultationSettlementListener consumes it in the
-        // SAME transaction (TransactionPhase.BEFORE_COMMIT) to call
-        // consultationRepository.findByPatientBillUid(billUid).ifPresent(Consultation::markSettled).
-        //
-        // This keeps the direction billing→clinical (event consumer is in clinical, not here),
-        // avoids a billing→clinical method call (which would require billing to import clinical),
-        // and avoids a reverse clinical→billing edge. Implementation is deferred to the
-        // dedicated settlement-seam chunk (post-C2).
-        //
-        // Until then: INSURANCE/COVERED/NONE consultations work end-to-end (settled=true at
-        // booking). CASH-OPD open is correctly blocked (422 PAY_BEFORE_SERVICE) — legacy parity.
+
+        // Step 2: Publish the BillSettledEvent so the clinical module's
+        // ConsultationSettlementListener can flip the clinical-local settled flag in this same tx.
+        // The event type is in shared.event (OPEN module) — no billing→clinical compile edge.
+        // The listener runs with @TransactionalEventListener(phase = BEFORE_COMMIT), i.e.
+        // still inside this transaction (ADR-0022 D5, inc-05 §5).
+        BillSettledEvent event = new BillSettledEvent(bill.getUid(), ctx.timestamp());
+        log.debug("SettlementDispatcher: publishing BillSettledEvent for billUid={}", bill.getUid());
+        eventPublisher.publishEvent(event);
     }
 }

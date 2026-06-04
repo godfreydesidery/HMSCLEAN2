@@ -51,6 +51,23 @@ public interface ConsultationRepository extends JpaRepository<Consultation, Long
     boolean existsByPatientUidAndStatusIn(String patientUid, Collection<ConsultationStatus> statuses);
 
     // ---------------------------------------------------------------------------------
+    // Settlement seam finder (inc-05 §5 — BillSettledEvent consumer)
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Find the consultation whose local bill reference matches {@code patientBillUid}.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSettlementListener}
+     * to flip {@code Consultation.settled = true} when the billing module publishes a
+     * {@code BillSettledEvent}. At most one consultation matches a given bill uid (one-to-one
+     * relationship — each consultation has exactly one fee bill; ADR-0022 D2).
+     *
+     * @param patientBillUid the ULID of the PatientBill that was just paid
+     * @return the matching consultation, or empty if this bill is not a consultation fee
+     */
+    Optional<Consultation> findByPatientBillUid(String patientBillUid);
+
+    // ---------------------------------------------------------------------------------
     // Doctor worklist finders (PART D — PatientResource.java:817-826)
     // ---------------------------------------------------------------------------------
 

@@ -24,6 +24,19 @@ public interface RadiologyRepository extends JpaRepository<Radiology, Long> {
     Optional<Radiology> findByUid(String uid);
 
     /**
+     * Find the radiology order whose local bill reference matches {@code patientBillUid}.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSettlementListener}
+     * to flip {@code Radiology.settled = true} when the billing module publishes a
+     * {@code BillSettledEvent}. At most one radiology order matches a given bill uid (each
+     * radiology order has exactly one bill; ADR-0022 D2).
+     *
+     * @param patientBillUid the ULID of the PatientBill that was just paid
+     * @return the matching radiology order, or empty if this bill is not a radiology charge
+     */
+    Optional<Radiology> findByPatientBillUid(String patientBillUid);
+
+    /**
      * Duplicate guard — consultation path.
      *
      * <p>Returns true if a Radiology order already exists for the same consultation and same

@@ -33,6 +33,19 @@ public interface ProcedureRepository extends JpaRepository<Procedure, Long> {
     Optional<Procedure> findByUid(String uid);
 
     /**
+     * Find the procedure order whose local bill reference matches {@code patientBillUid}.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSettlementListener}
+     * to flip {@code Procedure.settled = true} when the billing module publishes a
+     * {@code BillSettledEvent}. At most one procedure order matches a given bill uid (each
+     * procedure order has exactly one bill; ADR-0022 D2).
+     *
+     * @param patientBillUid the ULID of the PatientBill that was just paid
+     * @return the matching procedure order, or empty if this bill is not a procedure charge
+     */
+    Optional<Procedure> findByPatientBillUid(String patientBillUid);
+
+    /**
      * Duplicate guard — consultation path.
      *
      * <p>Returns true if a Procedure order already exists for the same consultation and same
