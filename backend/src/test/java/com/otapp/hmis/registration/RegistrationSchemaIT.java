@@ -133,8 +133,8 @@ class RegistrationSchemaIT extends AbstractIntegrationTest {
     @Test
     void roundTrip_visit_and_consultation_persist_and_reload() {
         Patient patient = cashPatient(
-                "MRNO/2026/4",
-                "MRNO/2026/4 Tom  Lee 0744444444",
+                "MRNO-SCHEMA-IT/2026/V1",
+                "MRNO-SCHEMA-IT/2026/V1 Tom  Lee 0744444444",
                 "Tom", null, "Lee",
                 LocalDate.of(1988, 9, 3), "MALE", "0744444444");
         Patient saved = patientRepository.saveAndFlush(patient);
@@ -191,8 +191,8 @@ class RegistrationSchemaIT extends AbstractIntegrationTest {
     @Test
     void patient_uid_is_assigned_as_26_char_ulid_at_persist() {
         Patient patient = cashPatient(
-                "MRNO/2026/99",
-                "MRNO/2026/99 Alice  Smith 0799999999",
+                "MRNO-SCHEMA-IT/2026/V2",
+                "MRNO-SCHEMA-IT/2026/V2 Alice  Smith 0799999999",
                 "Alice", null, "Smith",
                 LocalDate.of(1985, 1, 1), "FEMALE", null);
         Patient saved = patientRepository.saveAndFlush(patient);
@@ -209,9 +209,10 @@ class RegistrationSchemaIT extends AbstractIntegrationTest {
 
     @Test
     void persist_insurance_patient_with_plan_and_membership() {
+        final String insNo = "MRNO-SCHEMA-IT/2026/INS1";
         Patient patient = new Patient(
-                "MRNO/2026/2",
-                "MRNO/2026/2 Mary Jane Jones 0711111111",
+                insNo,
+                insNo + " Mary Jane Jones 0711111111",
                 "Mary", "Jane", "Jones",
                 LocalDate.of(1978, 3, 22), "FEMALE",
                 PatientType.OUTPATIENT,
@@ -221,7 +222,7 @@ class RegistrationSchemaIT extends AbstractIntegrationTest {
                 FAKE_DAY_UID);
         patientRepository.saveAndFlush(patient);
 
-        Patient loaded = patientRepository.findByNo("MRNO/2026/2").orElseThrow();
+        Patient loaded = patientRepository.findByNo(insNo).orElseThrow();
         assertThat(loaded.getPaymentType()).isEqualTo(PaymentType.INSURANCE);
         assertThat(loaded.getMembershipNo()).isEqualTo("INS-MEMBER-001");
         assertThat(loaded.getInsurancePlanUid()).isEqualTo(FAKE_PLAN_UID);
@@ -234,8 +235,8 @@ class RegistrationSchemaIT extends AbstractIntegrationTest {
     @Test
     void visit_subsequentForAdmission_sequence_stored_and_reloaded() {
         Patient patient = new Patient(
-                "MRNO/2026/3",
-                "MRNO/2026/3 Bob  Brown 0733333333",
+                "MRNO-SCHEMA-IT/2026/ADM1",
+                "MRNO-SCHEMA-IT/2026/ADM1 Bob  Brown 0733333333",
                 "Bob", null, "Brown",
                 LocalDate.of(1995, 7, 10), "MALE",
                 PatientType.INPATIENT,

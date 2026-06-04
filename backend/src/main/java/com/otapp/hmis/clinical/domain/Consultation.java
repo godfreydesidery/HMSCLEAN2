@@ -317,4 +317,34 @@ public class Consultation extends AuditableEntity {
     public void reassignClinician(String newClinicianUserUid) {
         this.clinicianUserUid = newClinicianUserUid;
     }
+
+    /**
+     * Mark this consultation HELD (any status → HELD).
+     *
+     * <p>Called by the deceased-note save transition ({@code save_deceased_note} — inc-05 C12).
+     * The consultation is held unconditionally regardless of its current status — the legacy
+     * sets status = HELD on the consultation when a death note is recorded, with no guard on
+     * the prior status (PatientResource.java deceased-note save path).
+     *
+     * <p>Legacy citation: PatientResource.java (save_deceased_note → setStatus("HELD")).
+     */
+    public void markHeld() {
+        this.status = ConsultationStatus.HELD;
+    }
+
+    /**
+     * Unconditionally sign out the consultation: any status → SIGNED_OUT.
+     *
+     * <p>Called by the referral-plan transitions ({@code save_referral_plan} and
+     * {@code get_referral_summary} — inc-05 C12). Unlike {@link #free()} which guards on
+     * IN_PROCESS|TRANSFERED, this method sets SIGNED_OUT unconditionally. The referral
+     * approve re-confirms SIGNED_OUT regardless of the current status (legacy behaviour —
+     * the approve endpoint always re-sets the consultation to SIGNED_OUT).
+     *
+     * <p>Legacy citation: PatientResource.java (save_referral_plan / get_referral_summary
+     * → setStatus("SIGNED-OUT") unconditionally).
+     */
+    public void signOut() {
+        this.status = ConsultationStatus.SIGNED_OUT;
+    }
 }
