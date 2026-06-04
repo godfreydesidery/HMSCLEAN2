@@ -20,17 +20,20 @@ import org.springframework.stereotype.Component;
 class PrescriptionMapper {
 
     /**
-     * Map a {@link Prescription} entity to its DTO representation.
+     * Map a {@link Prescription} entity to its DTO with an explicit alerts list (C11).
+     *
+     * <p>Called by the prescribe paths where alert computation has already run.
+     * The {@code alerts} list comes from {@link PrescribingAlertService#computeAlerts} and
+     * is advisory-only — it never blocks the save.
      *
      * <p>Encounter binding: exactly one of consultationUid / nonConsultationUid / admissionUid
      * will be non-null in the result, mirroring the DB num_nonnulls=1 constraint.
      *
-     * <p>The {@code alerts} field is always an empty list in C10; C11 populates it.
-     *
-     * @param p the prescription entity (never null)
+     * @param p      the prescription entity (never null)
+     * @param alerts the computed advisory alerts (never null; may be empty)
      * @return the DTO
      */
-    PrescriptionDto toDto(Prescription p) {
+    PrescriptionDto toDtoWithAlerts(Prescription p, List<String> alerts) {
         String consultationUid = p.getConsultation() != null
                 ? p.getConsultation().getUid() : null;
         String nonConsultationUid = p.getNonConsultation() != null
@@ -68,8 +71,25 @@ class PrescriptionMapper {
                 p.getApprovedAt(),
                 p.getBusinessDayUid(),
                 p.getCreatedAt(),
-                List.of()  // alerts — empty in C10; C11 fills this field
+                alerts
         );
+    }
+
+    /**
+     * Map a {@link Prescription} entity to its DTO representation (alerts always empty).
+     *
+     * <p>Used for read paths (get-by-uid, list-by-consultation, by-patient, worklist,
+     * dispense response, delete) where no alert computation is performed — alerts are
+     * only computed at prescription CREATE time (C11 spec).
+     *
+     * <p>Encounter binding: exactly one of consultationUid / nonConsultationUid / admissionUid
+     * will be non-null in the result, mirroring the DB num_nonnulls=1 constraint.
+     *
+     * @param p the prescription entity (never null)
+     * @return the DTO with an empty alerts list
+     */
+    PrescriptionDto toDto(Prescription p) {
+        return toDtoWithAlerts(p, List.of());
     }
 
     /**

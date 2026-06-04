@@ -3,6 +3,9 @@ package com.otapp.hmis.clinical.domain;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Spring Data JPA repository for {@link Prescription}.
@@ -132,4 +135,27 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, Long
      */
     List<Prescription> findAllByPatientUidAndMedicineUidAndStatusOrderByCreatedAtDesc(
             String patientUid, String medicineUid, PrescriptionStatus status);
+
+    // -------------------------------------------------------------------------
+    // Test-support: controlled approved_at override (C11 IT seeding)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Override the {@code approved_at} column for a prescription identified by its ULID.
+     *
+     * <p>Used ONLY by integration tests (C11 {@code PrescribingAlertIT}) to seed GIVEN
+     * prescriptions with a controlled dispense timestamp in the past, because
+     * {@code Prescription.issue()} always stamps {@code approvedAt = Instant.now()} and
+     * there is no public setter on the field (ADR-0014 §1 — immutable after write).
+     *
+     * <p>The {@code id} field has no public accessor ({@code @Getter(AccessLevel.NONE)}),
+     * so the update is keyed on the public {@code uid} instead.
+     *
+     * @param uid        the ULID of the prescription to update
+     * @param approvedAt the target dispense timestamp
+     * @return number of rows updated (1 on success, 0 if uid not found)
+     */
+    @Modifying
+    @Query("UPDATE Prescription p SET p.approvedAt = :approvedAt WHERE p.uid = :uid")
+    int overrideApprovedAt(@Param("uid") String uid, @Param("approvedAt") java.time.Instant approvedAt);
 }

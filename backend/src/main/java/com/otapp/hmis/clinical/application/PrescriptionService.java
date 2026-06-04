@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Service implementing the Prescription aggregate lifecycle (inc-05 C10).
+ * Service implementing the Prescription aggregate lifecycle (inc-05 C10 + C11).
  *
  * <p><strong>State machine (EXACTLY two statuses — Prescription.java:50):</strong>
  * <ul>
@@ -42,7 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       medicine exists (MedicineLookup), HARD DUPLICATE-DRUG block (same medicine on same
  *       encounter → 422), consultation OUTPATIENT / non-consultation OUTSIDER.
  *       Creates billing charge (kind=MEDICINE, serviceUid=medicineUid, qty=prescribed qty).
- *       balance=qty, issued=0. Stamps ordered_*.</li>
+ *       balance=qty, issued=0. Stamps ordered_*. C11: advisory alerts computed from prior
+ *       GIVEN prescriptions and returned in DTO (never block the save).</li>
  *   <li><strong>issueMedicine</strong> (NOT-GIVEN → GIVEN):
  *       guard status==NOT-GIVEN ("not a pending prescription");
  *       issued must equal full prescribed qty ("You can only issue the prescribed qty");
@@ -54,6 +55,14 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><strong>delete</strong> (NOT-GIVEN only): hard delete;
  *       credit-note DEFERRED.</li>
  * </ul>
+ *
+ * <p><strong>C11 — prescribing alerts (advisory, non-blocking):</strong>
+ * After the prescription is saved, {@link PrescribingAlertService} is called to compute
+ * two advisory alerts (same-medicine-within-30-days; unfinished-course) based on PRIOR
+ * GIVEN prescriptions for the same patient + medicine. The new NOT-GIVEN prescription is
+ * naturally excluded because both alerts filter on status=GIVEN. The alerts are returned
+ * in the DTO's {@code alerts[]} field — they never block the save.
+ * (PatientResource.java:4480-4521, 4528-4580; CR-INC05-12.)
  *
  * <p><strong>CR-INC05-05 — corrected non-consultation duplicate check:</strong>
  * The legacy {@code existsByConsultationAndMedicine} on an empty Optional for the
@@ -80,7 +89,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Prescription.java:38-144 (entity shape, status, audit)</li>
  *   <li>PatientResource.java:3217-3245 (issueMedicine)</li>
  *   <li>PatientServiceImpl.java (save_prescription, duplicate guard)</li>
- *   <li>PatientResource.java:4496, 4556 (alert finders — C11)</li>
+ *   <li>PatientResource.java:4480-4521, 4528-4580 (alert queries — C11)</li>
  * </ul>
  */
 @Service
@@ -95,6 +104,7 @@ class PrescriptionService implements PrescriptionPort {
     private final BillingCommands               billingCommands;
     private final AuditRecorder                 auditRecorder;
     private final PrescriptionMapper            prescriptionMapper;
+    private final PrescribingAlertService       prescribingAlertService;
 
     private static final String AUDIT_ENTITY = "clinical.Prescription";
     private static final String AUDIT_BATCH  = "clinical.PrescriptionBatch";
@@ -170,7 +180,16 @@ class PrescriptionService implements PrescriptionPort {
         Prescription saved = prescriptionRepository.save(p);
         auditRecorder.record(AUDIT_ENTITY, saved.getUid(), AuditAction.CREATE,
                 ctx.actorUsername());
-        return prescriptionMapper.toDto(saved);
+
+        // C11: advisory alerts based on PRIOR GIVEN prescriptions for this patient+medicine.
+        // The new NOT-GIVEN prescription is naturally excluded (alerts filter on status=GIVEN).
+        // Computed AFTER save so the new row is persisted; it is excluded by the GIVEN filter.
+        // Uses ctx.timestamp() as "now" — deterministic, testable (no Instant.now() in service).
+        // (PatientResource.java:4480-4521, 4528-4580; CR-INC05-12.)
+        List<String> alerts = prescribingAlertService.computeAlerts(
+                consultation.getPatientUid(), request.medicineUid(), ctx.timestamp());
+
+        return prescriptionMapper.toDtoWithAlerts(saved, alerts);
     }
 
     // =========================================================================
@@ -248,7 +267,15 @@ class PrescriptionService implements PrescriptionPort {
         Prescription saved = prescriptionRepository.save(p);
         auditRecorder.record(AUDIT_ENTITY, saved.getUid(), AuditAction.CREATE,
                 ctx.actorUsername());
-        return prescriptionMapper.toDto(saved);
+
+        // C11: advisory alerts based on PRIOR GIVEN prescriptions for this patient+medicine.
+        // The new NOT-GIVEN prescription is naturally excluded (alerts filter on status=GIVEN).
+        // Uses ctx.timestamp() as "now" — deterministic, testable (no Instant.now() in service).
+        // (PatientResource.java:4480-4521, 4528-4580; CR-INC05-12.)
+        List<String> alerts = prescribingAlertService.computeAlerts(
+                patientUid, request.medicineUid(), ctx.timestamp());
+
+        return prescriptionMapper.toDtoWithAlerts(saved, alerts);
     }
 
     // =========================================================================
