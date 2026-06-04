@@ -7,10 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.otapp.hmis.billing.domain.BillStatus;
 import com.otapp.hmis.billing.domain.PaymentMode;
 import com.otapp.hmis.clinical.domain.Consultation;
 import com.otapp.hmis.clinical.domain.ConsultationRepository;
 import com.otapp.hmis.clinical.domain.ConsultationStatus;
+import com.otapp.hmis.clinical.domain.LabTest;
+import com.otapp.hmis.clinical.domain.LabTestRepository;
 import com.otapp.hmis.iam.domain.Role;
 import com.otapp.hmis.iam.domain.RoleRepository;
 import com.otapp.hmis.registration.domain.PatientRepository;
@@ -58,6 +61,7 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
     @Autowired ConsultationRepository consultationRepository;
     @Autowired BusinessDayService businessDayService;
     @Autowired com.otapp.hmis.billing.domain.PatientBillRepository patientBillRepository;
+    @Autowired LabTestRepository labTestRepository;
 
     private String adminToken;
 
@@ -243,6 +247,42 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
 
         assertThat(consultationRepository.findByUid(consultationUid).orElseThrow().getStatus())
                 .isEqualTo(ConsultationStatus.CANCELED);
+    }
+
+    // =========================================================================
+    // C2 (ITEM6): cancel also cascades to UNSETTLED child-order bills.
+    // Legacy cancel (PatientResource.java:434-494) removes PENDING child orders with
+    // UNPAID/null bills together with their bills; we soft-cancel each unsettled child
+    // bill via cancelCharge ("Canceled consultation"). A SETTLED child bill is left alone.
+    // =========================================================================
+
+    @Test
+    void cancel_cascadesToUnsettledChildOrderBills() throws Exception {
+        String u = uniq();
+        // PENDING consultation with its own (settled) consultation-fee bill.
+        String consultationUid = seedConsultation(u, PaymentMode.CASH, false, true);
+        Consultation consultation = consultationRepository.findByUid(consultationUid).orElseThrow();
+
+        // Seed an UNSETTLED lab order bound to this consultation, with its own real bill.
+        String unsettledLabBillUid = seedRealBill(u + "LABU", "2500.00");
+        String settledLabBillUid   = seedRealBill(u + "LABS", "3000.00");
+        seedLabTest(consultation, u + "U", unsettledLabBillUid, false);  // unsettled → should cancel
+        seedLabTest(consultation, u + "S", settledLabBillUid,   true);   // settled  → should NOT cancel
+
+        // Cancel the consultation.
+        mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/cancel")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELED"));
+
+        // The unsettled child bill must be CANCELED (cascade fired)...
+        assertThat(patientBillRepository.findByUid(unsettledLabBillUid).orElseThrow().getStatus())
+                .as("unsettled child-order bill must be CANCELED by the cancel cascade")
+                .isEqualTo(BillStatus.CANCELED);
+        // ...and the settled child bill must be left untouched.
+        assertThat(patientBillRepository.findByUid(settledLabBillUid).orElseThrow().getStatus())
+                .as("settled child-order bill must NOT be canceled")
+                .isNotEqualTo(BillStatus.CANCELED);
     }
 
     // =========================================================================
@@ -480,6 +520,39 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
             }
         }
         return consultationRepository.save(c).getUid();
+    }
+
+    /** Seed a real billable PatientBill (so cancelCharge finds it) and return its uid. */
+    private String seedRealBill(String tag, String amount) {
+        com.otapp.hmis.billing.domain.PatientBill bill = new com.otapp.hmis.billing.domain.PatientBill(
+                fakeUid("PAT", tag),
+                com.otapp.hmis.masterdata.lookup.ServiceKind.LAB_TEST,
+                "Lab test",
+                "Lab test fee (cascade test " + tag + ")",
+                java.math.BigDecimal.ONE,
+                com.otapp.hmis.shared.domain.Money.of(new java.math.BigDecimal(amount)),
+                businessDayService.currentUid());
+        return patientBillRepository.save(bill).getUid();
+    }
+
+    /** Seed a PENDING LabTest bound to the consultation, referencing a real bill uid. */
+    private void seedLabTest(Consultation consultation, String tag, String labBillUid,
+                             boolean settled) {
+        String day = businessDayService.currentUid();
+        LabTest lt = LabTest.forConsultation(
+                consultation,
+                fakeUid("LTT", tag),   // labTestTypeUid (loose, no FK)
+                labBillUid,
+                settled,
+                "CASH",
+                "",
+                null,
+                null,
+                fakeUid("DOC", tag),
+                fakeUid("DOC", tag),
+                day,
+                java.time.Instant.now());
+        labTestRepository.save(lt);
     }
 
     private String seedConsultationForClinician(String tag, String clinicianUid,
