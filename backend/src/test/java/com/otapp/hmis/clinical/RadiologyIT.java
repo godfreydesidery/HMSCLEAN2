@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -677,7 +679,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .content(attachmentBody("Report A", "rad-" + tag + "-a.pdf")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Radiology order must be accepted before adding attachments"));
+                        .value("Can only attach for accepted tests"));
     }
 
     @Test
@@ -710,7 +712,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .content(attachmentBody("Scan 6", "rad-" + tag + "-6.dcm")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Maximum of 5 attachments allowed per radiology order"));
+                        .value("Can not add more than 5 attachments"));
     }
 
     @Test
@@ -745,12 +747,71 @@ class RadiologyIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFIED"));
 
-        // Try to delete attachment when VERIFIED → 422
+        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
         mockMvc.perform(delete(RAD_BASE + "/attachments/uid/" + attUid)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Cannot delete attachment from a verified radiology order"));
+                        .value("Could not delete. Radiology already verified"));
+    }
+
+    // =========================================================================
+    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
+    // Upload (ACCEPTED, settled) → 201; download before VERIFIED → 422; download after
+    // VERIFIED → 200 inline bytes.
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_thenDownload_afterVerified() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        // Accept (radiology attach-gate is ACCEPTED).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        // Upload a small file (multipart) → 201 with a fileName.
+        byte[] content = ("IMG-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "xray.png", "image/png", content);
+        MvcResult upload = mockMvc.perform(multipart(RAD_BASE + "/uid/" + radUid + "/attachments/upload")
+                        .file(file)
+                        .param("name", "X-ray")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty())
+                .andExpect(jsonPath("$.fileName").isNotEmpty())
+                .andReturn();
+        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
+                .get("uid").asText();
+
+        // Download BEFORE VERIFIED → 422 (download gate).
+        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not download. Radiology is not verified"));
+
+        // Verify (radiology ACCEPTED → VERIFIED direct).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("Normal study", "No abnormality", null)))
+                .andExpect(status().isOk());
+
+        // Download AFTER VERIFIED → 200 inline bytes.
+        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(result -> org.assertj.core.api.Assertions
+                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
     }
 
     // =========================================================================

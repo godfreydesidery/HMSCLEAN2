@@ -143,6 +143,38 @@ public interface RadiologyPort {
     RadiologyAttachmentDto addAttachment(String radiologyUid, RadiologyAttachmentRequest request,
                                          TxAuditContext ctx);
 
+    /**
+     * Upload a file attachment to a radiology order (multipart path, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard order (legacy-parity): (1) size cap → 422 "File exceeds maximum file size allowed";
+     * (2) status/count gate via {@code canAttach} → 422 verbatim messages. On success: stores
+     * bytes via {@link com.otapp.hmis.shared.storage.FileStoragePort}, persists the row with
+     * the generated storage filename, audit CREATE, returns 201 DTO.
+     *
+     * <p>ACCEPTED gate for radiology — PatientServiceImpl.java:2922-2996.
+     *
+     * @param radiologyUid     owning radiology order ULID
+     * @param bytes            raw file bytes extracted at the controller layer
+     * @param originalFilename client-supplied filename (used to derive extension only)
+     * @param name             optional display name for the attachment
+     * @param ctx              transaction audit context
+     * @return the created RadiologyAttachmentDto (fileName is the opaque storage key)
+     */
+    RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
+                                            String originalFilename, String name,
+                                            TxAuditContext ctx);
+
+    /**
+     * Download the bytes of a radiology attachment (VERIFIED-gate, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent radiology order must be VERIFIED (PatientResource.java:6154) —
+     * else 422 "Could not download. Radiology is not verified".
+     *
+     * @param attachmentUid the ULID of the attachment to download
+     * @return a {@link FileDownload} record with the storage filename and bytes
+     */
+    FileDownload downloadAttachment(String attachmentUid);
+
     /** List named attachments for a radiology order. */
     List<RadiologyAttachmentDto> listAttachments(String radiologyUid);
 

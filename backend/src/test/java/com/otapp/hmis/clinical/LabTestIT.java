@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -710,12 +712,73 @@ class LabTestIT extends AbstractIntegrationTest {
                         .content(verifyBody("14.0", "NORMAL", "12-16", "g/dL")))
                 .andExpect(status().isOk());
 
-        // Try to delete attachment when VERIFIED → 422
+        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
         mockMvc.perform(delete(LAB_BASE + "/attachments/uid/" + attUid)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Cannot delete attachment from a verified lab test"));
+                        .value("Could not delete. Lab Test already verified"));
+    }
+
+    // =========================================================================
+    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
+    // Upload (COLLECTED, settled) → 201; download before VERIFIED → 422; download after
+    // VERIFIED → 200 inline bytes.
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_thenDownload_afterVerified() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Accept → Collect (lab attach-gate is COLLECTED).
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        // Upload a small file (multipart) → 201 with a fileName.
+        byte[] content = ("PDF-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "scan.pdf", "application/pdf", content);
+        MvcResult upload = mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .param("name", "Scan")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty())
+                .andExpect(jsonPath("$.fileName").isNotEmpty())
+                .andReturn();
+        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
+                .get("uid").asText();
+
+        // Download BEFORE VERIFIED → 422 (download gate).
+        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not download. Lab test is not verified"));
+
+        // Verify the order.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("12.5", "NORMAL", "10-15", "g/dL")))
+                .andExpect(status().isOk());
+
+        // Download AFTER VERIFIED → 200 inline bytes.
+        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(result -> org.assertj.core.api.Assertions
+                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
     }
 
     // =========================================================================

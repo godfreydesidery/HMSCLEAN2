@@ -1,5 +1,6 @@
 package com.otapp.hmis.clinical.web;
 
+import com.otapp.hmis.clinical.application.FileDownload;
 import com.otapp.hmis.clinical.application.LabTestPort;
 import com.otapp.hmis.clinical.application.dto.LabTestAttachmentDto;
 import com.otapp.hmis.clinical.application.dto.LabTestAttachmentRequest;
@@ -13,10 +14,16 @@ import com.otapp.hmis.clinical.domain.LabTestStatus;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,8 +34,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST controller for the LabTest aggregate (inc-05 C7).
@@ -356,6 +365,49 @@ public class LabTestController {
             @PathVariable("attachmentUid") String attachmentUid,
             @AuthenticationPrincipal Jwt jwt) {
         labTestService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
+    // POST /api/v1/clinical/lab-tests/uid/{uid}/attachments/upload
+    // GET  /api/v1/clinical/lab-tests/attachments/uid/{attachmentUid}/download
+    // =========================================================================
+
+    /**
+     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
+     * "File exceeds maximum file size allowed"), then the COLLECTED status + max-5 gate.
+     * The bytes are stored on local disk; the row holds the opaque storage filename.
+     * Authenticated-only.
+     */
+    @PostMapping(path = "/lab-tests/uid/{uid}/attachments/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public LabTestAttachmentDto uploadAttachment(
+            @PathVariable("uid") String labTestUid,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "name", required = false) String name,
+            @AuthenticationPrincipal Jwt jwt) throws IOException {
+        return labTestService.uploadAttachment(
+                labTestUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
+    }
+
+    /**
+     * Download an attachment's bytes inline. Guard: parent lab test must be VERIFIED
+     * (else 422 "Could not download. Lab test is not verified"). Authenticated-only.
+     */
+    @GetMapping("/lab-tests/attachments/uid/{attachmentUid}/download")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @PathVariable("attachmentUid") String attachmentUid,
+            @AuthenticationPrincipal Jwt jwt) {
+        FileDownload dl = labTestService.downloadAttachment(attachmentUid);
+        MediaType contentType = MediaTypeFactory.getMediaType(dl.fileName())
+                .orElse(MediaType.APPLICATION_OCTET_STREAM);
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(dl.fileName()).build();
+        return ResponseEntity.ok()
+                .contentType(contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(dl.bytes());
     }
 
     // =========================================================================

@@ -1,5 +1,6 @@
 package com.otapp.hmis.clinical.web;
 
+import com.otapp.hmis.clinical.application.FileDownload;
 import com.otapp.hmis.clinical.application.RadiologyPort;
 import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
@@ -13,10 +14,16 @@ import com.otapp.hmis.clinical.domain.RadiologyStatus;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.MediaTypeFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,8 +34,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST controller for the Radiology aggregate (inc-05 C8).
@@ -359,6 +368,48 @@ public class RadiologyController {
             @PathVariable("attachmentUid") String attachmentUid,
             @AuthenticationPrincipal Jwt jwt) {
         radiologyService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
+    // POST /api/v1/clinical/radiologies/uid/{uid}/attachments/upload
+    // GET  /api/v1/clinical/radiologies/attachments/uid/{attachmentUid}/download
+    // =========================================================================
+
+    /**
+     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
+     * "File exceeds maximum file size allowed"), then the ACCEPTED status + max-5 gate.
+     * Bytes stored on local disk; the row holds the opaque storage filename. Authenticated-only.
+     */
+    @PostMapping(path = "/radiologies/uid/{uid}/attachments/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public RadiologyAttachmentDto uploadAttachment(
+            @PathVariable("uid") String radiologyUid,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "name", required = false) String name,
+            @AuthenticationPrincipal Jwt jwt) throws IOException {
+        return radiologyService.uploadAttachment(
+                radiologyUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
+    }
+
+    /**
+     * Download an attachment's bytes inline. Guard: parent radiology must be VERIFIED
+     * (else 422 "Could not download. Radiology is not verified"). Authenticated-only.
+     */
+    @GetMapping("/radiologies/attachments/uid/{attachmentUid}/download")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @PathVariable("attachmentUid") String attachmentUid,
+            @AuthenticationPrincipal Jwt jwt) {
+        FileDownload dl = radiologyService.downloadAttachment(attachmentUid);
+        MediaType contentType = MediaTypeFactory.getMediaType(dl.fileName())
+                .orElse(MediaType.APPLICATION_OCTET_STREAM);
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(dl.fileName()).build();
+        return ResponseEntity.ok()
+                .contentType(contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(dl.bytes());
     }
 
     // =========================================================================

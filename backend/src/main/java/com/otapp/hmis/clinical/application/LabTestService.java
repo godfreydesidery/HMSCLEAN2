@@ -31,6 +31,8 @@ import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.NotFoundException;
+import com.otapp.hmis.shared.storage.AttachmentStorageProperties;
+import com.otapp.hmis.shared.storage.FileStoragePort;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -103,11 +105,17 @@ class LabTestService implements LabTestPort {
     private final BillingQueries              billingQueries;
     private final AuditRecorder               auditRecorder;
     private final LabTestMapper               labTestMapper;
+    /** Local-disk file storage (inc-06A C7 / ITEM5). */
+    private final FileStoragePort             fileStoragePort;
+    /** Max file size + base path config (inc-06A C7 / ITEM5). */
+    private final AttachmentStorageProperties storageProperties;
 
     private static final String AUDIT_ENTITY      = "clinical.LabTest";
     /** Legacy credit-note reference for a deleted lab test (PatientResource.java:2936). */
     private static final String REF_CANCEL_LAB_TEST = "Canceled lab test";
     private static final String AUDIT_ATTACHMENT  = "clinical.LabTestAttachment";
+    /** Storage prefix for lab test attachments (inc-06A C7; approved deviation from legacy "LT"+id+patientNo). */
+    private static final String STORAGE_PREFIX    = "LT";
 
     // =========================================================================
     // Order creation — consultation path
@@ -547,13 +555,13 @@ class LabTestService implements LabTestPort {
     // =========================================================================
 
     /**
-     * Add an attachment to a lab test.
+     * Add an attachment (JSON path — the original endpoint; keeps existing tests green).
      *
      * <p>Guards (PatientServiceImpl.java:2828-2834):
      * <ol>
      *   <li>Lab test must exist (404).</li>
-     *   <li>Status must be COLLECTED (422 "Lab test must be collected before adding attachments").</li>
-     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed per lab test").</li>
+     *   <li>Status must be COLLECTED (422 "Can only attach for collected tests").</li>
+     *   <li>Attachment count must be less than 5 (422 "Can not add more than 5 attachments").</li>
      * </ol>
      */
     @Override
@@ -583,6 +591,86 @@ class LabTestService implements LabTestPort {
     }
 
     /**
+     * Upload a file attachment via multipart (inc-06A C7 / ITEM5).
+     *
+     * <p><strong>Guard order (legacy-parity):</strong>
+     * <ol>
+     *   <li>Size cap: {@code bytes.length > maxFileSizeBytes} → 422 verbatim
+     *       "File exceeds maximum file size allowed"
+     *       (PatientServiceImpl.java:2842-2844).</li>
+     *   <li>Status/count gate via {@code canAttach} — same messages as {@link #addAttachment}.
+     *       The legacy gate checks status first then count; the same order is preserved here.</li>
+     * </ol>
+     *
+     * <p><strong>On success:</strong> stores bytes via {@link FileStoragePort} (prefix "LT"),
+     * persists the row with the generated opaque storage filename, audits CREATE, returns DTO.
+     *
+     * <p>Legacy citations: PatientServiceImpl.java:2823-2906 (upload), 2842-2844 (cap),
+     * 2828-2834 (status/count gate).
+     */
+    @Override
+    @Transactional
+    public LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes,
+                                                  String originalFilename, String name,
+                                                  TxAuditContext ctx) {
+        // (1) Size cap — legacy-parity (PatientServiceImpl.java:2842-2844).
+        if (bytes.length > storageProperties.maxFileSizeBytes()) {
+            throw new InvalidPatientOperationException(
+                    "File exceeds maximum file size allowed");
+        }
+
+        // (2) Status / count gate — same as addAttachment.
+        LabTest lt = requireLabTest(labTestUid);
+        long count = attachmentRepository.countByLabTest(lt);
+
+        if (!lt.canAttach(count)) {
+            if (lt.getStatus() != LabTestStatus.COLLECTED) {
+                throw new InvalidPatientOperationException(
+                        "Can only attach for collected tests");
+            }
+            throw new InvalidPatientOperationException(
+                    "Can not add more than 5 attachments");
+        }
+
+        // (3) Store bytes — generates opaque storage filename.
+        String storageName = fileStoragePort.store(bytes, originalFilename,
+                STORAGE_PREFIX, lt.getUid());
+
+        LabTestAttachment attachment = LabTestAttachment.create(lt, name, storageName);
+        LabTestAttachment saved = attachmentRepository.save(attachment);
+        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+
+        return labTestMapper.toAttachmentDto(saved);
+    }
+
+    /**
+     * Download the bytes of a lab test attachment (inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent lab test must be VERIFIED (PatientResource.java:6021) —
+     * else 422 "Could not download. Lab test is not verified".
+     *
+     * <p>Reads bytes via {@link FileStoragePort#read}; a missing file throws
+     * {@link com.otapp.hmis.shared.error.NotFoundException} (→ 404) from the storage layer.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public FileDownload downloadAttachment(String attachmentUid) {
+        LabTestAttachment attachment = attachmentRepository.findByUid(attachmentUid)
+                .orElseThrow(() -> new NotFoundException(
+                        "Lab test attachment not found: " + attachmentUid));
+
+        LabTest lt = attachment.getLabTest();
+        if (lt.getStatus() != LabTestStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not download. Lab test is not verified");
+        }
+
+        byte[] bytes = fileStoragePort.read(attachment.getFileName());
+        return new FileDownload(attachment.getFileName(), bytes);
+    }
+
+    /**
      * List all attachments for a lab test.
      *
      * <p>Note: the download-gated-on-VERIFIED rule (PatientResource.java:6021) is enforced
@@ -601,8 +689,14 @@ class LabTestService implements LabTestPort {
      * Delete an attachment.
      *
      * <p>Guard: blocked when parent lab test status == VERIFIED (order is finalized).
-     * Message: "Cannot delete attachment from a verified lab test"
-     * (PatientResource.java:6021 parity — VERIFIED gate).
+     * Verbatim legacy message: "Could not delete. Lab Test already verified"
+     * (PatientResource.java:6021-6022).
+     *
+     * <p><strong>Approved deviation:</strong> after the row is deleted, the backing file is
+     * also removed from disk via {@link FileStoragePort#delete} (best-effort — a missing file
+     * is ignored). The legacy does NOT unlink the disk file (PatientResource.java:6021-6022).
+     * Unlinking here prevents orphaned files on the storage volume; deviation is
+     * security-architect-approved and documented in {@link FileStoragePort#delete}.
      */
     @Override
     @Transactional
@@ -613,13 +707,18 @@ class LabTestService implements LabTestPort {
 
         LabTest lt = attachment.getLabTest();
         if (!lt.canDeleteAttachment()) {
+            // Verbatim legacy message (PatientResource.java:6021-6022).
             throw new InvalidPatientOperationException(
-                    "Cannot delete attachment from a verified lab test");
+                    "Could not delete. Lab Test already verified");
         }
 
+        String fileName = attachment.getFileName();
         attachmentRepository.delete(attachment);
         auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
                 ctx.actorUsername());
+
+        // Best-effort disk unlink (approved deviation — prevents orphaned files).
+        fileStoragePort.delete(fileName);
     }
 
     // =========================================================================
