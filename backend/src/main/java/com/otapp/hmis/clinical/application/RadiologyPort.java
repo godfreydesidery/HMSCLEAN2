@@ -110,6 +110,13 @@ public interface RadiologyPort {
     RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
                            TxAuditContext ctx);
 
+    /**
+     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
+     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
+     */
+    RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
+                             TxAuditContext ctx);
+
     // -------------------------------------------------------------------------
     // Delete
     // -------------------------------------------------------------------------

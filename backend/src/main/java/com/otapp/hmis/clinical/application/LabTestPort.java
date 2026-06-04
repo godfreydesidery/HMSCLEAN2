@@ -70,6 +70,12 @@ public interface LabTestPort {
     LabTestDto reject(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
 
     /**
+     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
+     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
+     */
+    LabTestDto amendReport(String labTestUid, LabTestReportRequest request, TxAuditContext ctx);
+
+    /**
      * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
      * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
      */

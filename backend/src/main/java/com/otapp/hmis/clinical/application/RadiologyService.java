@@ -444,6 +444,31 @@ class RadiologyService implements RadiologyPort {
         }
     }
 
+    /**
+     * Amend the report of a VERIFIED radiology order via the audited-amend path (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): retains the prior narrative
+     * and stamps the amend audit triplet. Same bill-gate as {@link #addReport}. Guard: status must
+     * be VERIFIED, else 422 "Could not amend report. Radiology is not verified".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
+                                    TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
+
+        if (r.getStatus() != RadiologyStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not amend report. Radiology is not verified");
+        }
+
+        r.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
     // =========================================================================
     // Delete
     // =========================================================================

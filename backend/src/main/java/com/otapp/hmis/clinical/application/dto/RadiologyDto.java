@@ -40,6 +40,11 @@ public record RadiologyDto(
         String result,
         String report,
         String description,
+        // Report-amendment audit (inc-06A C6 / ITEM4)
+        String priorReport,
+        String reportAmendedByUserUid,
+        String reportAmendedOnDayUid,
+        Instant reportAmendedAt,
         /**
          * Indicates whether the inline attachment blob is set on this radiology row.
          * The raw bytes are not included in the DTO — use a dedicated download endpoint.

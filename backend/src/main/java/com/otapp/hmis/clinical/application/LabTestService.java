@@ -471,6 +471,33 @@ class LabTestService implements LabTestPort {
         }
     }
 
+    /**
+     * Amend the report of a VERIFIED lab test via the audited-amend path (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): a verified report may be
+     * changed ONLY here, which retains the prior narrative ({@code priorReport}) and stamps the
+     * amend audit triplet. Same bill-gate as {@link #addReport} ({@code PAID|COVERED|VERIFIED},
+     * read live via {@link BillingQueries}). Guard: status must be VERIFIED, else 422
+     * "Could not amend report. Lab test is not verified".
+     */
+    @Override
+    @Transactional
+    public LabTestDto amendReport(String labTestUid, LabTestReportRequest request,
+                                  TxAuditContext ctx) {
+        LabTest lt = requireLabTest(labTestUid);
+
+        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
+
+        if (lt.getStatus() != LabTestStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not amend report. Lab test is not verified");
+        }
+
+        lt.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return labTestMapper.toDto(lt);
+    }
+
     // =========================================================================
     // Delete
     // =========================================================================

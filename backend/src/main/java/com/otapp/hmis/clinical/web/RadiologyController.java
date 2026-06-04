@@ -280,6 +280,19 @@ public class RadiologyController {
         return radiologyService.addReport(radiologyUid, request, ctxFrom(jwt));
     }
 
+    /**
+     * Amend a VERIFIED radiology report via the audited-amend path (inc-06A C6 / ITEM4).
+     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
+     * guard: status must be VERIFIED. Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/amend-report")
+    public RadiologyDto amendReport(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody RadiologyReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return radiologyService.amendReport(radiologyUid, request, ctxFrom(jwt));
+    }
+
     // =========================================================================
     // Delete
     // DELETE /api/v1/clinical/radiologies/uid/{uid}

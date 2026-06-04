@@ -411,6 +411,72 @@ class RadiologyIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C6 (ITEM4): post-VERIFIED report is immutable via add-report (-> 422) and amendable only via
+    // the audited amend-report path, which retains the prior narrative + stamps the amend triplet.
+    // =========================================================================
+
+    @Test
+    void verifiedReport_blockedViaAddReport_amendableViaAmendPath_retainsPrior() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        // Drive to VERIFIED (radiology: ACCEPTED → VERIFIED direct), writing the original report.
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("Normal study", "Original verified narrative", null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"))
+                .andExpect(jsonPath("$.report").value("Original verified narrative"));
+
+        // add-report on a VERIFIED order must be BLOCKED (routes to amend).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Sneaky overwrite\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not add report. A verified report can only be amended via the amend path"));
+
+        // Amend → new report, PRIOR narrative retained, amend triplet stamped.
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Corrected narrative\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Corrected narrative"))
+                .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
+                .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
+                .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+    }
+
+    @Test
+    void amendReport_onNonVerified_422() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING, bill COVERED
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Too early\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not amend report. Radiology is not verified"));
+    }
+
+    // =========================================================================
     // Hold: ACCEPTED → PENDING
     // =========================================================================
 

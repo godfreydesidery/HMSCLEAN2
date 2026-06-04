@@ -267,8 +267,10 @@ public class LabTestController {
     }
 
     /**
-     * Add/update report text without status change. Status must be COLLECTED.
-     * Authenticated-only.
+     * Add/update report text without status change (inc-06A C5 / ITEM2). Gated on the BILL status
+     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
+     * "Could not add report. Payment not verified" otherwise. A VERIFIED order's report is
+     * immutable via this path; use {@code /amend-report}. Authenticated-only.
      */
     @PutMapping("/lab-tests/uid/{uid}/report")
     public LabTestDto addReport(
@@ -276,6 +278,19 @@ public class LabTestController {
             @RequestBody LabTestReportRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return labTestService.addReport(labTestUid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Amend a VERIFIED lab test's report via the audited-amend path (inc-06A C6 / ITEM4).
+     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
+     * guard: status must be VERIFIED. Authenticated-only.
+     */
+    @PostMapping("/lab-tests/uid/{uid}/amend-report")
+    public LabTestDto amendReport(
+            @PathVariable("uid") String labTestUid,
+            @RequestBody LabTestReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return labTestService.amendReport(labTestUid, request, ctxFrom(jwt));
     }
 
     // =========================================================================

@@ -97,6 +97,23 @@ public class LabTest extends AuditableEntity {
     @Column(name = "report", columnDefinition = "TEXT")
     private String report;
 
+    /**
+     * Retained prior report narrative — set when a VERIFIED report is amended (inc-06A C6 / ITEM4).
+     * Append-only audit of the pre-amendment text; never overwritten back into {@code report}.
+     */
+    @Column(name = "prior_report", columnDefinition = "TEXT")
+    private String priorReport;
+
+    /** Amend audit triplet (inc-06A C6): who/when last amended a VERIFIED report. */
+    @Column(name = "report_amended_by_user_uid", length = 26)
+    private String reportAmendedByUserUid;
+
+    @Column(name = "report_amended_on_day_uid", length = 26)
+    private String reportAmendedOnDayUid;
+
+    @Column(name = "report_amended_at")
+    private Instant reportAmendedAt;
+
     /** Optional description / clinical notes. */
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -584,6 +601,30 @@ public class LabTest extends AuditableEntity {
      */
     public void addReport(String report) {
         this.report = report;
+    }
+
+    /**
+     * Amend the report narrative of an already-VERIFIED lab test (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified audited-amend policy: rather than reproduce the legacy silent post-VERIFIED
+     * overwrite (a patient-safety defect — no amendment trail), a VERIFIED report may be changed
+     * ONLY through this path, which RETAINS the current narrative into {@code priorReport}
+     * (append-only) and stamps the amend audit triplet ({@code reportAmendedBy/On/At}).
+     * {@code result}/{@code testRange}/{@code level}/{@code unit} stay immutable after VERIFIED.
+     *
+     * <p>Guard: caller must verify {@code status == VERIFIED} and the bill-gate before calling.
+     *
+     * @param newReport     the amended report text
+     * @param actorUserUid  user performing the amendment
+     * @param dayUid        current business day uid
+     * @param now           current instant
+     */
+    public void amendReport(String newReport, String actorUserUid, String dayUid, Instant now) {
+        this.priorReport = this.report;
+        this.report = newReport;
+        this.reportAmendedByUserUid = actorUserUid;
+        this.reportAmendedOnDayUid = dayUid;
+        this.reportAmendedAt = now;
     }
 
     /**
