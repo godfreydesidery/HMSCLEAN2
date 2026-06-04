@@ -70,3 +70,24 @@ Rules:
 - Package skeleton: `com.zana.hmis.<context>.api` (public), `.internal.domain` / `.internal.repository` / `.internal.service` (package-private). Document API in `package-info.java` with `@ApplicationModule(allowedDependencies = {...})`.
 - Tests: `ApplicationModules.of(HmisApplication.class).verify()` as a JUnit 5 test; ArchUnit `@AnalyzeClasses` ruleset: (1) no foreign `@Entity` import across modules; (2) controllers must not inject repositories; (3) no class in `*.internal.*` may reference `DayService` or call `LocalDateTime.now()` directly — must receive `TxAuditContext`. Generate `spring-modulith-docs` C4/PlantUML module canvas for review.
 - Cross-module references by **uid** only; `shared.Money` (BigDecimal) and `shared.TxAuditContext` are the sole types freely importable everywhere. Reporting consumes read-model projection APIs/SQL views, not write-side entities.
+
+## Addendum (2026-06-04, inc-06A C4) — narrow clinical→billing bill-status read seam
+
+§6's principle "the clinical module never reads billing bill-status post-hoc" is **RELAXED
+NARROWLY** for one ratified, exact-process parity case: the legacy `add_report` bill-gate
+(ITEM2/ITEM4). Legacy `radiologies/add_report` (PatientResource.java:3183-3197) and
+`lab_tests/add_report` (:3381-3395) gate report writes on the **live** `PatientBill.status`
+(`PAID|COVERED|VERIFIED`). The clinical-local `settled` boolean is **provably insufficient** for
+this gate: it is captured at order-creation time and the cash-PAID→settled propagation is deferred,
+so a bill paid at the cashier *after* the order was created still shows `settled=false` — a
+settled-flag gate would wrongly reject an `add_report` that legacy allows.
+
+- **Seam:** `billing.api.BillingQueries.getBillStatus(String billUid) → BillStatus` (read-only,
+  propagation REQUIRED). Strings in; only the already-published `BillStatus` enum crosses the
+  boundary (§1 honoured). Impl package-private in `billing.application`, delegating to
+  `PatientBillRepository`.
+- **No cycle:** `clinical → billing :: api` is an existing allowed dependency (BillingCommands);
+  billing does not depend on clinical. `ApplicationModules.verify()` stays green (confirmed).
+- **Scope:** this relaxation applies to the `add_report` bill-gate ONLY. All settlement gates
+  (open_consultation, the lab/radiology/procedure worklist filters) MUST continue to use the local
+  `settled` flag — they are NOT permitted to use this read seam.
