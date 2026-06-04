@@ -8,12 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.otapp.hmis.registration.domain.Consultation;
-import com.otapp.hmis.registration.domain.ConsultationRepository;
+import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.clinical.domain.Consultation;
+import com.otapp.hmis.clinical.domain.ConsultationRepository;
 import com.otapp.hmis.registration.domain.Patient;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.PatientType;
-import com.otapp.hmis.registration.domain.PaymentType;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.NoDayOpenException;
 import com.otapp.hmis.support.AbstractIntegrationTest;
@@ -256,12 +256,21 @@ class PatientUpdateIT extends AbstractIntegrationTest {
         return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
     }
 
-    /** Seed a PENDING consultation for the patient (saveAndFlush so the endpoint tx sees it). */
+    /** Seed a PENDING consultation for the patient (saveAndFlush so the endpoint tx sees it).
+     *  Uses the clinical loose-uid constructor (ADR-0022 D2 — no entity references). */
     private void seedPendingConsultation(Patient p) {
         consultationRepository.saveAndFlush(new Consultation(
-                p, null, "CLINIC0000000000000000001", "CLINICIAN00000000000001",
-                "BILL000000000000000000001", PaymentType.CASH, false,
-                businessDayService.currentUid()));
+                p.getUid(),                          // patientUid  (loose uid, ADR-0022 D2)
+                null,                                // visitUid    (nullable)
+                "CLINIC0000000000000000001",         // clinicUid
+                "CLINICIAN00000000000001",           // clinicianUserUid
+                "BILL000000000000000000001",         // patientBillUid
+                PaymentMode.CASH,                    // paymentMode (billing::api)
+                false,                               // followUp
+                false,                               // settled (CASH-OPD unsettled)
+                "",                                  // membershipNo
+                null,                                // insurancePlanUid
+                businessDayService.currentUid()));   // businessDayUid
     }
 
     private void ensureDayOpen() {

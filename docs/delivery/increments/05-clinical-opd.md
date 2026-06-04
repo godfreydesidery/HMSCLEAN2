@@ -1,5 +1,14 @@
 # Increment 05 — Clinical / OPD
 
+> **⚠️ SUPERSEDED IN PART (2026-06-04).** This planning doc carried heavy drift vs the real
+> legacy code (clean `BOOKED/IN_PROGRESS/COMPLETED` states, a polymorphic `ClinicalOrder`,
+> one `ConsultationDiagnosis`, a `PENDING→…→SOLD` Prescription lifecycle, `CONS-`/`ORD-`
+> numbering, invented privilege names like `CONSULTATION_START`, a `ProviderProfile`, "177
+> privilege codes" — **all inventions**). The authoritative, legacy-verified contract is
+> [`05-clinical-discovery/11-DECISIONS-RATIFIED.md`](05-clinical-discovery/11-DECISIONS-RATIFIED.md)
+> + [`05-clinical-discovery/04-synthesis-buildspec.md`](05-clinical-discovery/04-synthesis-buildspec.md).
+> Read those, not the Scope/Endpoints/Fidelity sections below.
+
 ## Goal
 
 Deliver the complete outpatient consultation lifecycle — from the reception queue through SOAP clinical notes, diagnoses, polymorphic ClinicalOrder (lab/radiology/procedure), prescribing alerts, two-phase consultation transfer, and outpatient closure (death/referral) — so that a doctor can drive a full OPD encounter end-to-end, with CASH fee settlement as a hard gate on service delivery.

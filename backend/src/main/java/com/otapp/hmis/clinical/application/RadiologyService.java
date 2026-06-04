@@ -1,0 +1,599 @@
+package com.otapp.hmis.clinical.application;
+
+import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.billing.api.ChargeRequest;
+import com.otapp.hmis.billing.api.ChargeResult;
+import com.otapp.hmis.billing.api.SettlementPolicy;
+import com.otapp.hmis.billing.domain.BillStatus;
+import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentDto;
+import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyDto;
+import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
+import com.otapp.hmis.clinical.domain.Consultation;
+import com.otapp.hmis.clinical.domain.ConsultationRepository;
+import com.otapp.hmis.clinical.domain.NonConsultation;
+import com.otapp.hmis.clinical.domain.NonConsultationRepository;
+import com.otapp.hmis.clinical.domain.Radiology;
+import com.otapp.hmis.clinical.domain.RadiologyAttachment;
+import com.otapp.hmis.clinical.domain.RadiologyAttachmentRepository;
+import com.otapp.hmis.clinical.domain.RadiologyRepository;
+import com.otapp.hmis.clinical.domain.RadiologyStatus;
+import com.otapp.hmis.masterdata.lookup.RadiologyTypeLookup;
+import com.otapp.hmis.masterdata.lookup.ServiceKind;
+import com.otapp.hmis.shared.audit.AuditAction;
+import com.otapp.hmis.shared.audit.AuditRecorder;
+import com.otapp.hmis.shared.domain.TxAuditContext;
+import com.otapp.hmis.shared.error.InvalidPatientOperationException;
+import com.otapp.hmis.shared.error.NotFoundException;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Service implementing the Radiology aggregate lifecycle (inc-05 C8).
+ *
+ * <p><strong>State machine (radiology-specific deltas from C7 LabTest):</strong>
+ * <ul>
+ *   <li>order (PENDING): guards → exactly-one-encounter, duplicate-guard, radiologyType exists;
+ *       creates billing charge via {@link BillingCommands#recordClinicalCharge} with kind=RADIOLOGY;
+ *       sets local {@code settled} flag from the ChargeResult.</li>
+ *   <li>accept (PENDING|REJECTED → ACCEPTED): NO bill check (CR-INC05-01 parity).
+ *       <strong>Does NOT clear rejectComment</strong> — radiology asymmetry vs LabTest.</li>
+ *   <li>reject (PENDING|ACCEPTED → REJECTED): clears accept_* fields.</li>
+ *   <li><strong>NO collect step</strong> (CR-INC05-14 — dead endpoint). COLLECTED is a
+ *       dead state retained for data fidelity only.</li>
+ *   <li>verify (<strong>ACCEPTED → VERIFIED</strong>): writes result/report/inline-blob.
+ *       Guard: status must be ACCEPTED (not COLLECTED — PatientResource.java:4280-4281).
+ *       Verbatim message: "Please accept the radiology order first".</li>
+ *   <li>hold (ACCEPTED → PENDING): stamps held_* then reverts.</li>
+ *   <li>saveResult (<strong>ACCEPTED only</strong>): updates result text, no status change.
+ *       (PatientResource.java:4305-4306 — radiology edits when ACCEPTED, not COLLECTED).</li>
+ *   <li>delete (PENDING only): hard-delete; credit-note DEFERRED.</li>
+ *   <li>addAttachment (<strong>ACCEPTED gate</strong>): max 5 named file attachments;
+ *       attach only when ACCEPTED (PatientServiceImpl.java:2931-2933).</li>
+ * </ul>
+ *
+ * <p><strong>Reject asymmetry (verified finding):</strong>
+ * {@code accept()} does NOT clear {@code rejectComment}. This is a deliberate legacy
+ * asymmetry vs LabTest. Reproduced verbatim per exact-process mandate.
+ *
+ * <p><strong>Settlement flag (local projection, CR-INC05-01):</strong>
+ * The {@code settled} flag is set at order time from the {@link ChargeResult}:
+ * <ul>
+ *   <li>{@code true}  — ChargeResult.status IN (COVERED, VERIFIED, NONE)</li>
+ *   <li>{@code false} — ChargeResult.status == UNPAID (CASH-OPD / CASH-OUTSIDER)</li>
+ * </ul>
+ * The cash-PAID→settled=true propagation is DEFERRED (same pattern as LabTest).
+ *
+ * <p><strong>DEFERRED — delete credit-note seam:</strong>
+ * Same as LabTestService — no credit-note raised on delete for already-PAID bills.
+ *
+ * <p><strong>DEFERRED — admission radiology path:</strong>
+ * The {@code admissionUid} path is not implemented. Deferred to the Inpatient/Nursing increment.
+ *
+ * <p>Package-private — not part of the module's public API surface (ADR-0014 §2).
+ *
+ * <p>Legacy citations:
+ * <ul>
+ *   <li>Order create:              PatientServiceImpl.java</li>
+ *   <li>Accept/reject/verify:      PatientResource.java:4280-4292</li>
+ *   <li>verify from ACCEPTED:      PatientResource.java:4280-4281</li>
+ *   <li>saveResult ACCEPTED gate:  PatientResource.java:4305-4306</li>
+ *   <li>Hold (revert):             hold_radiology pattern</li>
+ *   <li>Max 5 attachments:         PatientServiceImpl.java:2928-2930</li>
+ *   <li>ACCEPTED attach gate:      PatientServiceImpl.java:2931-2933</li>
+ *   <li>VERIFIED download gate:    PatientResource.java:6154</li>
+ * </ul>
+ */
+@Service
+@RequiredArgsConstructor
+class RadiologyService implements RadiologyPort {
+
+    private final RadiologyRepository           radiologyRepository;
+    private final RadiologyAttachmentRepository attachmentRepository;
+    private final ConsultationRepository        consultationRepository;
+    private final NonConsultationRepository     nonConsultationRepository;
+    private final RadiologyTypeLookup           radiologyTypeLookup;
+    private final BillingCommands               billingCommands;
+    private final AuditRecorder                 auditRecorder;
+    private final RadiologyMapper               radiologyMapper;
+
+    private static final String AUDIT_ENTITY     = "clinical.Radiology";
+    private static final String AUDIT_ATTACHMENT = "clinical.RadiologyAttachment";
+
+    // =========================================================================
+    // Order creation — consultation path
+    // =========================================================================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Guards:
+     * <ol>
+     *   <li>Consultation must exist (404).</li>
+     *   <li>RadiologyType must exist in masterdata (404 "Radiology type not found").</li>
+     *   <li>No duplicate type on this consultation (422 verbatim legacy message).</li>
+     * </ol>
+     */
+    @Override
+    @Transactional
+    public RadiologyDto orderForConsultation(String consultationUid,
+                                              RadiologyOrderRequest request,
+                                              TxAuditContext ctx) {
+        Consultation consultation = requireConsultation(consultationUid);
+        requireRadiologyTypeExists(request.radiologyTypeUid());
+        guardNoDuplicateOnConsultation(consultation, request.radiologyTypeUid());
+
+        PaymentMode paymentMode = toPaymentMode(consultation.getPaymentMode().name());
+        ChargeRequest chargeRequest = new ChargeRequest(
+                consultation.getPatientUid(),
+                consultation.getInsurancePlanUid(),
+                consultation.getMembershipNo(),
+                ServiceKind.RADIOLOGY,
+                request.radiologyTypeUid(),
+                BigDecimal.ONE,
+                paymentMode,
+                false,
+                false
+        );
+        ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
+
+        boolean settled = isSettledFromCharge(chargeResult, paymentMode, false);
+
+        Instant now = Instant.now();
+        Radiology r = Radiology.forConsultation(
+                consultation,
+                request.radiologyTypeUid(),
+                chargeResult.billUid(),
+                settled,
+                paymentMode.name(),
+                consultation.getMembershipNo(),
+                consultation.getInsurancePlanUid(),
+                request.diagnosisTypeUid(),
+                request.clinicianUserUid(),
+                ctx.actorUsername(),
+                ctx.dayUid(),
+                now);
+
+        Radiology saved = radiologyRepository.save(r);
+        auditRecorder.record(AUDIT_ENTITY, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+        return radiologyMapper.toDto(saved);
+    }
+
+    // =========================================================================
+    // Order creation — non-consultation (OUTSIDER/walk-in) path
+    // =========================================================================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Guards:
+     * <ol>
+     *   <li>NonConsultation must exist (404).</li>
+     *   <li>RadiologyType must exist in masterdata (404 "Radiology type not found").</li>
+     *   <li>No duplicate type on this non-consultation (422).</li>
+     * </ol>
+     */
+    @Override
+    @Transactional
+    public RadiologyDto orderForNonConsultation(String nonConsultationUid,
+                                                 RadiologyOrderRequest request,
+                                                 TxAuditContext ctx) {
+        NonConsultation nonConsultation = requireNonConsultation(nonConsultationUid);
+        requireRadiologyTypeExists(request.radiologyTypeUid());
+        guardNoDuplicateOnNonConsultation(nonConsultation, request.radiologyTypeUid());
+
+        String patientUid = nonConsultation.getPatientUid();
+
+        String paymentTypeStr = request.paymentType() != null && !request.paymentType().isBlank()
+                ? request.paymentType()
+                : nonConsultation.getPaymentType();
+        String membershipNo = request.membershipNo() != null
+                ? request.membershipNo()
+                : nonConsultation.getMembershipNo();
+        String insurancePlanUid = request.insurancePlanUid() != null
+                ? request.insurancePlanUid()
+                : nonConsultation.getInsurancePlanUid();
+
+        PaymentMode paymentMode = toPaymentMode(paymentTypeStr);
+
+        ChargeRequest chargeRequest = new ChargeRequest(
+                patientUid,
+                insurancePlanUid,
+                membershipNo,
+                ServiceKind.RADIOLOGY,
+                request.radiologyTypeUid(),
+                BigDecimal.ONE,
+                paymentMode,
+                false,
+                false
+        );
+        ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
+
+        boolean settled = isSettledFromCharge(chargeResult, paymentMode, false);
+
+        Instant now = Instant.now();
+        Radiology r = Radiology.forNonConsultation(
+                nonConsultation,
+                patientUid,
+                request.radiologyTypeUid(),
+                chargeResult.billUid(),
+                settled,
+                paymentMode.name(),
+                membershipNo,
+                insurancePlanUid,
+                request.diagnosisTypeUid(),
+                request.clinicianUserUid(),
+                ctx.actorUsername(),
+                ctx.dayUid(),
+                now);
+
+        Radiology saved = radiologyRepository.save(r);
+        auditRecorder.record(AUDIT_ENTITY, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+        return radiologyMapper.toDto(saved);
+    }
+
+    // =========================================================================
+    // Lifecycle transitions
+    // =========================================================================
+
+    /**
+     * Accept: PENDING | REJECTED → ACCEPTED.
+     *
+     * <p>NO bill re-check (CR-INC05-01 parity).
+     * <p><strong>Does NOT clear rejectComment</strong> — radiology asymmetry vs LabTest.
+     * Guard: status must be PENDING or REJECTED (else 422).
+     * Message: "Radiology order cannot be accepted at this stage".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto accept(String radiologyUid, TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.PENDING && r.getStatus() != RadiologyStatus.REJECTED) {
+            throw new InvalidPatientOperationException(
+                    "Radiology order cannot be accepted at this stage");
+        }
+
+        r.accept(ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Reject: PENDING | ACCEPTED → REJECTED.
+     *
+     * <p>Guard: status must be PENDING or ACCEPTED (else 422).
+     * Message: "Radiology order cannot be rejected at this stage".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto reject(String radiologyUid, RadiologyRejectRequest request,
+                               TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.PENDING && r.getStatus() != RadiologyStatus.ACCEPTED) {
+            throw new InvalidPatientOperationException(
+                    "Radiology order cannot be rejected at this stage");
+        }
+
+        r.reject(request.rejectComment(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Verify: ACCEPTED → VERIFIED. Writes result/report/inline-attachment-blob.
+     *
+     * <p><strong>Active path: ACCEPTED → VERIFIED DIRECTLY</strong> (PatientResource.java:4280-4281).
+     * NO collect step (CR-INC05-14). Guard: status must be ACCEPTED.
+     * Message: "Please accept the radiology order first" (status guard parity).
+     */
+    @Override
+    @Transactional
+    public RadiologyDto verify(String radiologyUid, RadiologyVerifyRequest request,
+                               TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.ACCEPTED) {
+            throw new InvalidPatientOperationException(
+                    "Please accept the radiology order first");
+        }
+
+        r.verify(request.result(), request.report(), request.attachment(),
+                ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Hold (revert): ACCEPTED → PENDING.
+     *
+     * <p>Guard: status must be ACCEPTED.
+     * Message: "Radiology order must be accepted to hold".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto hold(String radiologyUid, TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.ACCEPTED) {
+            throw new InvalidPatientOperationException(
+                    "Radiology order must be accepted to hold");
+        }
+
+        r.hold(ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    // =========================================================================
+    // Result edit (no status change) — ACCEPTED gate
+    // =========================================================================
+
+    /**
+     * Save result text without status change. Allowed only when status == ACCEPTED.
+     *
+     * <p>Radiology edits when ACCEPTED (PatientResource.java:4305-4306 parity).
+     * This is DIFFERENT from LabTest which requires COLLECTED.
+     * Message: "Please accept the radiology order first".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto saveResult(String radiologyUid, RadiologyResultRequest request,
+                                   TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.ACCEPTED) {
+            throw new InvalidPatientOperationException(
+                    "Please accept the radiology order first");
+        }
+
+        r.saveResult(request.result());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    // =========================================================================
+    // Delete
+    // =========================================================================
+
+    /**
+     * Hard-delete a PENDING radiology order.
+     *
+     * <p>Guard: status must be PENDING (else 422 "Only a pending radiology order can be deleted").
+     *
+     * <p><strong>DEFERRED — credit-note seam:</strong>
+     * Same deferral as LabTestService — no credit-note raised for already-PAID bills.
+     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     */
+    @Override
+    @Transactional
+    public void delete(String radiologyUid, TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.PENDING) {
+            throw new InvalidPatientOperationException(
+                    "Only a pending radiology order can be deleted");
+        }
+
+        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
+        // not yet published in billing.api; mirrors LabTestService deferral).
+
+        radiologyRepository.delete(r);
+        auditRecorder.record(AUDIT_ENTITY, radiologyUid, AuditAction.DELETE, ctx.actorUsername());
+    }
+
+    // =========================================================================
+    // Attachments
+    // =========================================================================
+
+    /**
+     * Add a named file attachment to a radiology order.
+     *
+     * <p>Guards (PatientServiceImpl.java:2928-2933):
+     * <ol>
+     *   <li>Radiology order must exist (404).</li>
+     *   <li>Status must be ACCEPTED (422 "Radiology order must be accepted before adding
+     *       attachments"). NOTE: ACCEPTED gate — different from lab COLLECTED gate.</li>
+     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed
+     *       per radiology order").</li>
+     * </ol>
+     */
+    @Override
+    @Transactional
+    public RadiologyAttachmentDto addAttachment(String radiologyUid,
+                                                RadiologyAttachmentRequest request,
+                                                TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+        long count = attachmentRepository.countByRadiology(r);
+
+        if (!r.canAttach(count)) {
+            if (r.getStatus() != RadiologyStatus.ACCEPTED) {
+                throw new InvalidPatientOperationException(
+                        "Radiology order must be accepted before adding attachments");
+            }
+            throw new InvalidPatientOperationException(
+                    "Maximum of 5 attachments allowed per radiology order");
+        }
+
+        RadiologyAttachment attachment = RadiologyAttachment.create(r, request.name(),
+                request.fileName());
+        RadiologyAttachment saved = attachmentRepository.save(attachment);
+        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+        return radiologyMapper.toAttachmentDto(saved);
+    }
+
+    /**
+     * List all named attachments for a radiology order.
+     *
+     * <p>Note: the download-gated-on-VERIFIED rule (PatientResource.java:6154) is enforced
+     * at the controller layer — the service returns all attachments regardless of status.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<RadiologyAttachmentDto> listAttachments(String radiologyUid) {
+        Radiology r = requireRadiology(radiologyUid);
+        return radiologyMapper.toAttachmentDtoList(
+                attachmentRepository.findByRadiologyOrderByCreatedAtAsc(r));
+    }
+
+    /**
+     * Delete a named attachment.
+     *
+     * <p>Guard: blocked when parent radiology order status == VERIFIED (order is finalized).
+     * Message: "Cannot delete attachment from a verified radiology order".
+     */
+    @Override
+    @Transactional
+    public void deleteAttachment(String attachmentUid, TxAuditContext ctx) {
+        RadiologyAttachment attachment = attachmentRepository.findByUid(attachmentUid)
+                .orElseThrow(() -> new NotFoundException(
+                        "Radiology attachment not found: " + attachmentUid));
+
+        Radiology r = attachment.getRadiology();
+        if (!r.canDeleteAttachment()) {
+            throw new InvalidPatientOperationException(
+                    "Cannot delete attachment from a verified radiology order");
+        }
+
+        attachmentRepository.delete(attachment);
+        auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
+                ctx.actorUsername());
+    }
+
+    // =========================================================================
+    // Queries
+    // =========================================================================
+
+    @Override
+    @Transactional(readOnly = true)
+    public RadiologyDto getByUid(String radiologyUid) {
+        return radiologyMapper.toDto(requireRadiology(radiologyUid));
+    }
+
+    /**
+     * Radiology department worklist — settled orders in actionable statuses {PENDING, ACCEPTED}.
+     * COLLECTED is a dead state and is excluded from the worklist.
+     *
+     * <p>The settled flag replaces reading billing bill status (CR-INC05-01, ADR-0022 D4).
+     *
+     * @param statusFilter optional single-status filter (null = all actionable statuses)
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<RadiologyDto> worklist(RadiologyStatus statusFilter) {
+        List<Radiology> radiologies;
+        if (statusFilter != null) {
+            radiologies = radiologyRepository.findBySettledAndStatusOrderByCreatedAtAsc(
+                    true, statusFilter);
+        } else {
+            radiologies = radiologyRepository.findBySettledAndStatusInOrderByCreatedAtAsc(
+                    true, List.of(RadiologyStatus.PENDING, RadiologyStatus.ACCEPTED));
+        }
+        return radiologyMapper.toDtoList(radiologies);
+    }
+
+    /**
+     * All radiology orders for a consultation, ordered by creation time ascending.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<RadiologyDto> listForConsultation(String consultationUid) {
+        Consultation consultation = requireConsultation(consultationUid);
+        return radiologyMapper.toDtoList(
+                radiologyRepository.findByConsultationOrderByCreatedAtAsc(consultation));
+    }
+
+    /**
+     * All radiology orders for a patient, optionally filtered by status.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<RadiologyDto> byPatient(String patientUid, RadiologyStatus statusFilter) {
+        List<Radiology> radiologies;
+        if (statusFilter != null) {
+            radiologies = radiologyRepository.findByPatientUidAndStatusOrderByCreatedAtDesc(
+                    patientUid, statusFilter);
+        } else {
+            radiologies = radiologyRepository.findByPatientUidOrderByCreatedAtDesc(patientUid);
+        }
+        return radiologyMapper.toDtoList(radiologies);
+    }
+
+    // =========================================================================
+    // Private helpers
+    // =========================================================================
+
+    private Radiology requireRadiology(String uid) {
+        return radiologyRepository.findByUid(uid)
+                .orElseThrow(() -> new NotFoundException("Radiology order not found: " + uid));
+    }
+
+    private Consultation requireConsultation(String uid) {
+        return consultationRepository.findByUid(uid)
+                .orElseThrow(() -> new NotFoundException("Consultation not found: " + uid));
+    }
+
+    private NonConsultation requireNonConsultation(String uid) {
+        return nonConsultationRepository.findByUid(uid)
+                .orElseThrow(() -> new NotFoundException("NonConsultation not found: " + uid));
+    }
+
+    private void requireRadiologyTypeExists(String radiologyTypeUid) {
+        if (!radiologyTypeLookup.existsByUid(radiologyTypeUid)) {
+            throw new NotFoundException("Radiology type not found");
+        }
+    }
+
+    private void guardNoDuplicateOnConsultation(Consultation consultation,
+                                                 String radiologyTypeUid) {
+        if (radiologyRepository.existsByConsultationAndRadiologyTypeUid(
+                consultation, radiologyTypeUid)) {
+            throw new InvalidPatientOperationException(
+                    "Duplicate radiology type is not allowed for this encounter");
+        }
+    }
+
+    private void guardNoDuplicateOnNonConsultation(NonConsultation nonConsultation,
+                                                    String radiologyTypeUid) {
+        if (radiologyRepository.existsByNonConsultationAndRadiologyTypeUid(
+                nonConsultation, radiologyTypeUid)) {
+            throw new InvalidPatientOperationException(
+                    "Duplicate radiology type is not allowed for this encounter");
+        }
+    }
+
+    /**
+     * Derive the local settled flag from the billing ChargeResult and payment context.
+     * Identical logic to LabTestService (CR-INC05-01, ADR-0022 D4).
+     */
+    private static boolean isSettledFromCharge(ChargeResult chargeResult, PaymentMode paymentMode,
+                                               boolean inpatient) {
+        if (!SettlementPolicy.requiresPrepayment(paymentMode, inpatient, false)) {
+            return true;
+        }
+        return chargeResult.status() != BillStatus.UNPAID;
+    }
+
+    private static PaymentMode toPaymentMode(String paymentTypeStr) {
+        if (paymentTypeStr == null || paymentTypeStr.isBlank()) {
+            return PaymentMode.CASH;
+        }
+        try {
+            return PaymentMode.valueOf(paymentTypeStr.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return PaymentMode.CASH;
+        }
+    }
+}

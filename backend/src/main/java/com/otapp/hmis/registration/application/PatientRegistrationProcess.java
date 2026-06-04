@@ -3,19 +3,21 @@ package com.otapp.hmis.registration.application;
 import com.otapp.hmis.billing.api.BillingCommands;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
+import com.otapp.hmis.billing.api.SettlementPolicy;
 import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.clinical.api.BookConsultationCommand;
+import com.otapp.hmis.clinical.api.ConsultationBookingService;
+import com.otapp.hmis.clinical.api.ConsultationDto;
+import com.otapp.hmis.clinical.api.ConsultationLookup;
+import com.otapp.hmis.clinical.api.ConsultationWorkStatus;
 import com.otapp.hmis.iam.lookup.ClinicianAffiliationService;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
 import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
-import com.otapp.hmis.registration.application.dto.ConsultationDto;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.RegisterPatientRequest;
 import com.otapp.hmis.registration.application.dto.SendToDoctorRequest;
 import com.otapp.hmis.registration.application.dto.UpdatePatientRequest;
-import com.otapp.hmis.registration.domain.Consultation;
-import com.otapp.hmis.registration.domain.ConsultationRepository;
-import com.otapp.hmis.registration.domain.ConsultationStatus;
 import com.otapp.hmis.registration.domain.Patient;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.PatientType;
@@ -32,6 +34,7 @@ import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.MissingInsuranceInformationException;
 import com.otapp.hmis.shared.error.NotFoundException;
 import java.math.BigDecimal;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,13 +42,17 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Orchestrates the patient registration workflow (build-spec §2.3, PatientServiceImpl.java:220-420).
  *
- * <p>One {@link Transactional} boundary covers all 8 steps (ADR-0014 §5): Patient persist,
+ * <p>One {@link Transactional} boundary covers all steps (ADR-0014 §5): Patient persist,
  * billing charge, Registration persist, Visit persist, and audit record are atomic. If any
  * step fails the entire transaction rolls back, leaving no orphan rows.
  *
  * <p>The {@link com.otapp.hmis.billing.api.BillingCommands#recordClinicalCharge} call runs
  * in the caller's transaction (propagation REQUIRED, ADR-0008 §4) — it is NOT async and NOT
  * in a nested {@code REQUIRES_NEW} transaction.
+ *
+ * <p>The {@link ConsultationBookingService#book} call also runs in the caller's transaction
+ * (propagation MANDATORY, ADR-0022 D3) — the Consultation persist is atomic with the Visit
+ * creation and the billing charge.
  *
  * <p>Legacy citations:
  * <ul>
@@ -56,6 +63,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>MRN assignment: PatientServiceImpl.java:248-254</li>
  *   <li>Registration creation: PatientServiceImpl.java:293-302</li>
  *   <li>Visit creation: PatientServiceImpl.java:409-419</li>
+ *   <li>do_consultation: PatientServiceImpl.java:425-679</li>
  * </ul>
  */
 @Service
@@ -64,9 +72,6 @@ public class PatientRegistrationProcess {
 
     /** Stable audit entity-type string for Patient (ADR-0007). */
     private static final String AUDIT_ENTITY_PATIENT = "registration.Patient";
-
-    /** Stable audit entity-type string for Consultation (ADR-0007). */
-    private static final String AUDIT_ENTITY_CONSULTATION = "registration.Consultation";
 
     /** Stable audit entity-type string for Registration (ADR-0007 §182 scopes it in). */
     private static final String AUDIT_ENTITY_REGISTRATION = "registration.Registration";
@@ -77,13 +82,13 @@ public class PatientRegistrationProcess {
     private final PatientRepository patientRepository;
     private final RegistrationRepository registrationRepository;
     private final VisitRepository visitRepository;
-    private final ConsultationRepository consultationRepository;
     private final MrNumberGenerator mrNumberGenerator;
     private final BillingCommands billingCommands;
     private final AuditRecorder auditRecorder;
     private final PatientMapper patientMapper;
     private final ClinicianAffiliationService clinicianAffiliationService;
-    private final ConsultationMapper consultationMapper;
+    private final ConsultationBookingService consultationBookingService;
+    private final ConsultationLookup consultationLookup;
 
     /**
      * Register a new patient — 8-step atomic workflow (build-spec §2.3).
@@ -264,9 +269,8 @@ public class PatientRegistrationProcess {
      * <ul>
      *   <li><b>null current type</b>: treated as OUTPATIENT (defensive — PatientResource.java:410-414).</li>
      *   <li><b>OUTPATIENT → OUTSIDER</b>: blocked if the patient has any {@code PENDING}
-     *       consultation.  Throws {@link InvalidPatientOperationException} (422) with verbatim
-     *       legacy message.  Inc-05 widens the status set to include IN-PROCESS and TRANSFERRED
-     *       (inc-05 widens these statuses).</li>
+     *       consultation. Throws {@link InvalidPatientOperationException} (422) with verbatim
+     *       legacy message. Open-work check now via {@code consultationLookup} (ADR-0022 D5/D6).</li>
      *   <li><b>OUTSIDER → OUTPATIENT</b>: deferred — NonConsultation order-clearance check
      *       lands with inc-05/06 (REG-3); the flip proceeds unconditionally here.</li>
      *   <li><b>INPATIENT current</b>: always blocked (PatientResource.java:499-500).</li>
@@ -297,11 +301,11 @@ public class PatientRegistrationProcess {
 
         switch (current) {
             case OUTPATIENT -> {
-                // OUTPATIENT → OUTSIDER: block if patient has an active (PENDING) consultation
-                // Inc-05 widens these statuses to include IN-PROCESS and TRANSFERRED.
+                // OUTPATIENT → OUTSIDER: block if patient has an active (PENDING) consultation.
+                // Open-work check now via clinical::api ConsultationLookup (ADR-0022 D5/D6).
                 if (req.targetType() == PatientType.OUTSIDER
-                        && consultationRepository.existsByPatientAndStatus(
-                                patient, ConsultationStatus.PENDING)) {
+                        && consultationLookup.hasOpenWork(patient.getUid(),
+                                Set.of(ConsultationWorkStatus.PENDING))) {
                     throw new InvalidPatientOperationException(
                             "Can not change patient type, the patient has an active consultation.");
                 }
@@ -340,6 +344,10 @@ public class PatientRegistrationProcess {
      *   <li><b>Any non-INSURANCE (i.e. CASH)</b>: collapses to CASH —
      *       {@code insurancePlanUid=null}, {@code membershipNo=""}, {@code paymentType=CASH}
      *       (PatientResource.java:368-373 verbatim).</li>
+     *   <li><b>Open-work guard</b>: blocked if the patient has any PENDING consultation.
+     *       Open-work check now via {@code consultationLookup} (ADR-0022 D5/D6).
+     *       Verbatim legacy message including the trailing " s" typo
+     *       (PatientResource.java:356 — sic).</li>
      *   <li><b>Admissions guard</b>: PatientResource.java:366-367 ("Could not change. Patient
      *       has an ongoing medical operation") — DEFERRED-ENFORCEMENT no-op stub; admissions
      *       do not exist until inc-06.
@@ -359,11 +367,12 @@ public class PatientRegistrationProcess {
 
         Patient patient = requirePatient(uid);
 
-        // Open-work guard (PatientResource.java:325-357). The CONSULTATION leg is LIVE in inc-03
-        // (sendToDoctor creates PENDING consultations) and MUST be enforced (review M1). The
-        // NonConsultation order-clearance leg (:335-353) and the admission leg (:354-357) reference
-        // entities that arrive in inc-05/06 → DEFERRED-ENFORCEMENT no-op stubs (documented).
-        if (consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)) {
+        // Open-work guard (PatientResource.java:325-357).
+        // Open-work check now via clinical::api ConsultationLookup (ADR-0022 D5/D6).
+        // The NonConsultation order-clearance leg (:335-353) and the admission leg (:354-357)
+        // reference entities that arrive in inc-05/06 → DEFERRED-ENFORCEMENT no-op stubs.
+        if (consultationLookup.hasOpenWork(patient.getUid(),
+                Set.of(ConsultationWorkStatus.PENDING))) {
             // verbatim legacy message — note the trailing " s" typo (sic, PatientResource.java:356)
             throw new InvalidPatientOperationException(
                     "Could not change. Patient has an ongoing medical operation s");
@@ -399,7 +408,7 @@ public class PatientRegistrationProcess {
 
     /**
      * Send a patient to a doctor — creates a PENDING consultation and the associated
-     * consultation-fee charge in one atomic transaction (build-spec §3.2, CR-22).
+     * consultation-fee charge in one atomic transaction (build-spec §3.2, CR-22, ADR-0022 D3).
      *
      * <p>Equivalent to legacy {@code do_consultation} (PatientServiceImpl.java:425-475).
      * Steps:
@@ -407,25 +416,18 @@ public class PatientRegistrationProcess {
      *   <li>Load patient (404 if absent).</li>
      *   <li>Guard: patient must be OUTPATIENT (422).</li>
      *   <li>Guard: clinician must be affiliated with the selected clinic (422).</li>
-     *   <li>Guard: no existing PENDING consultation for the patient (422).</li>
+     *   <li>Guard: no existing PENDING/TRANSFERED/IN-PROCESS consultation for the patient (422).
+     *       Now resolved via {@code consultationLookup.hasOpenWork} (ADR-0022 D5).</li>
      *   <li>Record consultation-fee charge via billing engine; for follow-up the bill is
      *       NONE / zero (CR-20, PatientServiceImpl.java:467-469).</li>
      *   <li>Persist a SUBSEQUENT Visit unconditionally (no same-day dedup, AC3.6).</li>
-     *   <li>Persist Consultation (PENDING).</li>
-     *   <li>Audit Consultation CREATE.</li>
+     *   <li>Delegate Consultation persist to {@code clinical::api} via
+     *       {@link ConsultationBookingService#book} (ADR-0022 D3).</li>
      * </ol>
      *
-     * <p>Atomicity: the charge call runs in this method's transaction (propagation REQUIRED).
-     * A charge failure (e.g. missing CONSULTATION price) rolls back the entire unit —
-     * no Consultation row and no SUBSEQUENT Visit are persisted. The bill uid is obtained
-     * before persisting either, so a charge failure leaves no orphan rows.
-     *
-     * <p>DEFERRED stubs (inc-05/06):
-     * <ul>
-     *   <li>ConsultationTransfer guard (TRANSFERED status) — inc-05</li>
-     *   <li>IN-PROCESS status guard — inc-05</li>
-     *   <li>Admission / inpatient guard — inc-06</li>
-     * </ul>
+     * <p>Atomicity: all steps run in this method's transaction (propagation REQUIRED).
+     * The book() call runs with propagation MANDATORY (same tx). A charge failure rolls back
+     * the entire unit — no Consultation row and no SUBSEQUENT Visit are persisted.
      *
      * @param uid  the patient ULID
      * @param req  the send-to-doctor request (clinicUid, clinicianUserUid, followUp)
@@ -448,30 +450,27 @@ public class PatientRegistrationProcess {
         }
 
         // Step 3 — clinician affiliation gate (CR-08, build-spec §3.2)
-        // Equivalent to legacy clinician-active + clinic-pairing check. The iam module
-        // owns the affiliation set; registration depends only on iam::lookup (ADR-0008).
         if (!clinicianAffiliationService.clinicUidsOf(req.clinicianUserUid())
                 .contains(req.clinicUid())) {
             throw new InvalidPatientOperationException(
                     "Clinician is not affiliated with the selected clinic");
         }
 
-        // Step 4 — no existing PENDING consultation guard (PatientServiceImpl.java:443-448)
-        // inc-05/06: widen to TRANSFERED + IN-PROCESS statuses; add admission guard
-        if (consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)) {
+        // Step 4 — no existing open-work guard (PatientServiceImpl.java:443-448).
+        // Widened to PENDING + TRANSFERED + IN-PROCESS (ADR-0022 D5; consultationLookup resolves).
+        if (consultationLookup.hasOpenWork(patient.getUid(),
+                Set.of(ConsultationWorkStatus.PENDING,
+                       ConsultationWorkStatus.TRANSFERED,
+                       ConsultationWorkStatus.IN_PROCESS))) {
             throw new InvalidPatientOperationException(
                     "Patient has pending or held consultation, please consider freeing the patient");
         }
-        // inc-05: TRANSFERED status guard (ConsultationTransfer) — DEFERRED
-        // inc-05: IN-PROCESS status guard — DEFERRED
         // inc-06: admission / inpatient guard — DEFERRED
 
         // Step 5 — consultation-fee charge via billing engine (build-spec §3.2 step 5)
         // For follow-up: billing engine creates a NONE bill with zero amounts (CR-20).
-        // For non-followUp INSURANCE patient not covered at clinic: billing hard-fails 422
-        // (PlanNotAvailableForClinicException) — intentional PARITY, rolls back entire tx.
         // NOTE: charge is called BEFORE Visit + Consultation persist so that a charge failure
-        // leaves no orphan Visit or Consultation rows in the database (atomicity by ordering).
+        // leaves no orphan Visit or Consultation rows (atomicity by ordering).
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(
                 new ChargeRequest(
                         patient.getUid(),
@@ -487,33 +486,35 @@ public class PatientRegistrationProcess {
                 ctx);
 
         // Step 6 — persist SUBSEQUENT Visit unconditionally (no same-day dedup, AC3.6)
-        // PatientServiceImpl.java:499-512 (subsequent visit creation)
         Visit visit = new Visit(patient, VisitSequence.SUBSEQUENT, ctx.dayUid());
         visitRepository.save(visit);
         auditRecorder.record(AUDIT_ENTITY_VISIT, visit.getUid(),
                 AuditAction.CREATE, ctx.actorUsername());
 
-        // Step 7 — persist Consultation (PENDING)
-        // Consultation.java constructor: status defaults to PENDING (build-spec §3.2 step 7)
-        Consultation consultation = new Consultation(
-                patient,
-                visit,
-                req.clinicUid(),
-                req.clinicianUserUid(),
-                chargeResult.billUid(),
-                patient.getPaymentType(),
-                req.followUp(),
-                ctx.dayUid());
-        consultationRepository.save(consultation);
+        // Step 7 — delegate Consultation persist to clinical::api (ADR-0022 D3).
+        // Compute the booking pre-pass settled flag:
+        //   true  for INSURANCE/COVERED/NONE (auto-pass — no prepayment required)
+        //   false for CASH-OPD (must pay before open_consultation)
+        // (inc-05 §5; ADR-0022 D3)
+        boolean settledPrePass = !SettlementPolicy.requiresPrepayment(
+                mapPaymentMode(patient.getPaymentType()),
+                false,   // inpatient: OPD send-to-doctor is never inpatient
+                false);  // emergency: not applicable
 
-        // Step 8 — audit Consultation CREATE (ADR-0007)
-        auditRecorder.record(AUDIT_ENTITY_CONSULTATION, consultation.getUid(),
-                AuditAction.CREATE, ctx.actorUsername());
-
-        // ConsultationBooked after-commit event is reporting-only → SKIP/defer in inc-03
-        // (build-spec §3.2 note; do not add an event publisher here)
-
-        return consultationMapper.toDto(consultation);
+        return consultationBookingService.book(
+                new BookConsultationCommand(
+                        patient.getUid(),
+                        visit.getUid(),
+                        req.clinicUid(),
+                        req.clinicianUserUid(),
+                        chargeResult.billUid(),
+                        mapPaymentMode(patient.getPaymentType()),
+                        req.followUp(),
+                        settledPrePass,
+                        patient.getMembershipNo(),
+                        patient.getInsurancePlanUid(),
+                        ctx.dayUid()),
+                ctx);
     }
 
     // ---------------------------------------------------------------------------------
@@ -540,12 +541,11 @@ public class PatientRegistrationProcess {
      * check constraint and legacy PatientResource.java:299-301.
      */
     private static void validateInsuranceConsistency(RegisterPatientRequest req) {
-        if (req.paymentType() == PaymentType.INSURANCE) {
-            if (req.insurancePlanUid() == null
-                    || req.membershipNo() == null
-                    || req.membershipNo().isBlank()) {
-                throw new MissingInsuranceInformationException();
-            }
+        if (req.paymentType() == PaymentType.INSURANCE
+                && (req.insurancePlanUid() == null
+                        || req.membershipNo() == null
+                        || req.membershipNo().isBlank())) {
+            throw new MissingInsuranceInformationException();
         }
         // CASH: plan uid is irrelevant; normalised to null in the caller
     }

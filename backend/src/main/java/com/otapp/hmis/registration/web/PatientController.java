@@ -1,10 +1,10 @@
 package com.otapp.hmis.registration.web;
 
+import com.otapp.hmis.clinical.api.ConsultationDto;
 import com.otapp.hmis.registration.application.PatientQueryService;
 import com.otapp.hmis.registration.application.PatientRegistrationProcess;
 import com.otapp.hmis.registration.application.dto.ChangePatientTypeRequest;
 import com.otapp.hmis.registration.application.dto.ChangePaymentTypeRequest;
-import com.otapp.hmis.registration.application.dto.ConsultationDto;
 import com.otapp.hmis.registration.application.dto.LastVisitDto;
 import com.otapp.hmis.registration.application.dto.PatientDto;
 import com.otapp.hmis.registration.application.dto.PatientSearchResult;

@@ -10,10 +10,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otapp.hmis.billing.domain.BillStatus;
 import com.otapp.hmis.billing.domain.PatientBill;
 import com.otapp.hmis.billing.domain.PatientBillRepository;
+import com.otapp.hmis.clinical.domain.ConsultationRepository;
+import com.otapp.hmis.clinical.domain.ConsultationStatus;
 import com.otapp.hmis.iam.domain.Role;
 import com.otapp.hmis.iam.domain.RoleRepository;
-import com.otapp.hmis.registration.domain.ConsultationRepository;
-import com.otapp.hmis.registration.domain.ConsultationStatus;
 import com.otapp.hmis.registration.domain.Patient;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.VisitRepository;
@@ -89,22 +89,25 @@ class SendToDoctorIT extends AbstractIntegrationTest {
                 .andReturn();
         String consultationUid = objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
 
-        Patient patient = patientRepository.findByUid(patientUid).orElseThrow();
-        assertThat(consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)).isTrue();
+        // guard via patientUid (ADR-0022 D6 — re-keyed from entity to uid)
+        assertThat(consultationRepository.existsByPatientUidAndStatus(patientUid, ConsultationStatus.PENDING)).isTrue();
 
         // A CONSULTATION fee bill exists for the patient (in addition to the REGISTRATION bill)
         List<PatientBill> bills = patientBillRepository.findByPatientUid(patientUid);
         assertThat(bills).anyMatch(b -> b.getKind().name().equals("CONSULTATION"));
 
         // A SUBSEQUENT visit was added (FIRST from registration + SUBSEQUENT from send-to-doctor)
+        // VisitRepository still takes a Patient entity (registration-owned); load here.
+        var patient = patientRepository.findByUid(patientUid).orElseThrow();
         var visits = visitRepository.findByPatientOrderByCreatedAtDesc(patient);
         assertThat(visits).hasSize(2);
         assertThat(visits.stream().anyMatch(v -> v.getSequence().name().equals("SUBSEQUENT"))).isTrue();
         assertThat(consultationUid).isNotBlank();
 
-        // Audit: a Consultation CREATE row exists (ADR-0007)
+        // Audit: a Consultation CREATE row exists (ADR-0007).
+        // Entity type is "clinical.Consultation" after ADR-0022 ownership transfer (C2).
         assertThat(auditLogRepository.findByEntityUidOrderByOccurredAtAsc(consultationUid))
-                .anyMatch(a -> "registration.Consultation".equals(a.getEntityType())
+                .anyMatch(a -> "clinical.Consultation".equals(a.getEntityType())
                         && "CREATE".equals(a.getAction().name()));
     }
 
@@ -214,7 +217,8 @@ class SendToDoctorIT extends AbstractIntegrationTest {
         // Whole unit rolled back: no PENDING consultation, no SUBSEQUENT visit (only FIRST),
         // no CONSULTATION bill — only the registration bill remains.
         Patient patient = patientRepository.findByUid(patientUid).orElseThrow();
-        assertThat(consultationRepository.existsByPatientAndStatus(patient, ConsultationStatus.PENDING)).isFalse();
+        // guard via patientUid (ADR-0022 D6 — re-keyed from entity to uid)
+        assertThat(consultationRepository.existsByPatientUidAndStatus(patientUid, ConsultationStatus.PENDING)).isFalse();
         assertThat(visitRepository.findByPatientOrderByCreatedAtDesc(patient)).hasSize(1);
         assertThat(patientBillRepository.findByPatientUid(patientUid))
                 .noneMatch(b -> b.getKind().name().equals("CONSULTATION"));

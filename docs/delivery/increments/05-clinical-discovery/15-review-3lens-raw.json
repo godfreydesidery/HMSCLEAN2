@@ -1,0 +1,253 @@
+{
+  "summary": "Inc-05 Clinical/OPD 3-lens adversarial review: code-reviewer + qa-test-engineer + security-architect in parallel",
+  "agentCount": 3,
+  "logs": [],
+  "result": {
+    "code": {
+      "lens": "code",
+      "verdict": "REQUEST_CHANGES",
+      "findings": [
+        {
+          "id": "F1",
+          "severity": "HIGH",
+          "title": "Verbatim error-message drift on open / open-follow-up guards",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java:98,150",
+          "detail": "Legacy PatientResource.java:899 throws 'Could not open. Not a pending consultation.' and :911 throws 'Could not open. This is not a follow up consultation'. New open() emits 'Not a pending consultation' (drops the 'Could not open. ' prefix and period) and openFollowUp() emits 'This is not a follow up consultation' (drops the prefix). These are business-guard messages, not the settlement gate, so the PAY_BEFORE_SERVICE exemption does not cover them. ADR-0022 and the build spec require verbatim 422 messages.",
+          "recommendation": "Restore the verbatim legacy strings and pin them with a parity test.",
+          "classification": "bug"
+        },
+        {
+          "id": "F2",
+          "severity": "HIGH",
+          "title": "Prescription duplicate-drug guard emits the wrong verbatim message",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/PrescriptionService.java:439-440,459-460",
+          "detail": "Legacy PatientResource.java:2110,2117 throw 'Duplicate drug is not allowed. Consider editing qty'. Both new duplicate guards throw 'Duplicate medicine is not allowed for this encounter'. This is the HARD duplicate-drug safety block (CR-INC05-05) the spec marks verbatim-reproduce. The OUTSIDER NPE-avoidance fix is fine; the message must be verbatim.",
+          "recommendation": "Change both messages to verbatim 'Duplicate drug is not allowed. Consider editing qty'.",
+          "classification": "bug"
+        },
+        {
+          "id": "F3",
+          "severity": "MEDIUM",
+          "title": "Transfer: missing child-order guard + verbatim message drift",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationTransferService.java:116-118,120-129,132-134",
+          "detail": "Legacy raise (PatientServiceImpl.java:2769-2800) blocks a transfer when the source has any PENDING lab/radiology/procedure or NOT-GIVEN prescription, with four verbatim messages. New code leaves guard (c) a TODO stub though all four repos exist by inc-05 completion (used by ConsultationSettlementListener/ClosureService) — a transfer can be raised with pending orders. Also legacy :2766 'Can not transfer, the patient already have a pending transfer' vs new 'Can not transfer. Patient already has a pending transfer'; legacy :2805 'Can not transfer to the same clinic' vs new 'Cannot transfer to the same clinic'.",
+          "recommendation": "Wire guard (c) with existsByConsultationAndStatus (PENDING / NOT_GIVEN) and the four verbatim messages; fix the two drifted messages.",
+          "classification": "gap"
+        },
+        {
+          "id": "F4",
+          "severity": "MEDIUM",
+          "title": "Referral-save gate collapses four legacy messages into one non-matching string",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ClosureService.java:284-287",
+          "detail": "Legacy save_referral_plan (PatientResource.java:5465-5499) throws four distinct verbatim messages ('Could not save. Patient have uncleared lab test bill(s)', radiology, procedure, medication). New code throws one 'Could not save referral. Patient have uncleared bills.' matching none.",
+          "recommendation": "Split into per-order-type checks throwing the four verbatim messages in legacy order.",
+          "classification": "bug"
+        },
+        {
+          "id": "F5",
+          "severity": "MEDIUM",
+          "title": "Deceased gate scope drift: fee bill unchecked; invoice-APPROVED side-effect omitted",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ClosureService.java:215,443-470",
+          "detail": "Legacy get_deceased_summary (PatientResource.java:5870-5887) blocks on any consultation invoice-detail PatientBill UNPAID|VERIFIED incl. the fee bill; new gate only checks settled=false on the four order types and never checks consultation.isSettled(). A consultation HELD from PENDING (markHeld unconditional) with an UNPAID fee bill can be approved-deceased without firing. Also legacy sets all consultation invoices to APPROVED (5884-5887); CR-INC05-06 says this is reproduced verbatim but the new code does no invoice approval (no billing command).",
+          "recommendation": "Include consultation.isSettled() in the deceased gate; coordinate with billing on an approve-invoices command; escalate the missing invoice approval to engagement-lead/HDE (financial-state change).",
+          "classification": "gap"
+        },
+        {
+          "id": "F6",
+          "severity": "MEDIUM",
+          "title": "cancel/free/prescription-delete omit legacy bill cancel/refund/credit-note side-effects",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java:215-220,277-279; PrescriptionService.java:332-334",
+          "detail": "Legacy cancel_consultation cancels the fee bill + refund/credit-note; free_consultation cancels UNPAID/null child bills (PatientResource.java:701-754); deletePrescription credit-notes paid bills. All stubbed as TODO citing 'billing::api has no cancel command' — BillingCommands only exposes recordClinicalCharge. Result: bills left active that legacy CANCELs; refunds/credit-notes skipped. Build spec scoped these into C2, so it is a gap vs the ratified spec, not a clean deferral.",
+          "recommendation": "Extend billing::api with cancel/credit-note commands and wire this increment, or re-scope as a tracked deferral with financial reconciliation. Do not leave silent TODOs.",
+          "classification": "gap"
+        },
+        {
+          "id": "F7",
+          "severity": "MEDIUM",
+          "title": "free_consultation drops the registration-number identity check (IN-PROCESS path)",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java:266-275",
+          "detail": "Legacy free_consultation (PatientResource.java:689-698) requires a non-empty reg number that must resolve to the same patient before signing out an IN-PROCESS consultation ('To free the patient, please enter patients registration number' / 'Invalid number'). New free() applies only the status guard and signs out unconditionally, removing identity confirmation and both verbatim messages.",
+          "recommendation": "Add a registration::api lookup to reproduce the reg-no guard, or escalate as an explicit ratified deferral.",
+          "classification": "gap"
+        },
+        {
+          "id": "F8",
+          "severity": "LOW",
+          "title": "issueMedicine guard direction inverted vs legacy + truncated messages",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/domain/Prescription.java:511-527",
+          "detail": "Legacy (PatientResource.java:3221) throws 'Invalid issue value in <medicineName>' when (balance > issued || issued <= 0) — when issued is LESS than balance. New code throws 'Invalid issue value' when issued > balance (opposite) and the prescribed-qty message when issued != qty. Accepted set is identical (only issued==qty==balance passes) but the message for under/over-issue is swapped vs legacy and the strings are truncated ('not a pending prescription' vs legacy full string).",
+          "recommendation": "Align guard order/messages with legacy; reproduce 'Could not issue medicine. ... is not a pending prescription'. Document the dropped medicine-name interpolation.",
+          "classification": "nit"
+        },
+        {
+          "id": "F9",
+          "severity": "LOW",
+          "title": "Transfer-completion message non-verbatim and exposes clinic uid not name",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationTransferService.java:283-285",
+          "detail": "Legacy doConsultation (PatientServiceImpl.java:434) throws 'Can not send to the specified clinic. Patient has been transfered to <clinicName> clinic. Please send the patient to the specified clinic'. New code throws 'Please send the patient to the specified clinic: <clinicUid>' — different wording, leaking a ULID where legacy showed a clinic name.",
+          "recommendation": "Reproduce the legacy wording; optionally resolve the clinic name via masterdata::lookup.",
+          "classification": "nit"
+        },
+        {
+          "id": "F10",
+          "severity": "LOW",
+          "title": "Lab-test attachment guard messages non-verbatim",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/LabTestService.java:480,483",
+          "detail": "Legacy (PatientServiceImpl.java:2829,2833) throws 'Can not add more than 5 attachments' and 'Can only attach for collected tests'. New code throws 'Maximum of 5 attachments allowed per lab test' and 'Lab test must be collected before adding attachments'. The gate/cap behaviour is correct; only the strings drift.",
+          "recommendation": "Use the verbatim legacy strings.",
+          "classification": "nit"
+        },
+        {
+          "id": "F11",
+          "severity": "NIT",
+          "title": "Stale Javadoc: claims FK columns retained and settlement seam deferred",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/domain/Consultation.java:33-36,47-55,174-175",
+          "detail": "Javadoc states patient_id/visit_id REMAIN and the cash-PAID seam is deferred. Both false: V29 DROPS those columns (ADR-0022 Correction) and ConsultationSettlementListener/SettlementDispatcher wire the seam for all five entities. Comments could prompt re-adding the dropped columns. Same stale wording in V33-V36 headers.",
+          "recommendation": "Update the Javadoc and V33-V36 migration headers.",
+          "classification": "nit"
+        },
+        {
+          "id": "F12",
+          "severity": "LOW",
+          "title": "CR-INC05-09 deceased/referral bill-gate asymmetry collapsed",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ClosureService.java:443-470",
+          "detail": "CR-INC05-09 ruled to preserve both gates exactly (deceased {UNPAID,VERIFIED}, referral {UNPAID}). Both methods return any-order-settled=false and the code admits they compute the same thing. The one-bit flag cannot represent VERIFIED-but-unpaid, so the asymmetry is unobservable: a VERIFIED-but-not-paid insured order would block deceased in legacy but the new model blocks neither. Inherent limit of the projection, so flagged as disagreement with the ratified mapping, not a bug.",
+          "recommendation": "Accept as a documented CR-register limitation, or model a billing-status read to reproduce the distinction. Decision belongs to HDE + engagement-lead.",
+          "classification": "ratified-disagreement"
+        }
+      ],
+      "summary": "Inc-05 (Clinical/OPD) is structurally sound on the architectural points checked: V29-V37 dropped-FK migrations are correct (backfill before drop, NOT NULL only after backfill, indexes/partial-unique recreated, no dangling NOT-NULL or missed backfill); status converters/DTOs emit dbValue() for hyphenated values and enum/name() for hyphen-free ones; the Modulith boundary holds (no cross-module entity import; settlement billing->clinical and closure clinical->registration via shared.event, no cycle); the cash-PAID settlement seam is wired for all five entities; subtle quirks preserved (LabTest.accept clears rejectComment, Radiology.accept does not). The increment has a SYSTEMIC exact-process defect: verbatim legacy error messages are paraphrased, not reproduced, despite the spec/ADR mandating VERBATIM (open/open-follow-up prefix dropped; prescription duplicate message wrong; transfer guards reworded; referral-save gate collapses four legacy messages into one matching none). Several legacy side-effects within inc-05's own C2/C3 scope were stubbed though dependencies exist by end of increment: the transfer no-PENDING-child-orders guard, free_consultation child-bill cancellation + reg-number identity check, and get_deceased_summary invoice-APPROVED side-effect — silent billing/clinical drift, not documented ratified deferrals. The CR-INC05-09 bill-gate asymmetry is collapsed (both gates compute settled=false), marked ratified-disagreement. Verdict REQUEST_CHANGES: F1/F2 (verbatim drift on safety/lifecycle guards) and F3-F7 (scoped side-effects/guards omitted) should be fixed or formally re-scoped before merge.</parameter>\n</invoke>\n"
+    },
+    "qa": {
+      "lens": "qa",
+      "verdict": "REQUEST_CHANGES",
+      "summary": "Inc-05 clinical/OPD test coverage is solid for the core happy paths and most negative paths, but has nine concrete defects: one test with a fatally wrong seed (TRANSFERED seeds IN_PROCESS instead), three untested settlement-seam entity types (Radiology/Procedure/Prescription legs of ConsultationSettlementListener), one untested service-layer transition seam (transfer COMPLETE on rebook), two weak assertions that swallow error detail or status codes, and two missing negative-path tests. No audit-trail assertions exist for the clinical context at all. All findings below are in-scope for inc-05; none re-flag ratified deferrals.",
+      "findings": [
+        {
+          "id": "QA-01",
+          "severity": "HIGH",
+          "classification": "bug",
+          "title": "free_transfered test seeds IN_PROCESS not TRANSFERED — the TRANSFERED→SIGNED_OUT transition is never actually exercised",
+          "location": "backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java:435-439",
+          "detail": "seedConsultationWithStatus() has a comment that explicitly says 'No domain transition to TRANSFERED yet … Seed as IN_PROCESS instead'. So the test named free_transfered_transitionsToSignedOut (line 270) seeds a PENDING consultation, calls open() to make it IN_PROCESS, then calls the /free endpoint. The production guard allows both IN_PROCESS and TRANSFERED; because the seed is IN_PROCESS the test passes but it only covers the IN_PROCESS→SIGNED_OUT path twice, and the TRANSFERED→SIGNED_OUT path is completely unexercised. By the time ConsultationTransferIT (C3) was added, Consultation.markTransferred() was available, so the workaround comment is stale and the seed could trivially be corrected: call c.open() then c.markTransferred().",
+          "recommendation": "Fix seedConsultationWithStatus() so the TRANSFERED case calls c.open() then c.markTransferred() (both domain methods now exist). The test free_transfered_transitionsToSignedOut will then genuinely exercise the TRANSFERED→SIGNED_OUT path. Add a DB assertion that status == SIGNED_OUT after the call."
+        },
+        {
+          "id": "QA-02",
+          "severity": "HIGH",
+          "classification": "gap",
+          "title": "ConsultationSettlementListener: Radiology, Procedure, and Prescription legs are completely untested",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationSettlementListener.java:125-140",
+          "detail": "SettlementSeamIT covers only two legs of the five-way listener: the Consultation leg (test cashConsultationBillPaid_flipsConsultationSettledAndAllowsOpen) and the LabTest leg (cashLabTestBillPaid_flipsLabTestSettled). The Radiology.markSettled(), Procedure.markSettled(), and Prescription.markSettled() call-paths at lines 125-140 of the listener have no corresponding seam test. Each order type stores its own patientBillUid and the listener queries each repo independently. A bug that broke only the radiology or prescription path (e.g. a wrong column name in findByPatientBillUid) would pass the existing suite.",
+          "recommendation": "Add three parallel test methods to SettlementSeamIT: cashRadiologyBillPaid_flipsRadiologySettled, cashProcedureBillPaid_flipsProcedureSettled, cashPrescriptionBillPaid_flipsPrescriptionSettled. Each should seed the corresponding entity with a real bill uid and a settled=false state, pay the bill, and assert the entity's settled flag becomes true via the repository. Follow the existing cashLabTestBillPaid pattern."
+        },
+        {
+          "id": "QA-03",
+          "severity": "HIGH",
+          "classification": "gap",
+          "title": "ConsultationTransferCompletion seam (transfer COMPLETE on rebook) has no IT coverage",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationTransferService.java:266-293",
+          "detail": "The completePendingTransferOnRebook() method (Propagation.MANDATORY — runs inside the booking transaction) implements two branches: (a) target clinic matches transfer destination → mark COMPLETED; (b) target clinic does NOT match → throw 422 'Please send the patient to the specified clinic: {uid}'. Neither branch has any IT. The SendToDoctorIT in registration (which is the caller) has no test that seeds a PENDING transfer before calling send-to-doctor. These are exactly the production paths that fire when a patient is re-booked after a clinic-to-clinic transfer — missing them means regressions in the two-phase hand-off seam could ship undetected.",
+          "recommendation": "Add two test methods to ConsultationTransferIT (or a new SendToDoctorWithTransferIT): (1) rebook_toCorrectDestination_completesTransfer — seed a TRANSFERED consultation with a PENDING transfer, then call the send-to-doctor endpoint with the matching destination clinic and assert the transfer status becomes COMPLETED; (2) rebook_toWrongClinic_422VerbatimMessage — same setup but send to a different clinic and assert 422 with the exact legacy message containing the required clinic uid."
+        },
+        {
+          "id": "QA-04",
+          "severity": "MEDIUM",
+          "classification": "gap",
+          "title": "raise_secondPendingForSamePatient asserts status.is4xxClientError() instead of asserting the exact 422 error message",
+          "location": "backend/src/test/java/com/otapp/hmis/clinical/ConsultationTransferIT.java:140",
+          "detail": "The test that verifies one-PENDING-transfer-per-patient guard uses andExpect(status().is4xxClientError()). This matches any 400/403/404/409/422 response. The production code throws InvalidPatientOperationException with the verbatim message 'Can not transfer. Patient already has a pending transfer' which must render as 422. The weak assertion would pass even if the endpoint returned a 404 (e.g. the patientUid lookup failed) or a 409 (DB unique constraint surfaced without proper mapping). The exact error code and message are the behaviour-parity signal.",
+          "recommendation": "Replace andExpect(status().is4xxClientError()) with andExpect(status().isUnprocessableEntity()) and add andExpect(jsonPath(\"$.detail\").value(\"Can not transfer. Patient already has a pending transfer\"))."
+        },
+        {
+          "id": "QA-05",
+          "severity": "MEDIUM",
+          "classification": "gap",
+          "title": "approveReferral bill-gate (unsettled orders block approve) is not tested",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ClosureService.java:347-350",
+          "detail": "ClosureService.approveReferral() re-runs hasUnsettledOrdersForReferralGate() before approving (line 347). ClosureIT test 10 (saveReferralPlan_unsettledOrder_422_referralGateUnpaidOnly) correctly covers the SAVE gate, but there is no test that seeds an unsettled order, saves a referral plan (which sets consultation→SIGNED_OUT), then attempts to approve and asserts 422 'Could not get referral summary. Patient have uncleared bills.'. The approve path is a separate service call with its own gate invocation.",
+          "recommendation": "Add approveReferral_unsettledOrder_422_referralGateBillCheck to ClosureIT: seed a referral plan in PENDING state on a consultation that has an unsettled lab test, then call the approve endpoint and assert 422 with the verbatim message 'Could not get referral summary. Patient have uncleared bills.'."
+        },
+        {
+          "id": "QA-06",
+          "severity": "MEDIUM",
+          "classification": "gap",
+          "title": "Worklist tests for LabTest, Radiology, and Procedure do not assert that VERIFIED/COLLECTED orders are EXCLUDED",
+          "location": "backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java:384-425",
+          "detail": "The worklist filter for Lab includes PENDING, ACCEPTED, and COLLECTED; for Radiology and Procedure it includes PENDING and ACCEPTED only. The worklist tests verify that settled=false orders are excluded, but none of them verify that orders in terminal/post-action statuses (VERIFIED for Lab; VERIFIED for Radiology; VERIFIED for Procedure) are absent from the worklist. A regression that added VERIFIED to the repository query would not be caught. The same gap exists in RadiologyIT.worklist_onlyShowsSettledOrders and ProcedureIT.worklist_settledFilterShowsInsurance_hidesCash.",
+          "recommendation": "Extend each worklist test: after ordering, advance one lab/radiology/procedure all the way to VERIFIED status, then call the worklist and assert the VERIFIED row is absent. For LabTestIT also verify that a COLLECTED (but not yet VERIFIED) order IS present in the lab worklist (this exercises the COLLECTED-inclusion which is a LabTest-specific parity point)."
+        },
+        {
+          "id": "QA-07",
+          "severity": "MEDIUM",
+          "classification": "gap",
+          "title": "seedPrice() helper in LabTestIT, RadiologyIT, PrescriptionIT, and ProcedureIT uses is2xxSuccessful() which silently masks duplicate-price 409 errors",
+          "location": "backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java:897",
+          "detail": "The seedPrice() helper method in all four order-aggregate IT files asserts andExpect(status().is2xxSuccessful()). This accepts both 200 and 201 but also accepts 204. More importantly it masks a 409 Conflict (price already exists) that would happen when two tests seed the same service uid and price combination. If a 409 returns the test continues with whatever price record already existed — if it has different coverage or amount values the downstream assertion about settled=true/false could pass for the wrong reason. The PrescribingAlertIT seedPrice() has the same issue. Compare with ConsultationLifecycleIT.seedConsultationPrice() which uses anyOf(200, 201, 409) — that pattern is semantically better but also silently swallows seed failures.",
+          "recommendation": "Separate the 'create a known-fresh price' concern from 'idempotently ensure a price exists'. Each test that depends on a specific price amount should create a unique service uid (already done via tag) — at that point the seed will always get a 201 and the assertion should be andExpect(status().isCreated()). Replace is2xxSuccessful() with isCreated() in the seedPrice() helpers."
+        },
+        {
+          "id": "QA-08",
+          "severity": "LOW",
+          "classification": "gap",
+          "title": "openFollowUp with CASH follow-up and settled=false (payment gate path on follow-up) has no test",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java:158-164",
+          "detail": "The openFollowUp() service method calls SettlementPolicy.requireSettled() after passing the followUp guard and the non-PENDING guard. In the normal case, follow-up consultations are pre-settled=true at booking (NONE bill auto-pass). However, a follow-up consultation can have settled=false if, for example, switchToNormal was called and then followUp was manually reset (or in a seed error). The payment gate at line 158-164 is exercised by no test. The existing openFollowUp_followUpSettled_transitionsToInProcess always uses settled=true. This path is unlikely but the guard code is live and untested.",
+          "recommendation": "Add openFollowUp_followUpCashUnsettled_422PayBeforeService: seed a PENDING consultation with followUp=true and settled=false, call the open-follow-up endpoint, and assert 422 with type urn:hmis:error:pay-before-service."
+        },
+        {
+          "id": "QA-09",
+          "severity": "LOW",
+          "classification": "gap",
+          "title": "No audit-trail completeness assertions exist for any clinical event in the inc-05 test suite",
+          "location": "backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java:1",
+          "detail": "The security-architect's agreed audit requirement mandates that all clinical mutations are captured in the append-only audit trail. The ConsultationLifecycleService, ConsultationTransferService, ClosureService, LabTestService, RadiologyService, ProcedureService, and PrescriptionService all call auditRecorder.record() on every state change (CREATE and UPDATE actions). However, no test in the inc-05 suite asserts that an audit row was actually written. For example, open_insuranceSettled_transitionsToInProcess asserts the status field but never queries the audit_events table to confirm an UPDATE event was recorded with the correct entity type, uid, and actor. This leaves the audit trail completeness requirement unvalidated for the entire clinical bounded context.",
+          "recommendation": "Add a ClinicalAuditIT class that, for each major mutation (open, cancel, free, transfer raise, transfer cancel, deceased approval, referral save), queries the audit_events table via JDBC and asserts: (1) exactly one row with entity_type='clinical.Consultation' (or the relevant type) and the correct uid; (2) action='UPDATE' or 'CREATE' as appropriate; (3) actor_username matches the test token subject. This directly exercises the requirement from the security-architect's spec without testing legacy instrumentation."
+        }
+      ]
+    },
+    "security": {
+      "lens": "security",
+      "verdict": "APPROVE_WITH_GAPS",
+      "summary": "Adversarial security review of inc-05 (clinical/OPD), the most PHI-dense context (SOAP notes, diagnoses, lab/radiology results, cause-of-death). The two specific concerns I was asked to verify are CLEAN: (1) the GlobalExceptionHandler PHI-echo on 500 is closed — the catch-all returns ErrorCode.INTERNAL.title() and logs ex server-side (GlobalExceptionHandler.java:107-112), and the no-route 404 is a clean ErrorCode.NOT_FOUND.title() via NoResourceFoundException/NoHandlerFoundException (GlobalExceptionHandler.java:78-81); (2) the audit trail is comprehensive — every state-mutating clinical action (death note save/approve, working/final diagnosis create+delete, order accept/reject/verify/collect/hold/delete, prescription dispense/delete, attachment add/delete, closure transitions) records an append-only SHA-256-checksummed AuditLog via AuditRecorder with the real authenticated actor (ctx.actorUsername()), satisfying ADR-0007 and CR-INC05-03. No PHI appears in any URL/query string (all params are ULIDs or status enums), no PHI is logged (only ULIDs at DEBUG), the radiology byte[] blob is excluded from every DTO (hasAttachment boolean only) with no download endpoint, and attachment DTOs are metadata-only. The V29-V37 patient_uid backfills are data-safe: each backfills from the live patient_id FK then enforces NOT NULL before dropping the column, so an unresolved patient reference aborts the migration rather than silently nulling a PHI link. The auth-only model (CR-INC05-02, not re-flagged) is correctly enforced — anyRequest().authenticated(), stateless, no clinical PHI in any permitAll path. Two genuine gaps remain, both rooted in the deferred-audit-scope decision (CR-INC05-03 explicitly deferred the covered-entity set to security-architect PHI classification): the cross-module Patient identity mutation to DECEASED is unaudited, and PHI-dense bulk/by-patient reads have no access log. Neither is a coding defect in what was built; both are scope items the audit-classification CR must close.",
+      "findings": [
+        {
+          "id": "SEC-01",
+          "severity": "MEDIUM",
+          "title": "Patient.type=DECEASED identity mutation is not written to the audit trail",
+          "location": "backend/src/main/java/com/otapp/hmis/registration/application/PatientClosureListener.java:82-95",
+          "detail": "On deceased-note approval, ClosureService.approveDeceased publishes PatientDeceasedEvent; PatientClosureListener.onPatientDeceased then mutates the safety-critical identity field Patient.type to DECEASED (and onPatientInsuranceCleared flips Patient.paymentType to CASH at PatientClosureListener.java:111-124). Neither listener calls auditRecorder.record(...). The clinical side audits the DeceasedNote (AUDIT_ENTITY_DECEASED) and the Consultation (AUDIT_ENTITY_CONSULT) in ClosureService.java:160-228, but the actual mutation of the *Patient* aggregate (marking a human being deceased / clearing their insurance) produces NO AuditLog row keyed to the patient entity. A compliance query of the audit log filtered by the Patient uid would show no record that the patient's identity status was changed. ADR-0007 mandates 'every mutation to a clinical, financial, or identity record must be captured'; this is an identity-record mutation and a clinical/financial state change (insurance cleared). The BEFORE_COMMIT listener runs inside the clinical transaction so AuditRecorder's Propagation.MANDATORY would be satisfiable. This sits squarely inside CR-INC05-03's deferred covered-entity set, so it is a gap to close in the audit-classification CR rather than a defect introduced by inc-05 — but as security-architect I must flag the Patient DECEASED/insurance-cleared mutation as a REQUIRED member of the audited-entity set.",
+          "recommendation": "When the CR-INC05-03 audit covered-entity set is finalised, require an AuditLog row for the Patient identity mutation. Simplest faithful fix: have the two PatientClosureListener handlers (or the publishing ClosureService methods, which already hold ctx.actorUsername()) record AuditAction.UPDATE against the Patient uid (entityType registration.Patient) in the same transaction. Do not weaken: the death/insurance mutation must be attributable to the approving principal, not SYSTEM.",
+          "classification": "gap"
+        },
+        {
+          "id": "SEC-02",
+          "severity": "MEDIUM",
+          "title": "No PHI access-log (READ audit) on bulk/by-patient clinical reads under the auth-only model",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/application/PrescriptionService.java:357-370",
+          "detail": "Under the ratified auth-only model (CR-INC05-02) ANY authenticated user can retrieve a patient's full PHI-dense clinical history with no per-action authorization and no read logging: byPatient(patientUid) returns every prescription (PrescriptionService.java:359-362); the analogous LabTestService.byPatient/worklist, RadiologyService.byPatient/worklist, DiagnosisService.listWorking/listFinal, and ClosureService.listDeceased (which exposes cause-of-death narratives) all return PHI to any token holder. None records an AuditAction.READ even though ADR-0007's taxonomy defines READ (AuditAction.java:6) and the controllers already thread a TxAuditContext into the read services (e.g. DiagnosisController.java:113 passes ctxFrom(jwt) to listWorkingDiagnoses). The result: there is no answer to 'who viewed patient X's diagnoses/lab results/cause-of-death' — a core PHI access-log mandate. This is NOT a re-flag of CR-INC05-02 (the lack of RBAC is ratified) and almost certainly matches legacy (which logged no reads), and CR-INC05-03 explicitly deferred the covered-entity/coverage scope to security-architect classification — so it is a deferred gap, not an inc-05 build defect. I flag it because PHI-read logging is the compensating control that the auth-only model makes load-bearing: with no RBAC, read-access logging is the only after-the-fact accountability for PHI disclosure.",
+          "recommendation": "Fold PHI-read logging into the CR-INC05-03 audit-scope CR: at minimum record an AuditAction.READ (entityType + patientUid + actor) for the by-patient and department-worklist queries over clinical PHI (diagnoses, lab/radiology results, prescriptions, deceased/referral narratives). Keep it append-only and out of the hot single-row GET-by-uid path if volume is a concern; the by-patient/list aggregations are the high-value disclosure surface.",
+          "classification": "deferred-noted"
+        },
+        {
+          "id": "SEC-03",
+          "severity": "LOW",
+          "title": "Audit actor source is inconsistent (jwt.getSubject() vs SecurityContext authentication.getName())",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/web/LabTestController.java:380-383",
+          "detail": "Clinical controllers build the audit actor from jwt.getSubject() inside ctxFrom(jwt) (e.g. LabTestController.java:381-382, RadiologyController.java:367-368, DiagnosisController.java:208-209, PrescriptionController.java:277-279) and pass it explicitly to AuditRecorder.record(type, uid, action, actorUsername). The cross-module settlement/closure listeners, however, mutate state WITHOUT recording (SEC-01), and the no-arg AuditRecorder.record(...) path derives the actor from SecurityContextHolder authentication.getName() with a SYSTEM fallback (AuditRecorder.java:46-53). If JWT 'sub' is not the same value as authentication.getName() (e.g. sub=user uid vs name=username, depending on how the JwtAuthenticationConverter and principal name are configured — SecurityConfig.java:85-92 sets only the authorities claim, leaving the default principal-name claim), audit attribution can differ between the explicit-actor clinical writes and any implicit-actor write. Within inc-05 every clinical write uses the explicit jwt.getSubject() path so records are internally consistent; the risk is latent (a future implicit-actor write would attribute differently), so LOW.",
+          "recommendation": "Standardise the audited actor identity: either pin the JWT principal-name claim so authentication.getName() == jwt.getSubject(), or document that ctx.actorUsername() (jwt subject) is the single canonical audit actor and route all audited writes (including the listeners in SEC-01) through the explicit-actor record(...) overload.",
+          "classification": "nit"
+        },
+        {
+          "id": "SEC-04",
+          "severity": "LOW",
+          "title": "Attachment-list GET returns attachment metadata regardless of the VERIFIED download gate",
+          "location": "backend/src/main/java/com/otapp/hmis/clinical/web/RadiologyController.java:296-301",
+          "detail": "RadiologyController.listAttachments (and LabTestController.listAttachments, LabTestController.java:311-316) returns the attachment list 'regardless' of status, with the javadoc explicitly stating the VERIFIED download gate (Radiology.canDownloadAttachment(), Radiology.java:627-629) is 'enforced by the client' (RadiologyController.java:292-294). Because the attachment DTOs are metadata-only (uid/name/fileName/createdAt — RadiologyAttachmentDto.java, LabTestAttachmentDto.java) and there is NO server download endpoint that streams bytes, this leaks only attachment filenames before a result is VERIFIED, not PHI content — so the exposure is bounded and LOW. The concern for the record: the canDownloadAttachment()/canDownload VERIFIED gate is a domain method that no server endpoint currently invokes; it lives only as client-enforced UI guidance. When a byte-streaming download endpoint is eventually added (currently DEFERRED per RadiologyDto.java:14), that endpoint MUST enforce status==VERIFIED server-side, or pre-verification radiology/lab images become retrievable by any authenticated user.",
+          "recommendation": "Document as a binding security acceptance criterion for the deferred attachment-download endpoint: the server must gate the byte stream on parent status==VERIFIED (Radiology/LabTest.canDownloadAttachment()) — never rely on the client display gate. No change needed to the metadata-list endpoint in inc-05.",
+          "classification": "deferred-noted"
+        }
+      ]
+    }
+  }
+}

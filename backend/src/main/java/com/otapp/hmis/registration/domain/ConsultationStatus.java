@@ -1,21 +1,12 @@
 package com.otapp.hmis.registration.domain;
 
 /**
- * Lifecycle status of a {@link Consultation} (build-spec §3, CR-18, CR-21).
+ * MOVED to {@link com.otapp.hmis.clinical.domain.ConsultationStatus} (ADR-0022, CR-21, inc-05 C2).
  *
- * <p>Legacy citation: Consultation.java:56.  Only {@link #PENDING} is written by
- * inc-03's minimal stub.  The full consultation status machine (OPEN, FREE, TRANSFERRED,
- * IN-PROCESS, etc.) lives in inc-05 (clinical module), which will carry the
- * Consultation-aggregate ownership-transfer plan (ADR-0008-R1, CR-21).
- * Any new status values MUST be added via an additive migration (ADR-0008-R2).
- *
- * <p>Stored via {@code @Enumerated(STRING)} as a VARCHAR(20) column.
+ * @deprecated Use {@code com.otapp.hmis.clinical.domain.ConsultationStatus} instead.
+ *             This class will be removed once all tests are updated (ADR-0022 D6).
  */
-public enum ConsultationStatus {
-
-    /**
-     * Consultation booking has been created; patient is queued for the doctor.
-     * Default and sole value written in inc-03.
-     */
-    PENDING
+@Deprecated(forRemoval = true)
+public final class ConsultationStatus {
+    private ConsultationStatus() {}
 }
