@@ -477,8 +477,10 @@ class ClosureIT extends AbstractIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(referralBody(extProviderUid, "Diagnosis", null)))
                 .andExpect(status().isUnprocessableEntity())
+                // The unsettled order in this fixture is a LAB TEST → the first per-type gate fires
+                // with the verbatim legacy message (PatientResource.java:5469).
                 .andExpect(jsonPath("$.detail")
-                        .value("Could not save referral. Patient have uncleared bills."));
+                        .value("Could not save. Patient have uncleared lab test bill(s)"));
         // NOTE (CR-INC05-09 asymmetry): The deceased gate uses "UNPAID|VERIFIED" semantics and
         // the referral gate uses "UNPAID-only" semantics in the legacy system. Both are currently
         // approximated as settled=false because the local flag does not distinguish these billing

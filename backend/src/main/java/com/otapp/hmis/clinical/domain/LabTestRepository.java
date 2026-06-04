@@ -50,6 +50,12 @@ public interface LabTestRepository extends JpaRepository<LabTest, Long> {
     boolean existsByConsultationAndLabTestTypeUid(Consultation consultation, String labTestTypeUid);
 
     /**
+     * Transfer guard (c) — PatientServiceImpl.java:2769.
+     * Returns true if any LabTest for this consultation is in the given status.
+     */
+    boolean existsByConsultationAndStatus(Consultation consultation, LabTestStatus status);
+
+    /**
      * Duplicate guard — non-consultation (OUTSIDER/walk-in) path.
      *
      * <p>Returns true if a LabTest already exists for the same non-consultation and same

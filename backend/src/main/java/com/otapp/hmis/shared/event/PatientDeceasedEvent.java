@@ -23,7 +23,8 @@ package com.otapp.hmis.shared.event;
  *       DeceasedNote approval AND the Patient.type flip commit together or roll back together.</li>
  * </ul>
  *
- * @param patientUid the ULID of the patient whose type must be changed to DECEASED
+ * @param patientUid     the ULID of the patient whose type must be changed to DECEASED
+ * @param actorUsername  the username of the approving principal (for audit attribution — SEC-01)
  */
-public record PatientDeceasedEvent(String patientUid) {
+public record PatientDeceasedEvent(String patientUid, String actorUsername) {
 }

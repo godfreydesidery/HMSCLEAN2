@@ -889,7 +889,13 @@ class RadiologyIT extends AbstractIntegrationTest {
                 .get("uid").asText();
     }
 
-    /** Seed a service price via the masterdata REST API. */
+    /**
+     * Seed a service price via the masterdata REST API.
+     *
+     * <p>QA-07: each per-test price uses a unique, tag'd serviceUid so it is always a fresh
+     * CREATE (201). Asserting {@code isCreated()} instead of {@code is2xxSuccessful()} prevents
+     * a silent 409 (duplicate key conflict) from being swallowed and masking a broken price seed.
+     */
     private void seedPrice(String planUid, String kind, String serviceUid,
                            String amount, boolean covered) throws Exception {
         String planVal = planUid    != null ? "\"" + planUid + "\""    : "null";
@@ -902,7 +908,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().is2xxSuccessful());
+                .andExpect(status().isCreated());
     }
 
     private String seedConsultation(String tag, PaymentMode mode, String planUid,

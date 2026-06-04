@@ -1,10 +1,18 @@
 package com.otapp.hmis.clinical.application;
 
+import com.otapp.hmis.billing.api.BillingCommands;
 import com.otapp.hmis.billing.api.SettlementPolicy;
 import com.otapp.hmis.clinical.api.ConsultationDto;
 import com.otapp.hmis.clinical.domain.Consultation;
 import com.otapp.hmis.clinical.domain.ConsultationRepository;
 import com.otapp.hmis.clinical.domain.ConsultationStatus;
+import com.otapp.hmis.clinical.domain.LabTestRepository;
+import com.otapp.hmis.clinical.domain.Prescription;
+import com.otapp.hmis.clinical.domain.PrescriptionRepository;
+import com.otapp.hmis.clinical.domain.Procedure;
+import com.otapp.hmis.clinical.domain.ProcedureRepository;
+import com.otapp.hmis.clinical.domain.Radiology;
+import com.otapp.hmis.clinical.domain.RadiologyRepository;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
@@ -28,13 +36,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><strong>DEFERRED items documented inline:</strong>
  * <ul>
- *   <li>Bill-cancel/credit-note on consultation cancel — billing::api has no cancel command yet;
- *       stub documented below (DEFERRED STUB: BILL-CANCEL).</li>
- *   <li>Child-order/prescription bill-cancel on free — those entities arrive in C7-C10;
- *       stub documented below (DEFERRED STUB: CHILD-ORDER-CANCEL).</li>
  *   <li>ClinicianPerformance creation on open — ratified DEFERRED in 11-DECISIONS-RATIFIED §1.</li>
- *   <li>regNo validation on free (IN_PROCESS path) — requires registration lookup; deferred;
- *       instead we guard on status only (same effect: only IN_PROCESS/TRANSFERED can free).</li>
+ *   <li>regNo validation on free (IN_PROCESS path) — requires registration lookup that would
+ *       create a clinical→registration cycle (ADR-0022 D5). DOCUMENTED DEFERRAL: F7 (review).
+ *       Status guard alone is applied. See F7 deferral constant below.</li>
  * </ul>
  *
  * <p>Package-private — not part of the module's public API surface.
@@ -53,10 +58,37 @@ import org.springframework.transaction.annotation.Transactional;
 class ConsultationLifecycleService implements ConsultationLifecyclePort {
 
     private final ConsultationRepository consultationRepository;
+    private final LabTestRepository labTestRepository;
+    private final RadiologyRepository radiologyRepository;
+    private final ProcedureRepository procedureRepository;
+    private final PrescriptionRepository prescriptionRepository;
+    private final BillingCommands billingCommands;
     private final AuditRecorder auditRecorder;
     private final ConsultationMapper consultationMapper;
 
     private static final String AUDIT_ENTITY_CONSULTATION = "clinical.Consultation";
+    private static final String REF_CANCEL_CONSULTATION  = "Canceled consultation";
+    private static final String REF_FREED_CONSULTATION   = "Freed consultation";
+
+    /**
+     * F7 DOCUMENTED DEFERRAL — registration-number identity check on free (IN_PROCESS path).
+     *
+     * <p>Legacy PatientResource.java:689-698 requires a non-blank reg number that resolves to
+     * the same patient before signing out an IN_PROCESS consultation. Reproducing this requires
+     * a clinical→registration lookup, which would create a compile-time cycle:
+     * registration already depends on clinical::api (ConsultationBookingService), so
+     * clinical→registration would form a cycle that breaks ApplicationModules.verify().
+     *
+     * <p>RESOLUTION (inc-05 adversarial review F7): defer until a no-cycle mechanism exists
+     * (e.g. the frontend passes both no and patientUid, or a shared query interface is added).
+     * The verbatim legacy messages are preserved here as constants for future use:
+     */
+    // F7 deferred verbatim messages (PatientResource.java:692, :696)
+    @SuppressWarnings("unused") // retained for future F7 implementation
+    private static final String MSG_FREE_ENTER_REGNO =
+            "To free the patient, please enter patients registration number";
+    @SuppressWarnings("unused") // retained for future F7 implementation
+    private static final String MSG_FREE_INVALID_REGNO = "Invalid number";
 
     // -------------------------------------------------------------------------
     // Transition: open (PENDING → IN_PROCESS)
@@ -93,9 +125,10 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
     public ConsultationDto open(String uid, TxAuditContext ctx) {
         Consultation c = requireConsultation(uid);
 
-        // Guard 1: status must be PENDING (PatientServiceImpl.java:537-540, verbatim message)
+        // Guard 1: status must be PENDING (PatientResource.java:899, verbatim message)
         if (c.getStatus() != ConsultationStatus.PENDING) {
-            throw new InvalidPatientOperationException("Not a pending consultation");
+            throw new InvalidPatientOperationException(
+                    "Could not open. Not a pending consultation.");
         }
 
         // Guard 2: settlement gate — CASH-OPD unsettled → 422
@@ -145,9 +178,10 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
     public ConsultationDto openFollowUp(String uid, TxAuditContext ctx) {
         Consultation c = requireConsultation(uid);
 
-        // Guard 1: must be a follow-up (verbatim)
+        // Guard 1: must be a follow-up (PatientResource.java:911, verbatim — no trailing period)
         if (!c.isFollowUp()) {
-            throw new InvalidPatientOperationException("This is not a follow up consultation");
+            throw new InvalidPatientOperationException(
+                    "Could not open. This is not a follow up consultation");
         }
 
         // Legacy silent no-op: if not PENDING, return without state change
@@ -212,12 +246,9 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
 
         c.cancel();
 
-        // DEFERRED STUB: BILL-CANCEL
-        // Legacy: PatientServiceImpl.java:598-630 cancels the consultation fee bill here.
-        // billing::api has no cancel-bill command as of C2. This is a deferred billing
-        // follow-up. Until the command is added to BillingCommands, the bill is orphaned.
-        // TODO: add BillingCommands.cancelConsultationBill(c.getPatientBillUid(), ctx)
-        //       once billing module exposes the command (billing follow-up chunk).
+        // Cancel the consultation fee bill + refund/credit-note if already paid.
+        // Legacy PatientResource.java:644 reference label: "Canceled consultation".
+        billingCommands.cancelCharge(c.getPatientBillUid(), REF_CANCEL_CONSULTATION, ctx);
 
         auditRecorder.record(AUDIT_ENTITY_CONSULTATION, c.getUid(), AuditAction.UPDATE, ctx.actorUsername());
 
@@ -270,13 +301,18 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
                     "Could not free, only a TRANSFERED or IN-PROCESS consultation can be freed");
         }
 
-        // DEFERRED: regNo validation (registration cross-module lookup — see Javadoc)
+        // F7 DOCUMENTED DEFERRAL: regNo validation requires registration lookup that would
+        // cycle (clinical→registration). See MSG_FREE_ENTER_REGNO / MSG_FREE_INVALID_REGNO
+        // constants above. Status guard alone is applied (same observable effect for the
+        // common case). Tracked as F7 in the adversarial review.
 
         c.free();
 
-        // DEFERRED STUB: CHILD-ORDER-CANCEL
-        // Legacy: cancel un-given prescriptions + un-collected lab/radiology on free.
-        // These entities arrive in C7-C10. TODO: add cancel sweeps once those repos exist.
+        // Cancel all unsettled child-order bills for this consultation.
+        // Legacy PatientResource.java:701-754 cancels UNPAID/null lab/radiology/procedure/
+        // prescription bills when the doctor frees the patient. Our settled=false flag is
+        // the local projection of "UNPAID" (CR-INC05-01). Reference label: "Freed consultation".
+        cancelUnsettledChildOrders(c, ctx);
 
         auditRecorder.record(AUDIT_ENTITY_CONSULTATION, c.getUid(), AuditAction.UPDATE, ctx.actorUsername());
 
@@ -371,6 +407,43 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Cancel all unsettled child-order bills for the consultation (F6 — free path).
+     *
+     * <p>Legacy PatientResource.java:701-754: when the doctor frees a patient, any lab/
+     * radiology/procedure/prescription bill that is still UNPAID (null or "UNPAID" in legacy)
+     * is canceled + credit-noted. Our local settled=false flag is the UNPAID projection
+     * (CR-INC05-01). Reference label "Freed consultation" is stamped on every credit note.
+     *
+     * <p>Ordered: lab → radiology → procedure → prescription (legacy order).
+     */
+    private void cancelUnsettledChildOrders(Consultation consultation, TxAuditContext ctx) {
+        for (com.otapp.hmis.clinical.domain.LabTest lt :
+                labTestRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            if (!lt.isSettled()) {
+                billingCommands.cancelCharge(lt.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
+            }
+        }
+        for (Radiology r :
+                radiologyRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            if (!r.isSettled()) {
+                billingCommands.cancelCharge(r.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
+            }
+        }
+        for (Procedure p :
+                procedureRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            if (!p.isSettled()) {
+                billingCommands.cancelCharge(p.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
+            }
+        }
+        for (Prescription rx :
+                prescriptionRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            if (!rx.isSettled()) {
+                billingCommands.cancelCharge(rx.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
+            }
+        }
+    }
 
     private Consultation requireConsultation(String uid) {
         return consultationRepository.findByUid(uid)

@@ -3,6 +3,8 @@ package com.otapp.hmis.registration.application;
 import com.otapp.hmis.registration.domain.PatientRepository;
 import com.otapp.hmis.registration.domain.PatientType;
 import com.otapp.hmis.registration.domain.PaymentType;
+import com.otapp.hmis.shared.audit.AuditAction;
+import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.event.PatientDeceasedEvent;
 import com.otapp.hmis.shared.event.PatientInsuranceClearedEvent;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +65,7 @@ public class PatientClosureListener {
     private static final Logger log = LoggerFactory.getLogger(PatientClosureListener.class);
 
     private final PatientRepository patientRepository;
+    private final AuditRecorder auditRecorder;
 
     /**
      * Handle the {@link PatientDeceasedEvent}: set {@code Patient.type = DECEASED}.
@@ -88,6 +91,9 @@ public class PatientClosureListener {
                     patient.changeType(PatientType.DECEASED);
                     // No explicit save() needed — the Patient is a managed JPA entity
                     // within the outer transaction; dirty-checking will flush the change.
+                    // SEC-01: audit the Patient identity mutation with the REAL approving actor.
+                    auditRecorder.record("registration.Patient", patient.getUid(),
+                            AuditAction.UPDATE, event.actorUsername());
                     log.debug("PatientClosureListener: Patient {} marked DECEASED", event.patientUid());
                 },
                 () -> log.warn("PatientClosureListener: patient uid={} not found for deceased event; "
@@ -115,6 +121,9 @@ public class PatientClosureListener {
         patientRepository.findByUid(event.patientUid()).ifPresentOrElse(
                 patient -> {
                     patient.changePaymentType(PaymentType.CASH, null, "");
+                    // SEC-01: audit the Patient insurance-clear mutation with the REAL approving actor.
+                    auditRecorder.record("registration.Patient", patient.getUid(),
+                            AuditAction.UPDATE, event.actorUsername());
                     log.debug("PatientClosureListener: Patient {} insurance cleared (→ CASH)",
                             event.patientUid());
                 },

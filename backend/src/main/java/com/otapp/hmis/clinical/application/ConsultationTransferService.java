@@ -8,6 +8,15 @@ import com.otapp.hmis.clinical.domain.ConsultationStatus;
 import com.otapp.hmis.clinical.domain.ConsultationTransfer;
 import com.otapp.hmis.clinical.domain.ConsultationTransferRepository;
 import com.otapp.hmis.clinical.domain.ConsultationTransferStatus;
+import com.otapp.hmis.clinical.domain.LabTestRepository;
+import com.otapp.hmis.clinical.domain.LabTestStatus;
+import com.otapp.hmis.clinical.domain.PrescriptionRepository;
+import com.otapp.hmis.clinical.domain.PrescriptionStatus;
+import com.otapp.hmis.clinical.domain.ProcedureRepository;
+import com.otapp.hmis.clinical.domain.ProcedureStatus;
+import com.otapp.hmis.clinical.domain.RadiologyRepository;
+import com.otapp.hmis.clinical.domain.RadiologyStatus;
+import com.otapp.hmis.masterdata.lookup.ClinicLookup;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
@@ -35,11 +44,10 @@ import org.springframework.transaction.annotation.Transactional;
  *       with propagation MANDATORY.</li>
  * </ol>
  *
- * <p><strong>DEFERRED STUB — no-PENDING-child-orders guard (C7-C10):</strong>
- * The legacy raise guard (c) checks that the source consultation has no PENDING
- * LabTest/Radiology/Procedure/Prescription. Those entities do not exist in inc-05 C3
- * (they arrive in C7-C10). This guard is documented as a TODO stub below and MUST be
- * implemented once those repositories are available.
+ * <p><strong>Guard (c) — no-PENDING-child-orders (WIRED, inc-05 review fix):</strong>
+ * The raise guard (c) checks the source consultation has no PENDING lab/radiology/procedure
+ * orders and no NOT-GIVEN prescription (PatientServiceImpl.java:2769-2800). All four
+ * repositories are injected and the guard is fully wired (F3 fix, adversarial review).
  *
  * <p>Legacy citations:
  * <ul>
@@ -59,6 +67,11 @@ class ConsultationTransferService
 
     private final ConsultationRepository consultationRepository;
     private final ConsultationTransferRepository transferRepository;
+    private final LabTestRepository labTestRepository;
+    private final RadiologyRepository radiologyRepository;
+    private final ProcedureRepository procedureRepository;
+    private final PrescriptionRepository prescriptionRepository;
+    private final ClinicLookup clinicLookup;
     private final AuditRecorder auditRecorder;
     private final ConsultationTransferMapper transferMapper;
 
@@ -77,9 +90,8 @@ class ConsultationTransferService
      *   <li>(b) No other PENDING transfer for the patient (patientUid); else 422
      *       (PatientServiceImpl.java:2764-2767). Backstopped by the partial-unique index
      *       {@code uq_consultation_transfers_one_pending_per_patient}.</li>
-     *   <li>(c) No PENDING LabTest/Radiology/Procedure/Prescription on this consultation.
-     *       <strong>DEFERRED STUB</strong> — those entities arrive in C7-C10. Documented
-     *       as TODO below; this guard must be wired once those repositories exist.</li>
+     *   <li>(c) No PENDING LabTest/Radiology/Procedure or NOT-GIVEN Prescription on this
+     *       consultation (PatientServiceImpl.java:2769-2800, verbatim messages).</li>
      *   <li>(d) Destination clinic uid != source consultation's clinic uid; else 422
      *       "Cannot transfer to the same clinic"
      *       (CR-INC05-04 resolved-by-design: string .equals() comparison — the legacy
@@ -110,28 +122,42 @@ class ConsultationTransferService
         }
 
         // Guard (b): no existing PENDING transfer for the patient
-        // (PatientServiceImpl.java:2764-2767; partial-unique index backstops this)
+        // (PatientServiceImpl.java:2766, verbatim — note legacy grammar "have")
         if (transferRepository.existsByPatientUidAndStatus(
                 source.getPatientUid(), ConsultationTransferStatus.PENDING)) {
             throw new InvalidPatientOperationException(
-                    "Can not transfer. Patient already has a pending transfer");
+                    "Can not transfer, the patient already have a pending transfer");
         }
 
-        // Guard (c): DEFERRED STUB — no-PENDING-child-orders guard (C7-C10)
-        // TODO: once LabTestRepository, RadiologyRepository, ProcedureRepository,
-        //       PrescriptionRepository arrive in C7-C10, add:
-        //       if (labTestRepository.existsByConsultationAndStatus(source, PENDING)
-        //           || radiologyRepository.existsByConsultationAndStatus(source, PENDING)
-        //           || procedureRepository.existsByConsultationAndStatus(source, PENDING)
-        //           || prescriptionRepository.existsByConsultationAndStatus(source, NOT_GIVEN)) {
-        //           throw new InvalidPatientOperationException("Can not transfer. ...");
-        //       }
-        // Until C7-C10 are implemented, this guard is absent (documented gap).
+        // Guard (c): no PENDING child orders on the source consultation.
+        // Legacy PatientServiceImpl.java:2769-2800 — four checks in order, verbatim messages.
+        if (labTestRepository.existsByConsultationAndStatus(source, LabTestStatus.PENDING)) {
+            throw new InvalidPatientOperationException(
+                    "Can not transfer. The patient has a pending lab test. "
+                            + "Please consider canceling the test");
+        }
+        if (radiologyRepository.existsByConsultationAndStatus(source, RadiologyStatus.PENDING)) {
+            throw new InvalidPatientOperationException(
+                    "Can not transfer. The patient has a pending radiology test. "
+                            + "Please consider canceling the test");
+        }
+        if (procedureRepository.existsByConsultationAndStatus(source, ProcedureStatus.PENDING)) {
+            throw new InvalidPatientOperationException(
+                    "Can not transfer. The patient has a pending procedure. "
+                            + "Please consider canceling the procedure");
+        }
+        if (prescriptionRepository.existsByConsultationAndStatus(source,
+                PrescriptionStatus.NOT_GIVEN)) {
+            throw new InvalidPatientOperationException(
+                    "Can not transfer. The patient has a pending prescription. "
+                            + "Please consider canceling the prescription");
+        }
 
-        // Guard (d): destination != source clinic (CR-INC05-04 string .equals(), not == on Long)
+        // Guard (d): destination != source clinic (PatientServiceImpl.java:2805, verbatim —
+        // "Can not", not "Cannot"; CR-INC05-04 string .equals() not == on Long)
         if (destinationClinicUid.equals(source.getClinicUid())) {
             throw new InvalidPatientOperationException(
-                    "Cannot transfer to the same clinic");
+                    "Can not transfer to the same clinic");
         }
 
         // Transition source consultation to TRANSFERED, then save
@@ -277,12 +303,17 @@ class ConsultationTransferService
 
         ConsultationTransfer pending = pendingOpt.get();
 
-        // Guard: target clinic must match the transfer's destination
-        // (PatientServiceImpl.java:431-435, verbatim message naming the required clinic)
+        // Guard: target clinic must match the transfer's destination.
+        // Legacy (PatientServiceImpl.java:434) verbatim: "Can not send to the specified clinic.
+        // Patient has been transfered to <clinicName> clinic. Please send the patient to the
+        // specified clinic". Resolve the name via masterdata::lookup; fall back to uid if not found.
         if (!pending.getDestinationClinicUid().equals(targetClinicUid)) {
+            String clinicName = clinicLookup.nameByUid(pending.getDestinationClinicUid())
+                    .orElse(pending.getDestinationClinicUid());
             throw new InvalidPatientOperationException(
-                    "Please send the patient to the specified clinic: "
-                            + pending.getDestinationClinicUid());
+                    "Can not send to the specified clinic. Patient has been transfered to "
+                            + clinicName
+                            + " clinic. Please send the patient to the specified clinic");
         }
 
         // Mark transfer COMPLETED — atomic with the new consultation being booked

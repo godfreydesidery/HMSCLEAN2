@@ -5,8 +5,16 @@ import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.domain.CoverageStatus;
 import com.otapp.hmis.billing.domain.PatientBill;
+import com.otapp.hmis.billing.domain.PatientInvoice;
+import com.otapp.hmis.billing.domain.PatientInvoiceDetailRepository;
+import com.otapp.hmis.billing.domain.PatientInvoiceRepository;
 import com.otapp.hmis.shared.application.MoneyMapper;
+import com.otapp.hmis.shared.audit.AuditAction;
+import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -19,9 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
  * never be referenced directly by callers outside the billing module. Callers depend on
  * the {@link BillingCommands} interface from {@code billing.api} only.
  *
- * <p>Propagation REQUIRED: the charge runs inside the caller's (Registration/Clinical)
- * transaction, ensuring atomicity with the clinical encounter. A consultation hard-fail
- * rolls back the entire encounter in the caller's tx.
+ * <p>Propagation REQUIRED: every command runs inside the caller's (Registration/Clinical)
+ * transaction, ensuring atomicity with the clinical encounter. A hard-fail rolls back the
+ * entire encounter in the caller's tx.
  *
  * <p>NOT {@code @PreAuthorize}-gated — authz is enforced at the caller's REST edge.
  * NOT {@code @Async}, NOT {@code REQUIRES_NEW}.
@@ -31,6 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
 class BillingCommandsImpl implements BillingCommands {
 
     private final BillingChargeService chargeService;
+    private final CreditNoteService creditNoteService;
+    private final PatientInvoiceDetailRepository invoiceDetailRepository;
+    private final PatientInvoiceRepository invoiceRepository;
+    private final AuditRecorder auditRecorder;
     private final MoneyMapper moneyMapper;
 
     /**
@@ -67,5 +79,44 @@ class BillingCommandsImpl implements BillingCommands {
                 bill.getStatus(),
                 moneyMapper.toDto(bill.getAmount()),
                 coverage);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Delegates to {@link CreditNoteService#cancelCharge} which soft-cancels the bill,
+     * optionally refunds a RECEIVED payment (→ REFUNDED + PENDING credit note), and
+     * detaches the bill's invoice-claim detail.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void cancelCharge(String billUid, String reference, TxAuditContext ctx) {
+        creditNoteService.cancelCharge(billUid, reference, ctx);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>For each bill uid, locates the parent {@link PatientInvoice} via the invoice-detail
+     * join and calls {@link PatientInvoice#approve()} on any that are still PENDING.
+     * Deduplicates across bill uids so a multi-line invoice is only approved once.
+     * Reproduces PatientResource.java:5884-5887.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void approveInvoicesForBills(Collection<String> billUids, TxAuditContext ctx) {
+        Set<String> approvedInvoiceUids = new HashSet<>();
+        for (String billUid : billUids) {
+            invoiceDetailRepository.findByBillUid(billUid).ifPresent(detail -> {
+                PatientInvoice invoice = detail.getInvoice();
+                if (invoice != null && !approvedInvoiceUids.contains(invoice.getUid())) {
+                    invoice.approve();
+                    invoiceRepository.save(invoice);
+                    auditRecorder.record("billing.PatientInvoice", invoice.getUid(),
+                            AuditAction.UPDATE, ctx.actorUsername());
+                    approvedInvoiceUids.add(invoice.getUid());
+                }
+            });
+        }
     }
 }

@@ -60,6 +60,12 @@ public interface ProcedureRepository extends JpaRepository<Procedure, Long> {
                                                      String procedureTypeUid);
 
     /**
+     * Transfer guard (c) — PatientServiceImpl.java:2787.
+     * Returns true if any Procedure order for this consultation is in the given status.
+     */
+    boolean existsByConsultationAndStatus(Consultation consultation, ProcedureStatus status);
+
+    /**
      * Duplicate guard — non-consultation (OUTSIDER/walk-in) path.
      *
      * @param nonConsultation  the owning non-consultation (intra-module entity ref)

@@ -14,6 +14,10 @@ import com.otapp.hmis.clinical.domain.ConsultationStatus;
 import com.otapp.hmis.clinical.domain.ConsultationTransfer;
 import com.otapp.hmis.clinical.domain.ConsultationTransferRepository;
 import com.otapp.hmis.clinical.domain.ConsultationTransferStatus;
+import com.otapp.hmis.iam.domain.Role;
+import com.otapp.hmis.iam.domain.RoleRepository;
+import com.otapp.hmis.shared.domain.BusinessDayService;
+import com.otapp.hmis.shared.domain.NoDayOpenException;
 import com.otapp.hmis.support.AbstractIntegrationTest;
 import com.otapp.hmis.support.TestJwtFactory;
 import java.util.List;
@@ -45,17 +49,32 @@ class ConsultationTransferIT extends AbstractIntegrationTest {
 
     private static final String CLINICAL_URL = "/api/v1/clinical/consultations";
 
+    private static final String PATIENTS_URL = "/api/v1/patients";
+    private static final String PRICES_URL   = "/api/v1/masterdata/service-prices";
+    private static final String CLINICS_URL  = "/api/v1/masterdata/clinics";
+    private static final String USERS_URL    = "/api/v1/iam/users";
+
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired TestJwtFactory jwtFactory;
     @Autowired ConsultationRepository consultationRepository;
     @Autowired ConsultationTransferRepository transferRepository;
+    @Autowired RoleRepository roleRepository;
+    @Autowired BusinessDayService businessDayService;
 
     private String token;
+    private String adminToken;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         token = jwtFactory.tokenWithPrivileges("doc1", List.of("PATIENT-ALL"));
+        adminToken = jwtFactory.tokenWithPrivileges("admin",
+                List.of("ADMIN-ACCESS", "USER-ALL", "PATIENT-ALL", "BILL-A"));
+        if (roleRepository.findByName("CLINICIAN").isEmpty()) {
+            roleRepository.save(new Role("CLINICIAN", "SYSTEM"));
+        }
+        ensureDayOpen();
+        ensureRegistrationCashPrice();
     }
 
     // =========================================================================
@@ -114,7 +133,8 @@ class ConsultationTransferIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"destinationClinicUid\":\"" + sourceClinic + "\"}"))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail").value("Cannot transfer to the same clinic"));
+                // Verbatim legacy message (PatientServiceImpl.java:2805 — "Can not", not "Cannot")
+                .andExpect(jsonPath("$.detail").value("Can not transfer to the same clinic"));
     }
 
     @Test
@@ -133,11 +153,14 @@ class ConsultationTransferIT extends AbstractIntegrationTest {
         // Second IN_PROCESS consultation for the SAME patient → raise must be rejected
         // (one PENDING transfer per patient; the partial-unique index + guard).
         String c2 = seedInProcessForPatient(tag + "b", patientUid, fakeUid("CLB", tag));
+        // QA-04: must be exactly 422 with verbatim legacy message (PatientServiceImpl.java:2766)
         mockMvc.perform(post(CLINICAL_URL + "/uid/" + c2 + "/transfer")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"destinationClinicUid\":\"" + fakeUid("DS2", tag) + "\"}"))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Can not transfer, the patient already have a pending transfer"));
     }
 
     // =========================================================================
@@ -268,5 +291,187 @@ class ConsultationTransferIT extends AbstractIntegrationTest {
     private String businessDayUid() {
         // Reuse the same fake day uid shape; transfers don't validate the day exists (loose uid).
         return fakeUid("DAY", "FIXED");
+    }
+
+    // =========================================================================
+    // QA-03 — transfer completion seam: rebook to correct / wrong clinic
+    // =========================================================================
+
+    /**
+     * QA-03a: seed a TRANSFERED consultation + PENDING transfer, then send-to-doctor to the
+     * matching destination clinic → transfer must become COMPLETED.
+     */
+    @Test
+    void rebook_toCorrectDestination_completesTransfer() throws Exception {
+        String tag = uniq();
+
+        // Bootstrap real clinic + clinician + patient via HTTP (needed by send-to-doctor)
+        String destClinicUid = createClinic("DEST-" + tag, "Dest Clinic " + tag);
+        String srcClinicUid  = createClinic("SRC-" + tag, "Src Clinic " + tag);
+        String clinicianUid  = createAffiliatedClinician(destClinicUid, "doc_qa03a_" + tag,
+                "Doc QA03A " + tag);
+        seedConsultationPrice(destClinicUid);
+        seedConsultationPrice(srcClinicUid);
+        String patientUid = registerCash("QA03A-" + tag);
+
+        // Seed the source consultation, raise the transfer (TRANSFERED), then FREE it (SIGNED_OUT).
+        // Legacy precondition (discovery state machine): the source must be freed before the
+        // destination rebook, else the open-work guard {PENDING,TRANSFERED,IN-PROCESS} blocks it.
+        // The transfer itself stays PENDING until the rebook completes it.
+        Consultation src = new Consultation(
+                patientUid, null, srcClinicUid, fakeUid("DOC", tag),
+                fakeUid("BIL", tag), PaymentMode.CASH, false, true, "", null,
+                businessDayUid());
+        src.open();
+        src.markTransferred();
+        src.signOut();              // free_consultation on a TRANSFERED consultation → SIGNED_OUT
+        consultationRepository.saveAndFlush(src);
+
+        // Seed the PENDING transfer with destClinicUid as destination
+        ConsultationTransfer transfer = new ConsultationTransfer(
+                src, patientUid, destClinicUid, "test transfer", businessDayUid());
+        transferRepository.saveAndFlush(transfer);
+        String transferUid = transfer.getUid();
+
+        // send-to-doctor to the CORRECT destination clinic → completePendingTransferOnRebook fires
+        String sendBody = """
+                {"clinicUid":"%s","clinicianUserUid":"%s","followUp":false}
+                """.formatted(destClinicUid, clinicianUid);
+        mockMvc.perform(post(PATIENTS_URL + "/uid/" + patientUid + "/send-to-doctor")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(sendBody))
+                .andExpect(status().isCreated());
+
+        // Transfer must now be COMPLETED
+        ConsultationTransfer completed = transferRepository.findByUid(transferUid).orElseThrow();
+        assertThat(completed.getStatus()).isEqualTo(ConsultationTransferStatus.COMPLETED);
+    }
+
+    /**
+     * QA-03b: seed a TRANSFERED consultation + PENDING transfer, then send-to-doctor to a
+     * WRONG clinic → 422 with verbatim F9 legacy message containing the required clinic name.
+     */
+    @Test
+    void rebook_toWrongClinic_422VerbatimMessage() throws Exception {
+        String tag = uniq();
+
+        // Bootstrap clinics
+        String destClinicUid  = createClinic("DEST2-" + tag, "Right Clinic " + tag);
+        String wrongClinicUid = createClinic("WRONG-" + tag, "Wrong Clinic " + tag);
+        String clinicianUid   = createAffiliatedClinician(wrongClinicUid, "doc_qa03b_" + tag,
+                "Doc QA03B " + tag);
+        seedConsultationPrice(destClinicUid);
+        seedConsultationPrice(wrongClinicUid);
+        String patientUid = registerCash("QA03B-" + tag);
+
+        // Seed source, raise transfer (TRANSFERED toward destClinic), then FREE it (SIGNED_OUT)
+        // so the open-work guard passes and the rebook reaches the transfer-clinic-match check.
+        Consultation src = new Consultation(
+                patientUid, null, wrongClinicUid, fakeUid("DOC", tag),
+                fakeUid("BI2", tag), PaymentMode.CASH, false, true, "", null,
+                businessDayUid());
+        src.open();
+        src.markTransferred();
+        src.signOut();
+        consultationRepository.saveAndFlush(src);
+
+        ConsultationTransfer transfer = new ConsultationTransfer(
+                src, patientUid, destClinicUid, "test transfer", businessDayUid());
+        transferRepository.saveAndFlush(transfer);
+
+        // send-to-doctor to the WRONG clinic → 422 with verbatim F9 message
+        String sendBody = """
+                {"clinicUid":"%s","clinicianUserUid":"%s","followUp":false}
+                """.formatted(wrongClinicUid, clinicianUid);
+        mockMvc.perform(post(PATIENTS_URL + "/uid/" + patientUid + "/send-to-doctor")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(sendBody))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString(
+                                "Can not send to the specified clinic. Patient has been transfered to")));
+    }
+
+    // =========================================================================
+    // QA-03 helpers (booking infrastructure)
+    // =========================================================================
+
+    private String createClinic(String code, String name) throws Exception {
+        String body = """
+                {"code":"%s","name":"%s","description":"test","consultationFee":1000.00,"active":false}
+                """.formatted(code, name);
+        MvcResult r = mockMvc.perform(post(CLINICS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
+    }
+
+    private String createAffiliatedClinician(String clinicUid, String username,
+                                              String nickname) throws Exception {
+        String body = """
+                {"username":"%s","password":"pass1234","firstName":"Test","lastName":"Clinician",
+                 "nickname":"%s","roleNames":["CLINICIAN"]}
+                """.formatted(username, nickname);
+        MvcResult r = mockMvc.perform(post(USERS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        String clinicianUid = objectMapper.readTree(r.getResponse().getContentAsString())
+                .get("uid").asText();
+        mockMvc.perform(post(CLINICS_URL + "/uid/" + clinicUid + "/clinicians")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userUid\":\"" + clinicianUid + "\"}"))
+                .andExpect(status().isCreated());
+        return clinicianUid;
+    }
+
+    private void seedConsultationPrice(String clinicUid) throws Exception {
+        String body = """
+                {"planUid":null,"kind":"CONSULTATION","serviceUid":"%s","currency":"TZS",
+                 "amount":1000.00,"covered":true,"minAmount":null,"maxAmount":null,"active":true}
+                """.formatted(clinicUid);
+        mockMvc.perform(post(PRICES_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().is(org.hamcrest.Matchers.anyOf(
+                        org.hamcrest.Matchers.is(200),
+                        org.hamcrest.Matchers.is(201),
+                        org.hamcrest.Matchers.is(409))));
+    }
+
+    private String registerCash(String last) throws Exception {
+        String body = """
+                {"firstName":"TR","lastName":"%s","dateOfBirth":"1990-01-01","gender":"MALE",
+                 "paymentType":"CASH"}
+                """.formatted(last);
+        MvcResult r = mockMvc.perform(post(PATIENTS_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andReturn();
+        return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
+    }
+
+    private void ensureDayOpen() {
+        try {
+            businessDayService.currentUid();
+        } catch (NoDayOpenException e) {
+            businessDayService.openToday();
+        }
+    }
+
+    private void ensureRegistrationCashPrice() throws Exception {
+        String body = """
+                {"planUid":null,"kind":"REGISTRATION","serviceUid":null,"currency":"TZS",
+                 "amount":500.00,"covered":true,"minAmount":null,"maxAmount":null,"active":true}
+                """;
+        mockMvc.perform(post(PRICES_URL)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().is(org.hamcrest.Matchers.anyOf(
+                        org.hamcrest.Matchers.is(200),
+                        org.hamcrest.Matchers.is(201),
+                        org.hamcrest.Matchers.is(409))));
     }
 }

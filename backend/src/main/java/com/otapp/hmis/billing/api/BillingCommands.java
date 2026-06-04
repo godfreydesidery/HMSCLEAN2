@@ -1,13 +1,15 @@
 package com.otapp.hmis.billing.api;
 
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import java.util.Collection;
 
 /**
- * Cross-module API for recording a clinical charge (build-spec §4.1).
+ * Cross-module API for recording a clinical charge and related billing mutations
+ * (build-spec §4.1, inc-05 adversarial-review F6/F5).
  *
  * <p>Callers (Registration/inc-03, Clinical/inc-05) invoke this inside their own
  * transaction — propagation REQUIRED (caller's tx). NO {@code @Async}, NO
- * {@code REQUIRES_NEW}. The charge is atomic with the clinical encounter.
+ * {@code REQUIRES_NEW}. Every call is atomic with the clinical encounter.
  *
  * <p>NOT a REST endpoint. NOT {@code @PreAuthorize}-gated. Authorization is enforced
  * once at the caller's REST edge; this in-process Modulith call is trusted.
@@ -30,4 +32,43 @@ public interface BillingCommands {
      * @return the charge result (billUid, status, amount, coverage)
      */
     ChargeResult recordClinicalCharge(ChargeRequest req, TxAuditContext ctx);
+
+    /**
+     * Cancel a clinical charge: soft-cancel the bill (CANCELED), refund any RECEIVED payment
+     * (→ REFUNDED) and raise a PENDING credit note, and detach the bill from its insurance claim.
+     *
+     * <p>Delegates to {@code CreditNoteService.cancelCharge} inside the caller's transaction.
+     * Idempotent on the refund side — a second call on an already-CANCELED bill finds no RECEIVED
+     * payment detail and creates no second credit note.
+     *
+     * <p>Reference labels used by clinical callers:
+     * <ul>
+     *   <li>"Canceled consultation" — cancel_consultation (PatientResource.java:644)</li>
+     *   <li>"Freed consultation" — free_consultation child-order cancel</li>
+     *   <li>"Deleted prescription" — deletePrescription (clinical parity)</li>
+     * </ul>
+     *
+     * <p>Parameters are Strings only — no billing domain type crosses the module boundary
+     * (ADR-0008 §1).
+     *
+     * @param billUid   the ULID of the bill to cancel
+     * @param reference human-readable cause label stamped on the credit note
+     * @param ctx       transaction audit context (dayUid, actor)
+     */
+    void cancelCharge(String billUid, String reference, TxAuditContext ctx);
+
+    /**
+     * Approve all PENDING invoices whose details contain any of the supplied bill uids.
+     *
+     * <p>Used by {@code ClosureService.approveDeceased} to reproduce the legacy
+     * PatientResource.java:5884-5887 invoice-APPROVED side-effect: on death approval all
+     * outstanding consultation invoices are transitioned to APPROVED.
+     *
+     * <p>Parameters are Strings only — no billing domain type crosses the module boundary
+     * (ADR-0008 §1).
+     *
+     * @param billUids the collection of bill ULIDs whose parent invoices should be approved
+     * @param ctx      transaction audit context (dayUid, actor)
+     */
+    void approveInvoicesForBills(Collection<String> billUids, TxAuditContext ctx);
 }

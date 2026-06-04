@@ -50,6 +50,12 @@ public interface RadiologyRepository extends JpaRepository<Radiology, Long> {
                                                      String radiologyTypeUid);
 
     /**
+     * Transfer guard (c) — PatientServiceImpl.java:2778.
+     * Returns true if any Radiology order for this consultation is in the given status.
+     */
+    boolean existsByConsultationAndStatus(Consultation consultation, RadiologyStatus status);
+
+    /**
      * Duplicate guard — non-consultation (OUTSIDER/walk-in) path.
      *
      * @param nonConsultation  the owning non-consultation (intra-module entity ref)

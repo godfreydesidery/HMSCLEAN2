@@ -508,19 +508,24 @@ public class Prescription extends AuditableEntity {
      */
     public void issue(BigDecimal issuedQty, String issuePharmacyUid,
                       String actorUserUid, String dayUid, Instant now) {
+        // Guard 1: status must be NOT-GIVEN (PatientResource.java:3219, verbatim).
+        // Legacy interpolates the id: "... is not a pending prescription"; we omit the id
+        // (internal DB id — never exposed). Comment preserved for traceability.
         if (this.status != PrescriptionStatus.NOT_GIVEN) {
             throw new InvalidPatientOperationException(
-                    "not a pending prescription");
+                    "Could not issue medicine. Prescription is not a pending prescription");
         }
+        // Guard 2+3: legacy fires "Invalid issue value in <name>" when balance > issued OR
+        // issued <= 0 (PatientResource.java:3221 — issued < balance or zero/negative).
+        // We omit the medicine name interpolation (not available in domain method — F8 note).
         if (issuedQty == null || issuedQty.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new InvalidPatientOperationException(
-                    "Invalid issue value");
+            throw new InvalidPatientOperationException("Invalid issue value");
         }
-        if (issuedQty.compareTo(this.balance) > 0) {
-            throw new InvalidPatientOperationException(
-                    "Invalid issue value");
+        if (issuedQty.compareTo(this.balance) < 0) {
+            // Under-issue: issued is less than the outstanding balance
+            throw new InvalidPatientOperationException("Invalid issue value");
         }
-        // All-or-nothing: issued must equal the full prescribed qty (PatientResource.java:3230)
+        // Guard 4: all-or-nothing — issued must equal full prescribed qty (PatientResource.java:3224)
         if (issuedQty.compareTo(this.qty) != 0) {
             throw new InvalidPatientOperationException(
                     "You can only issue the prescribed qty");

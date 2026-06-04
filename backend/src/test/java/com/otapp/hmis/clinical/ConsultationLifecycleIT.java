@@ -57,6 +57,7 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
     @Autowired PatientRepository patientRepository;
     @Autowired ConsultationRepository consultationRepository;
     @Autowired BusinessDayService businessDayService;
+    @Autowired com.otapp.hmis.billing.domain.PatientBillRepository patientBillRepository;
 
     private String adminToken;
 
@@ -148,11 +149,11 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
         mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/open")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
-        // Second open — fails with verbatim message
+        // Second open — fails with verbatim legacy message (PatientResource.java:899)
         mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/open")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail").value("Not a pending consultation"));
+                .andExpect(jsonPath("$.detail").value("Could not open. Not a pending consultation."));
     }
 
     // =========================================================================
@@ -183,10 +184,12 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
         String u = uniq();
         String consultationUid = seedConsultation(u, PaymentMode.INSURANCE, false, true);
 
+        // Verbatim legacy message (PatientResource.java:911 — no trailing period)
         mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/open-follow-up")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail").value("This is not a follow up consultation"));
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not open. This is not a follow up consultation"));
     }
 
     // =========================================================================
@@ -205,6 +208,23 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN-PROCESS"));
+    }
+
+    // =========================================================================
+    // openFollowUp — followUp=true, settled=false → 422 PAY_BEFORE_SERVICE (QA-08)
+    // =========================================================================
+
+    @Test
+    void openFollowUp_followUpCashUnsettled_422PayBeforeService() throws Exception {
+        String u = uniq();
+        // Seed a PENDING follow-up consultation with settled=false (e.g. after switchToNormal
+        // or a seed error — the payment gate is live and untested without this case).
+        String consultationUid = seedConsultation(u, PaymentMode.CASH, true, false);
+
+        mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/open-follow-up")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.type").value("urn:hmis:error:pay-before-service"));
     }
 
     // =========================================================================
@@ -269,6 +289,8 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
     @Test
     void free_transfered_transitionsToSignedOut() throws Exception {
         String u = uniq();
+        // QA-01 fix: seed genuinely TRANSFERED (c.open() then c.markTransferred()),
+        // not IN_PROCESS as the stale workaround did before.
         String consultationUid = seedConsultationWithStatus(u, PaymentMode.INSURANCE, false, true,
                 ConsultationStatus.TRANSFERED);
 
@@ -276,6 +298,10 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SIGNED-OUT"));
+
+        // QA-01: DB assertion — status must be SIGNED_OUT in the database
+        assertThat(consultationRepository.findByUid(consultationUid).orElseThrow().getStatus())
+                .isEqualTo(ConsultationStatus.SIGNED_OUT);
     }
 
     // =========================================================================
@@ -413,12 +439,26 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
 
     private String seedConsultationWithStatus(String tag, PaymentMode mode, boolean followUp,
                                                boolean settled, ConsultationStatus status) {
+        // Seed a REAL consultation-fee PatientBill so the cancel/free side-effects
+        // (billingCommands.cancelCharge) find an actual bill to cancel (production parity —
+        // every consultation has a real fee bill; a fake uid would 404 in CreditNoteService).
+        String patientUid = fakeUid("PAT", tag);
+        com.otapp.hmis.billing.domain.PatientBill bill = new com.otapp.hmis.billing.domain.PatientBill(
+                patientUid,
+                com.otapp.hmis.masterdata.lookup.ServiceKind.CONSULTATION,
+                "Consultation",
+                "Consultation fee (lifecycle test " + tag + ")",
+                java.math.BigDecimal.ONE,
+                com.otapp.hmis.shared.domain.Money.of(new java.math.BigDecimal("1000.00")),
+                businessDayService.currentUid());
+        String billUid = patientBillRepository.save(bill).getUid();
+
         Consultation c = new Consultation(
-                fakeUid("PAT", tag),
+                patientUid,
                 null,
                 fakeUid("CLN", tag),
                 fakeUid("DOC", tag),
-                fakeUid("BIL", tag),
+                billUid,
                 mode,
                 followUp,
                 settled,
@@ -433,10 +473,8 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
                 case CANCELED   -> c.cancel();
                 case SIGNED_OUT -> { c.open(); c.free(); }
                 case TRANSFERED -> {
-                    /* No domain transition to TRANSFERED yet (ConsultationTransfer arrives in C3+).
-                       Seed as IN_PROCESS instead — both IN_PROCESS and TRANSFERED free to SIGNED_OUT,
-                       so the free-transition test is valid either way. */
-                    c.open();
+                    c.open();           // PENDING → IN_PROCESS
+                    c.markTransferred(); // IN_PROCESS → TRANSFERED (domain method from C3)
                 }
                 default -> { /* PENDING, HELD: leave as-is */ }
             }

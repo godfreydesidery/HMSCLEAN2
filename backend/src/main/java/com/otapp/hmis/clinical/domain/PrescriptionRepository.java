@@ -71,6 +71,14 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, Long
     boolean existsByConsultationAndMedicineUid(Consultation consultation, String medicineUid);
 
     /**
+     * Transfer guard (c) — PatientServiceImpl.java:2796.
+     * Returns true if any Prescription for this consultation is in the given status
+     * (used with {@link PrescriptionStatus#NOT_GIVEN} to block transfers when a pending
+     * prescription exists).
+     */
+    boolean existsByConsultationAndStatus(Consultation consultation, PrescriptionStatus status);
+
+    /**
      * Duplicate guard — non-consultation (OUTSIDER/walk-in) path.
      *
      * <p>CR-INC05-05 corrected check: uses a dedicated non-consultation query instead of the

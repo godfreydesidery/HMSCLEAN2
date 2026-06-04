@@ -21,7 +21,8 @@ package com.otapp.hmis.shared.event;
  * Published synchronously in the same transaction; handled
  * {@code @TransactionalEventListener(phase = BEFORE_COMMIT)} for atomic commit.
  *
- * @param patientUid the ULID of the patient whose insurance must be cleared
+ * @param patientUid     the ULID of the patient whose insurance must be cleared
+ * @param actorUsername  the username of the approving principal (for audit attribution — SEC-01)
  */
-public record PatientInsuranceClearedEvent(String patientUid) {
+public record PatientInsuranceClearedEvent(String patientUid, String actorUsername) {
 }

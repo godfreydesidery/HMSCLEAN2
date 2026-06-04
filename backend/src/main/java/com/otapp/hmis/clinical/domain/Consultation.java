@@ -22,7 +22,7 @@ import lombok.NoArgsConstructor;
  * module (ADR-0022, D1). The {@code clinical} module owns the {@code consultations} table and all
  * lifecycle state (PENDING → IN-PROCESS → SIGNED-OUT / CANCELED / TRANSFERED / HELD).
  *
- * <p><strong>Cross-module FK discipline (ADR-0022 D2):</strong>
+ * <p><strong>Cross-module FK discipline (ADR-0022 D2, ADR-0022 Correction):</strong>
  * The JPA {@code @ManyToOne Patient patient} and {@code @ManyToOne Visit visit} associations from
  * the inc-03 stub are REMOVED. They are replaced by plain {@code String} uid columns:
  * <ul>
@@ -31,9 +31,8 @@ import lombok.NoArgsConstructor;
  * </ul>
  * These are the module-boundary-safe access path (pattern: same as {@code clinicUid},
  * {@code clinicianUserUid}, etc. — ADR-0008 §1). The DB-level FK columns {@code patient_id} and
- * {@code visit_id} REMAIN in the schema (data-architect ruling, ADR-0022 D2) — they are kept as
- * database-level referential-integrity constraints that Hibernate is unaware of from the clinical
- * side. The V29 migration backfills {@code patient_uid}/{@code visit_uid} from those FK columns.
+ * {@code visit_id} were DROPPED by V29 migration (ADR-0022 Correction) after the uid columns
+ * were backfilled and NOT NULL was enforced. Hibernate has no awareness of those dropped columns.
  *
  * <p><strong>Settlement flag (ADR-0022 D2/D4, inc-05 §5):</strong>
  * {@code settled} is the clinical-local settlement projection. It is set at booking time
@@ -42,17 +41,15 @@ import lombok.NoArgsConstructor;
  * {@link com.otapp.hmis.billing.api.SettlementPolicy#requireSettled} against this flag.
  * The clinical module NEVER calls back into billing to check bill status (ADR-0008 §6,
  * inc-05 §5). For CASH consultations, settled starts {@code false}; the cash-PAID→settled=true
- * propagation is a deferred seam (see DEFERRED NOTE below).
+ * propagation is IMPLEMENTED via the {@code ConsultationSettlementListener} / {@code SettlementDispatcher}
+ * event seam (ADR-0022 D5, inc-05 §5 — WIRED, not deferred).
  *
- * <p><strong>DEFERRED NOTE — cash-PAID propagation seam (inc-05 §5):</strong>
+ * <p><strong>Settlement seam (IMPLEMENTED — inc-05 §5, ADR-0022 Correction):</strong>
  * When a CASH patient pays their consultation bill, {@code billing.SettlementDispatcher.onBillPaid}
- * must flip this local {@code settled} flag to {@code true}. A billing→clinical call would create a
- * cycle (clinical already depends on billing::api). A clinical→billing polling call would also be
- * wrong. The resolution is an event-based or published-command seam where billing publishes an
- * {@code ApplicationEvent<ConsultationSettledEvent>} and the clinical module consumes it in the
- * SAME transaction. This seam is a separate chunk (deferred to post-C2). Until then:
- * INSURANCE/COVERED/NONE consultations work end-to-end; CASH-OPD open is correctly blocked
- * (PayBeforeServiceException 422) — parity with legacy UI filter behaviour.
+ * publishes a {@code BillSettledEvent}; {@code ConsultationSettlementListener} consumes it in the
+ * SAME transaction (BEFORE_COMMIT) and flips this local {@code settled} flag to {@code true}.
+ * All five entity types (Consultation, LabTest, Radiology, Procedure, Prescription) are wired.
+ * INSURANCE/COVERED/NONE consultations have settled=true at booking (no payment required).
  *
  * <p>Legacy citations:
  * <ul>
@@ -172,7 +169,8 @@ public class Consultation extends AuditableEntity {
      *   <li>{@code true}  — for INSURANCE/COVERED, follow-up NONE (auto-pass — no prepayment required)</li>
      *   <li>{@code false} — for CASH-OPD (must be paid before {@code open_consultation} can proceed)</li>
      * </ul>
-     * Flipped to {@code true} when the cash bill is paid (DEFERRED: cash-PAID propagation seam).
+     * Flipped to {@code true} when the cash bill is paid via the {@code ConsultationSettlementListener}
+     * event seam (ADR-0022 D5, ADR-0022 Correction — IMPLEMENTED in inc-05 §5; not deferred).
      * The {@code open_consultation} transition evaluates
      * {@link com.otapp.hmis.billing.api.SettlementPolicy#requireSettled} against this flag ONLY.
      * The clinical module NEVER reads billing bill status (ADR-0008 §6).

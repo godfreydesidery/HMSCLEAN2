@@ -1,5 +1,6 @@
 package com.otapp.hmis.clinical.application;
 
+import com.otapp.hmis.billing.api.BillingCommands;
 import com.otapp.hmis.clinical.application.dto.DeceasedNoteDto;
 import com.otapp.hmis.clinical.application.dto.DeceasedNoteRequest;
 import com.otapp.hmis.clinical.application.dto.ReferralPlanDto;
@@ -10,9 +11,13 @@ import com.otapp.hmis.clinical.domain.ConsultationStatus;
 import com.otapp.hmis.clinical.domain.DeceasedNote;
 import com.otapp.hmis.clinical.domain.DeceasedNoteRepository;
 import com.otapp.hmis.clinical.domain.DeceasedNoteStatus;
+import com.otapp.hmis.clinical.domain.LabTest;
 import com.otapp.hmis.clinical.domain.LabTestRepository;
-import com.otapp.hmis.clinical.domain.ProcedureRepository;
+import com.otapp.hmis.clinical.domain.Prescription;
 import com.otapp.hmis.clinical.domain.PrescriptionRepository;
+import com.otapp.hmis.clinical.domain.Procedure;
+import com.otapp.hmis.clinical.domain.ProcedureRepository;
+import com.otapp.hmis.clinical.domain.Radiology;
 import com.otapp.hmis.clinical.domain.RadiologyRepository;
 import com.otapp.hmis.clinical.domain.ReferralPlan;
 import com.otapp.hmis.clinical.domain.ReferralPlanRepository;
@@ -24,6 +29,7 @@ import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.NotFoundException;
 import com.otapp.hmis.shared.event.PatientDeceasedEvent;
 import com.otapp.hmis.shared.event.PatientInsuranceClearedEvent;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -110,6 +116,7 @@ class ClosureService implements ClosurePort {
     private final RadiologyRepository       radiologyRepository;
     private final ProcedureRepository       procedureRepository;
     private final PrescriptionRepository    prescriptionRepository;
+    private final BillingCommands           billingCommands;
     private final ClosureMapper             closureMapper;
     private final AuditRecorder             auditRecorder;
     private final ApplicationEventPublisher eventPublisher;
@@ -211,8 +218,10 @@ class ClosureService implements ClosurePort {
             return closureMapper.toDto(note);
         }
 
-        // Bill-gate (deceased — UNPAID|VERIFIED mapped to settled=false)
-        if (hasUnsettledOrdersForDeceasedGate(consultation)) {
+        // Bill-gate (deceased — UNPAID|VERIFIED mapped to settled=false).
+        // F5 (review fix): also check the consultation fee bill itself (PatientResource.java:5877).
+        // Verbatim: "Could not get deceased summary. Patient have uncleared bills."
+        if (!consultation.isSettled() || hasUnsettledOrdersForDeceasedGate(consultation)) {
             throw new InvalidPatientOperationException(
                     "Could not get deceased summary. Patient have uncleared bills.");
         }
@@ -227,8 +236,15 @@ class ClosureService implements ClosurePort {
         auditRecorder.record(AUDIT_ENTITY_DECEASED, note.getUid(), AuditAction.UPDATE,
                 ctx.actorUsername());
 
-        // Cross-module event: Patient.type → DECEASED via PatientClosureListener in registration
-        eventPublisher.publishEvent(new PatientDeceasedEvent(note.getPatientUid()));
+        // Cross-module event: Patient.type → DECEASED via PatientClosureListener in registration.
+        // Actor passed in event for SEC-01 audit (Patient identity mutation attributable to approver).
+        eventPublisher.publishEvent(
+                new PatientDeceasedEvent(note.getPatientUid(), ctx.actorUsername()));
+
+        // F5 (review fix): approve all consultation invoices — legacy PatientResource.java:5884-5887.
+        // Collect all bill uids: the consultation fee bill + all child-order bills.
+        List<String> allBillUids = collectConsultationBillUids(consultation);
+        billingCommands.approveInvoicesForBills(allBillUids, ctx);
 
         return closureMapper.toDto(note);
     }
@@ -277,13 +293,24 @@ class ClosureService implements ClosurePort {
                     "A pending referral plan already exists for this consultation");
         }
 
-        // Bill-gate (referral — UNPAID-only mapped to settled=false)
+        // Bill-gate (referral — UNPAID-only mapped to settled=false).
+        // Legacy PatientResource.java:5465-5499: four distinct checks in order, verbatim messages.
         // CR-INC05-09 asymmetry: referral gate is UNPAID-only (NOT UNPAID|VERIFIED).
-        // Both currently compute settled=false; structural separation ensures future
-        // differentiation when the billing-VERIFIED concept is introduced.
-        if (hasUnsettledOrdersForReferralGate(consultation)) {
+        if (hasUnsettledLabTests(consultation)) {
             throw new InvalidPatientOperationException(
-                    "Could not save referral. Patient have uncleared bills.");
+                    "Could not save. Patient have uncleared lab test bill(s)");
+        }
+        if (hasUnsettledRadiologies(consultation)) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Patient have uncleared radiology test bill(s)");
+        }
+        if (hasUnsettledProcedures(consultation)) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Patient have uncleared procedure bill(s)");
+        }
+        if (hasUnsettledPrescriptions(consultation)) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Patient have uncleared medication bill(s)");
         }
 
         // Create the PENDING referral plan
@@ -307,8 +334,10 @@ class ClosureService implements ClosurePort {
         signOutConsultation(consultation, ctx);
 
         // Cross-module event: Patient paymentType → CASH (insurance cleared)
-        // via PatientClosureListener in registration (same transaction, BEFORE_COMMIT)
-        eventPublisher.publishEvent(new PatientInsuranceClearedEvent(plan.getPatientUid()));
+        // via PatientClosureListener in registration (same transaction, BEFORE_COMMIT).
+        // Actor passed in event for SEC-01 audit (Patient insurance-clear attributable to approver).
+        eventPublisher.publishEvent(
+                new PatientInsuranceClearedEvent(plan.getPatientUid(), ctx.actorUsername()));
 
         return closureMapper.toDto(plan);
     }
@@ -440,6 +469,29 @@ class ClosureService implements ClosurePort {
      * @param consultation the owning consultation
      * @return true if any order has settled=false (blocks deceased approval)
      */
+    /*
+     * Collect all bill uids for a consultation: the fee bill + all child-order bills.
+     * Used by approveDeceased (F5) to pass to BillingCommands.approveInvoicesForBills.
+     * Legacy PatientResource.java:5884-5887 approves every invoice linked to the consultation.
+     */
+    private List<String> collectConsultationBillUids(Consultation consultation) {
+        List<String> uids = new ArrayList<>();
+        uids.add(consultation.getPatientBillUid());
+        for (LabTest lt : labTestRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            uids.add(lt.getPatientBillUid());
+        }
+        for (Radiology r : radiologyRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            uids.add(r.getPatientBillUid());
+        }
+        for (Procedure p : procedureRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            uids.add(p.getPatientBillUid());
+        }
+        for (Prescription rx : prescriptionRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+            uids.add(rx.getPatientBillUid());
+        }
+        return uids;
+    }
+
     private boolean hasUnsettledOrdersForDeceasedGate(Consultation consultation) {
         // Check all four order types for settled=false
         return hasUnsettledLabTests(consultation)

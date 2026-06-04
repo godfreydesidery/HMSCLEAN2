@@ -309,17 +309,11 @@ class PrescriptionService implements PrescriptionPort {
     /**
      * {@inheritDoc}
      *
-     * <p>Guard: status must be NOT-GIVEN.
+     * <p>Guard: status must be NOT-GIVEN (only a pending prescription can be deleted).
      *
-     * <p><strong>DEFERRED — credit-note seam:</strong>
-     * If the bill has already been PAID (CASH-OPD paid at cashier), a credit-note should be
-     * raised. The billing module does not yet publish a cancel/credit-note command via
-     * {@code billing.api}. Until the seam lands:
-     * <ul>
-     *   <li>The prescription IS deleted (correct for the common unpaid case).</li>
-     *   <li>No credit-note is raised for already-PAID bills.</li>
-     * </ul>
-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     * <p>Cancels the prescription bill via {@code BillingCommands.cancelCharge} (F6, inc-05
+     * adversarial-review fix). If the bill has already been PAID, a PENDING credit-note is
+     * raised automatically by the billing module. Reference label: "Deleted prescription".
      */
     @Override
     @Transactional
@@ -329,8 +323,10 @@ class PrescriptionService implements PrescriptionPort {
             throw new InvalidPatientOperationException(
                     "Only a pending prescription can be deleted");
         }
-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
-        // not yet published in billing.api; see PrescriptionService javadoc).
+        // Cancel the bill + refund/credit-note if already paid (F6 — review fix).
+        // Legacy credit-notes paid prescriptions on delete (PatientResource.java parity).
+        // Reference label "Deleted prescription".
+        billingCommands.cancelCharge(p.getPatientBillUid(), "Deleted prescription", ctx);
         prescriptionRepository.delete(p);
         auditRecorder.record(AUDIT_ENTITY, prescriptionUid, AuditAction.DELETE,
                 ctx.actorUsername());
@@ -430,14 +426,14 @@ class PrescriptionService implements PrescriptionPort {
 
     /**
      * Duplicate guard — consultation path.
-     * Verbatim legacy message: "Duplicate medicine is not allowed for this encounter"
-     * (PatientServiceImpl.java parity — same-medicine-same-consultation → throw).
+     * Verbatim legacy message: "Duplicate drug is not allowed. Consider editing qty"
+     * (PatientResource.java:2110 — same-medicine-same-consultation → throw).
      */
     private void guardNoDuplicateOnConsultation(Consultation consultation, String medicineUid) {
         if (prescriptionRepository.existsByConsultationAndMedicineUid(
                 consultation, medicineUid)) {
             throw new InvalidPatientOperationException(
-                    "Duplicate medicine is not allowed for this encounter");
+                    "Duplicate drug is not allowed. Consider editing qty");
         }
     }
 
@@ -450,14 +446,15 @@ class PrescriptionService implements PrescriptionPort {
      * implementation uses the dedicated {@code existsByNonConsultationAndMedicineUid} query
      * so the duplicate rule evaluates correctly for OUTSIDER prescriptions.
      *
-     * <p>Same verbatim message as the consultation path.
+     * <p>Verbatim legacy message: "Duplicate drug is not allowed. Consider editing qty"
+     * (PatientResource.java:2117).
      */
     private void guardNoDuplicateOnNonConsultation(NonConsultation nonConsultation,
                                                     String medicineUid) {
         if (prescriptionRepository.existsByNonConsultationAndMedicineUid(
                 nonConsultation, medicineUid)) {
             throw new InvalidPatientOperationException(
-                    "Duplicate medicine is not allowed for this encounter");
+                    "Duplicate drug is not allowed. Consider editing qty");
         }
     }
 

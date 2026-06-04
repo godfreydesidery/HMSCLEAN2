@@ -475,12 +475,13 @@ class LabTestService implements LabTestPort {
         long count = attachmentRepository.countByLabTest(lt);
 
         if (!lt.canAttach(count)) {
+            // Legacy order (PatientServiceImpl.java:2829,2833): status check first, then cap.
             if (lt.getStatus() != LabTestStatus.COLLECTED) {
                 throw new InvalidPatientOperationException(
-                        "Lab test must be collected before adding attachments");
+                        "Can only attach for collected tests");
             }
             throw new InvalidPatientOperationException(
-                    "Maximum of 5 attachments allowed per lab test");
+                    "Can not add more than 5 attachments");
         }
 
         LabTestAttachment attachment = LabTestAttachment.create(lt, request.name(),

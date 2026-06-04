@@ -165,7 +165,7 @@ class PrescriptionIT extends AbstractIntegrationTest {
                         .content(prescribeBody(medUid, "1.0")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Duplicate medicine is not allowed for this encounter"));
+                        .value("Duplicate drug is not allowed. Consider editing qty"));
     }
 
     // =========================================================================
@@ -194,7 +194,7 @@ class PrescriptionIT extends AbstractIntegrationTest {
                         .content(prescribeBody(medUid, "3.0")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Duplicate medicine is not allowed for this encounter"));
+                        .value("Duplicate drug is not allowed. Consider editing qty"));
     }
 
     // =========================================================================
@@ -252,14 +252,16 @@ class PrescriptionIT extends AbstractIntegrationTest {
         String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
         String rxUid = prescribe(consultUid, medUid, "10.0");
 
+        // 7 < balance(10): legacy under-issue guard fires first → "Invalid issue value"
+        // (legacy PatientResource.java:3221 — balance > issued). The "You can only issue the
+        // prescribed qty" guard (3224) only fires for an over-balance-but-not-full issue.
         mockMvc.perform(
                         post(RX_BASE + "/uid/" + rxUid + "/issue")
                                 .header("Authorization", "Bearer " + adminToken)
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(issueBody("7.0", null)))  // 7 != 10
+                                .content(issueBody("7.0", null)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail")
-                        .value("You can only issue the prescribed qty"));
+                .andExpect(jsonPath("$.detail").value("Invalid issue value"));
     }
 
     // =========================================================================
@@ -274,14 +276,16 @@ class PrescriptionIT extends AbstractIntegrationTest {
         String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
         String rxUid = prescribe(consultUid, medUid, "4.0");
 
-        // 99 > balance=4 → "Invalid issue value"
+        // 99 is neither <=0 nor < balance(4), so the under-issue guard passes; the all-or-nothing
+        // guard then fires because 99 != qty(4) → "You can only issue the prescribed qty"
+        // (legacy PatientResource.java:3224).
         mockMvc.perform(
                         post(RX_BASE + "/uid/" + rxUid + "/issue")
                                 .header("Authorization", "Bearer " + adminToken)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(issueBody("99.0", null)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail").value("Invalid issue value"));
+                .andExpect(jsonPath("$.detail").value("You can only issue the prescribed qty"));
     }
 
     // =========================================================================
@@ -310,7 +314,8 @@ class PrescriptionIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(issueBody("2.0", null)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.detail").value("not a pending prescription"));
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not issue medicine. Prescription is not a pending prescription"));
     }
 
     // =========================================================================
@@ -702,7 +707,13 @@ class PrescriptionIT extends AbstractIntegrationTest {
                 .get("uid").asText();
     }
 
-    /** Seed a service price via the masterdata REST API. */
+    /**
+     * Seed a service price via the masterdata REST API.
+     *
+     * <p>QA-07: each per-test price uses a unique, tag'd serviceUid so it is always a fresh
+     * CREATE (201). Asserting {@code isCreated()} instead of {@code is2xxSuccessful()} prevents
+     * a silent 409 (duplicate key conflict) from being swallowed and masking a broken price seed.
+     */
     private void seedPrice(String planUid, String kind, String serviceUid,
                            String amount, boolean covered) throws Exception {
         String planVal = planUid    != null ? "\"" + planUid + "\"" : "null";
@@ -715,7 +726,7 @@ class PrescriptionIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().is2xxSuccessful());
+                .andExpect(status().isCreated());
     }
 
     private String seedConsultation(String tag, PaymentMode mode, String planUid,
