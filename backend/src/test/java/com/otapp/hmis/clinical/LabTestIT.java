@@ -10,6 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.otapp.hmis.billing.domain.BillStatus;
+import com.otapp.hmis.billing.domain.PatientBillRepository;
+import com.otapp.hmis.billing.domain.PatientCreditNoteRepository;
+import com.otapp.hmis.billing.domain.PatientPaymentDetailRepository;
+import com.otapp.hmis.billing.domain.PaymentDetailStatus;
 import com.otapp.hmis.billing.domain.PaymentMode;
 import com.otapp.hmis.clinical.domain.Consultation;
 import com.otapp.hmis.clinical.domain.ConsultationRepository;
@@ -69,6 +74,9 @@ class LabTestIT extends AbstractIntegrationTest {
     @Autowired ConsultationRepository   consultationRepository;
     @Autowired NonConsultationRepository nonConsultationRepository;
     @Autowired LabTestRepository        labTestRepository;
+    @Autowired PatientBillRepository    billRepository;
+    @Autowired PatientPaymentDetailRepository paymentDetailRepository;
+    @Autowired PatientCreditNoteRepository    creditNoteRepository;
     @Autowired BusinessDayService       businessDayService;
     @Autowired DataSource               dataSource;
 
@@ -373,7 +381,70 @@ class LabTestIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Only a pending lab test can be deleted"));
+                        .value("Could not delete, only a PENDING lab test can be deleted"));
+    }
+
+    // =========================================================================
+    // C1 (ITEM1): deleting a PENDING lab test whose bill was already PAID raises the
+    // credit-note reversal via billing.api.cancelCharge — bill→CANCELED, payment→REFUNDED,
+    // a PENDING PatientCreditNote (ref "Canceled lab test") for the full amount.
+    // (Legacy PatientResource.java:2922-2961; soft-flag + CR-10 fix per the ratified standard.)
+    // =========================================================================
+
+    @Test
+    void delete_paidPendingLabTest_reversesBill_refunds_raisesCreditNote() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        // CASH order so a real billable PatientBill exists and can be paid at the cashier.
+        seedPrice(null, "LAB_TEST", labTypeUid, "2500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+
+        // Order → PENDING; capture the order's real bill uid from the DTO.
+        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
+        String labUid  = orderNode.get("uid").asText();
+        String billUid = orderNode.get("patientBillUid").asText();
+        assertThat(billUid).isNotBlank();
+
+        // Pay the bill at the cashier → PatientPaymentDetail RECEIVED, bill PAID.
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billUids\":[\"" + billUid + "\"],"
+                                + "\"tenderedTotal\":{\"amount\":2500.00,\"currency\":\"TZS\"},"
+                                + "\"paymentMode\":\"CASH\"}"))
+                .andExpect(status().isCreated());
+        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
+                .isEqualTo(PaymentDetailStatus.RECEIVED);
+
+        // Delete the still-PENDING lab test → seam fires.
+        mockMvc.perform(delete(LAB_BASE + "/uid/" + labUid)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+
+        // Order row gone.
+        assertThat(labTestRepository.findByUid(labUid)).isEmpty();
+
+        // Bill soft-canceled (NOT hard-deleted — ratified deviation).
+        assertThat(billRepository.findByUid(billUid).orElseThrow().getStatus())
+                .as("deleted lab test's bill must be CANCELED").isEqualTo(BillStatus.CANCELED);
+
+        // Payment refunded (soft, kept).
+        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
+                .as("RECEIVED payment must flip to REFUNDED").isEqualTo(PaymentDetailStatus.REFUNDED);
+
+        // A PENDING credit-note for this bill, full amount, legacy reference label.
+        boolean creditNoteRaised = creditNoteRepository.findAll().stream()
+                .anyMatch(cn -> billUid.equals(cn.getPatientBillUid())
+                        && "Canceled lab test".equals(cn.getReference()));
+        assertThat(creditNoteRaised)
+                .as("a PENDING credit-note (ref 'Canceled lab test') must be raised for the paid bill")
+                .isTrue();
     }
 
     // =========================================================================

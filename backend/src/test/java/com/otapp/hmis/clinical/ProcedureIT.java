@@ -403,7 +403,7 @@ class ProcedureIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Only a pending procedure order can be deleted"));
+                        .value("Could not delete, only a PENDING procedure can be deleted"));
     }
 
     // =========================================================================

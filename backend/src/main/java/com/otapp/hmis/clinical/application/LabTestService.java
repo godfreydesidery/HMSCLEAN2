@@ -106,6 +106,8 @@ class LabTestService implements LabTestPort {
     private final LabTestMapper               labTestMapper;
 
     private static final String AUDIT_ENTITY      = "clinical.LabTest";
+    /** Legacy credit-note reference for a deleted lab test (PatientResource.java:2936). */
+    private static final String REF_CANCEL_LAB_TEST = "Canceled lab test";
     private static final String AUDIT_ATTACHMENT  = "clinical.LabTestAttachment";
 
     // =========================================================================
@@ -418,20 +420,23 @@ class LabTestService implements LabTestPort {
     // =========================================================================
 
     /**
-     * Hard-delete a PENDING lab test order.
+     * Hard-delete a PENDING lab test order, reversing its bill (inc-06A C1, ITEM1).
      *
-     * <p>Guard: status must be PENDING (else 422 "Only a pending lab test can be deleted").
+     * <p>Guard: status must be PENDING (else 422, legacy verbatim
+     * "Could not delete, only a PENDING lab test can be deleted",
+     * PatientResource.java:2917-2919).
      *
-     * <p><strong>DEFERRED — credit-note seam:</strong>
-     * If the bill has already been PAID (CASH-OPD paid at cashier before specimen collected),
-     * a credit-note should be raised in billing. The billing module does not yet publish a
-     * cancel/credit-note command via {@code billing.api}. This is the same deferral as C2's
-     * cancel-consultation credit-note gap. Until the seam lands:
-     * <ul>
-     *   <li>The lab test IS deleted (correct for the common unpaid case).</li>
-     *   <li>No credit-note is raised for already-PAID bills.</li>
-     * </ul>
-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     * <p><strong>Bill reversal (credit-note seam — now wired):</strong>
+     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
+     * SAME transaction (propagation REQUIRED) with the legacy reference label
+     * {@value #REF_CANCEL_LAB_TEST}. The published {@code billing.api} command reproduces the
+     * legacy reversal: soft-cancel the bill (→ CANCELED), and ONLY when a RECEIVED payment
+     * existed, refund it (RECEIVED → REFUNDED) and raise a PENDING {@code PatientCreditNote}
+     * for the full bill amount; the invoice detail is detached and the parent invoice deleted
+     * only when empty (the CR-10 fix — the legacy {@code j=j++} always-delete bug is NOT
+     * reproduced). The legacy hard-delete of the bill/payment rows is NOT reproduced (the
+     * ratified soft-flag standard supersedes it). The clinical ORDER row is still hard-deleted
+     * (matches legacy for the order entity). Legacy: PatientResource.java:2912-2965.
      *
      * @param labTestUid the ULID of the lab test to delete
      * @param ctx        transaction audit context
@@ -443,11 +448,12 @@ class LabTestService implements LabTestPort {
 
         if (lt.getStatus() != LabTestStatus.PENDING) {
             throw new InvalidPatientOperationException(
-                    "Only a pending lab test can be deleted");
+                    "Could not delete, only a PENDING lab test can be deleted");
         }
 
-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
-        // not yet published in billing.api; see LabTestService javadoc).
+        // Reverse the bill (soft-cancel + RECEIVED→credit-note) BEFORE deleting the order row,
+        // inside this transaction (ITEM1; legacy PatientResource.java:2922-2961).
+        billingCommands.cancelCharge(lt.getPatientBillUid(), REF_CANCEL_LAB_TEST, ctx);
 
         labTestRepository.delete(lt);
         auditRecorder.record(AUDIT_ENTITY, labTestUid, AuditAction.DELETE, ctx.actorUsername());

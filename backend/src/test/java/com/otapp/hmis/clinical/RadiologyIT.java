@@ -386,7 +386,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Only a pending radiology order can be deleted"));
+                        .value("Could not delete, only a PENDING radiology can be deleted"));
     }
 
     // =========================================================================

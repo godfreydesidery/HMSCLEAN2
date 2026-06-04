@@ -106,6 +106,8 @@ class RadiologyService implements RadiologyPort {
     private final RadiologyMapper               radiologyMapper;
 
     private static final String AUDIT_ENTITY     = "clinical.Radiology";
+    /** Legacy credit-note reference for a deleted radiology (PatientResource.java:3436). */
+    private static final String REF_CANCEL_RADIOLOGY = "Canceled radiology";
     private static final String AUDIT_ATTACHMENT = "clinical.RadiologyAttachment";
 
     // =========================================================================
@@ -372,9 +374,13 @@ class RadiologyService implements RadiologyPort {
      *
      * <p>Guard: status must be PENDING (else 422 "Only a pending radiology order can be deleted").
      *
-     * <p><strong>DEFERRED — credit-note seam:</strong>
-     * Same deferral as LabTestService — no credit-note raised for already-PAID bills.
-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     * <p><strong>Bill reversal (credit-note seam — now wired, inc-06A C1, ITEM1):</strong>
+     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
+     * SAME transaction with the legacy reference label {@value #REF_CANCEL_RADIOLOGY}: soft-cancel
+     * the bill (→ CANCELED), and ONLY when a RECEIVED payment existed, refund it and raise a
+     * PENDING credit-note for the full bill amount (CR-10 fix applied — parent invoice deleted
+     * only when empty; the legacy hard-delete of bill/payment is NOT reproduced). The clinical
+     * ORDER row is still hard-deleted. Legacy: PatientResource.java:3418-3471.
      */
     @Override
     @Transactional
@@ -383,11 +389,11 @@ class RadiologyService implements RadiologyPort {
 
         if (r.getStatus() != RadiologyStatus.PENDING) {
             throw new InvalidPatientOperationException(
-                    "Only a pending radiology order can be deleted");
+                    "Could not delete, only a PENDING radiology can be deleted");
         }
 
-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
-        // not yet published in billing.api; mirrors LabTestService deferral).
+        // Reverse the bill BEFORE deleting the order row (ITEM1; legacy 3431-3467).
+        billingCommands.cancelCharge(r.getPatientBillUid(), REF_CANCEL_RADIOLOGY, ctx);
 
         radiologyRepository.delete(r);
         auditRecorder.record(AUDIT_ENTITY, radiologyUid, AuditAction.DELETE, ctx.actorUsername());
