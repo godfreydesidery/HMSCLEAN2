@@ -795,12 +795,22 @@ class LabTestIT extends AbstractIntegrationTest {
     // =========================================================================
 
     @Test
-    void saveResult_andAddReport_whenCollected() throws Exception {
+    void saveResult_andAddReport_billGated() throws Exception {
         String tag = uniq();
         String labTypeUid = createLabTestType(tag);
         seedPrice(null, "LAB_TEST", labTypeUid, "4200.00", true);
         String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
-        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Order via raw endpoint to capture the bill uid (CASH → bill UNPAID).
+        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
+        String labUid  = orderNode.get("uid").asText();
+        String billUid = orderNode.get("patientBillUid").asText();
 
         // Accept → Collect
         mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
@@ -810,7 +820,7 @@ class LabTestIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
 
-        // saveResult
+        // saveResult (COLLECTED gate, unchanged)
         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/result")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -819,7 +829,24 @@ class LabTestIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.result").value("Positive"))
                 .andExpect(jsonPath("$.status").value("COLLECTED"));
 
-        // addReport
+        // addReport BEFORE payment → 422 bill-gate (legacy parity, C5).
+        mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Should be blocked\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
+
+        // Pay the bill at the cashier → bill PAID.
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billUids\":[\"" + billUid + "\"],"
+                                + "\"tenderedTotal\":{\"amount\":4200.00,\"currency\":\"TZS\"},"
+                                + "\"paymentMode\":\"CASH\"}"))
+                .andExpect(status().isCreated());
+
+        // addReport AFTER payment → 200 (bill PAID; order still COLLECTED, not VERIFIED).
         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)

@@ -588,6 +588,19 @@ public class Radiology extends AuditableEntity {
     }
 
     /**
+     * Add/update the radiologist report text without status change (inc-06A C5 / ITEM2).
+     *
+     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
+     * ONLY the {@code report} field, gated on the BILL status (not order status). The bill-gate is
+     * enforced in the service layer; this domain method just sets the field.
+     *
+     * @param report the report text to write / overwrite
+     */
+    public void addReport(String report) {
+        this.report = report;
+    }
+
+    /**
      * Mark as settled (clinical-local settlement flag).
      *
      * <p>Called by the billing→clinical settlement event seam when the CASH bill is PAID.

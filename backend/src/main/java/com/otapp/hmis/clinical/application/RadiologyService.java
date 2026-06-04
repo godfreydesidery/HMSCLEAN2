@@ -1,6 +1,7 @@
 package com.otapp.hmis.clinical.application;
 
 import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.billing.api.BillingQueries;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.api.SettlementPolicy;
@@ -11,6 +12,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.Consultation;
@@ -102,6 +104,7 @@ class RadiologyService implements RadiologyPort {
     private final NonConsultationRepository     nonConsultationRepository;
     private final RadiologyTypeLookup           radiologyTypeLookup;
     private final BillingCommands               billingCommands;
+    private final BillingQueries                billingQueries;
     private final AuditRecorder                 auditRecorder;
     private final RadiologyMapper               radiologyMapper;
 
@@ -388,6 +391,57 @@ class RadiologyService implements RadiologyPort {
         r.saveResult(request.result());
         auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
         return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Stand-alone add/update of the radiologist report (inc-06A C5 / ITEM2).
+     *
+     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
+     * ONLY the {@code report} field, gated on the BILL status ({@code PAID|COVERED|VERIFIED}) and
+     * INDEPENDENT of order status — verbatim 422 "Could not add report. Payment not verified"
+     * otherwise. As-built radiology previously wrote the report only inline at verify; this adds
+     * the dedicated bill-gated endpoint to match legacy.
+     *
+     * <p><strong>Post-VERIFIED amendment:</strong> per the ratified ITEM4 policy (audited-amend,
+     * C6), a post-VERIFIED change must go through the dedicated {@code amendReport} path (added in
+     * C6). This endpoint blocks a VERIFIED-order overwrite so the verified report is not silently
+     * mutated; until C6 lands a VERIFIED order's report is immutable via this path.
+     */
+    @Override
+    @Transactional
+    public RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
+                                  TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
+        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
+
+        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
+        if (r.getStatus() == RadiologyStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. A verified report can only be amended via the amend path");
+        }
+
+        r.addReport(request.report());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
+     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
+     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
+     * insufficient because a bill paid after order creation still shows {@code settled=false}.
+     *
+     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
+     */
+    private void requireBillPaidCoveredOrVerified(String billUid) {
+        BillStatus status = billingQueries.getBillStatus(billUid);
+        if (status != BillStatus.PAID && status != BillStatus.COVERED
+                && status != BillStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. Payment not verified");
+        }
     }
 
     // =========================================================================

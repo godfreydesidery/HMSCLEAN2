@@ -6,6 +6,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.RadiologyStatus;
@@ -259,6 +260,24 @@ public class RadiologyController {
             @RequestBody RadiologyResultRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return radiologyService.saveResult(radiologyUid, request, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Stand-alone bill-gated add_report (inc-06A C5 / ITEM2)
+    // POST /api/v1/clinical/radiologies/uid/{uid}/add-report
+    // =========================================================================
+
+    /**
+     * Add/update the radiologist report (legacy radiologies/add_report). Gated on the BILL status
+     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
+     * "Could not add report. Payment not verified" otherwise. Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/add-report")
+    public RadiologyDto addReport(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody RadiologyReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return radiologyService.addReport(radiologyUid, request, ctxFrom(jwt));
     }
 
     // =========================================================================

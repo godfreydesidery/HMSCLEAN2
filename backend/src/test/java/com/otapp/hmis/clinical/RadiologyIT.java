@@ -369,6 +369,48 @@ class RadiologyIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C5 (ITEM2): stand-alone bill-gated add_report. INSURANCE order (bill COVERED) →
+    // add_report writes the report at any order status; CASH order (bill UNPAID) → 422.
+    // =========================================================================
+
+    @Test
+    void addReport_insuranceCovered_writesReport_anyOrderStatus() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        // INSURANCE → bill COVERED → bill-gate passes without a cashier payment.
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING
+
+        // add_report on a PENDING order (no order-status guard — legacy parity).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Chest X-ray: no acute findings.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Chest X-ray: no acute findings."))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void addReport_cashUnpaid_422_paymentNotVerified() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "8000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // bill UNPAID
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Should be blocked\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
+    }
+
+    // =========================================================================
     // Hold: ACCEPTED → PENDING
     // =========================================================================
 

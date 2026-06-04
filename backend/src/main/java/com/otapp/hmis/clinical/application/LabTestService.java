@@ -1,6 +1,7 @@
 package com.otapp.hmis.clinical.application;
 
 import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.billing.api.BillingQueries;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.api.SettlementPolicy;
@@ -99,6 +100,7 @@ class LabTestService implements LabTestPort {
     private final NonConsultationRepository   nonConsultationRepository;
     private final LabTestTypeLookup           labTestTypeLookup;
     private final BillingCommands             billingCommands;
+    private final BillingQueries              billingQueries;
     private final AuditRecorder               auditRecorder;
     private final LabTestMapper               labTestMapper;
 
@@ -419,8 +421,18 @@ class LabTestService implements LabTestPort {
     }
 
     /**
-     * Add/update report text without status change. Allowed only when status == COLLECTED.
-     * Message: "Please collect the lab test first" (status guard parity).
+     * Add/update the report text without status change (inc-06A C5 / ITEM2 lab correction).
+     *
+     * <p>Reproduces legacy {@code lab_tests/add_report} (PatientResource.java:3381-3395): the gate
+     * is on the BILL status ({@code PAID|COVERED|VERIFIED}), NOT the order status — verbatim 422
+     * "Could not add report. Payment not verified" otherwise. This replaces the as-built
+     * COLLECTED order-status gate ("Please collect the lab test first"), which was not legacy parity.
+     *
+     * <p><strong>Post-VERIFIED amendment:</strong> the legacy gate allows overwriting the report
+     * even after the order is VERIFIED. Per the ratified ITEM4 policy (audited-amend, C6), a
+     * post-VERIFIED change must go through the dedicated {@code amendReport} path (added in C6);
+     * this endpoint blocks a VERIFIED-order overwrite so the verified report cannot be silently
+     * mutated. Until C6 lands, a VERIFIED order's report is immutable via this path.
      */
     @Override
     @Transactional
@@ -428,14 +440,35 @@ class LabTestService implements LabTestPort {
                                 TxAuditContext ctx) {
         LabTest lt = requireLabTest(labTestUid);
 
-        if (lt.getStatus() != LabTestStatus.COLLECTED) {
+        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
+        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
+
+        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
+        if (lt.getStatus() == LabTestStatus.VERIFIED) {
             throw new InvalidPatientOperationException(
-                    "Please collect the lab test first");
+                    "Could not add report. A verified report can only be amended via the amend path");
         }
 
         lt.addReport(request.report());
         auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
         return labTestMapper.toDto(lt);
+    }
+
+    /**
+     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
+     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
+     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
+     * insufficient because a bill paid after order creation still shows {@code settled=false}.
+     *
+     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
+     */
+    private void requireBillPaidCoveredOrVerified(String billUid) {
+        BillStatus status = billingQueries.getBillStatus(billUid);
+        if (status != BillStatus.PAID && status != BillStatus.COVERED
+                && status != BillStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. Payment not verified");
+        }
     }
 
     // =========================================================================

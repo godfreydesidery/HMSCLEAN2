@@ -5,6 +5,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.RadiologyStatus;
@@ -100,6 +101,14 @@ public interface RadiologyPort {
      */
     RadiologyDto saveResult(String radiologyUid, RadiologyResultRequest request,
                             TxAuditContext ctx);
+
+    /**
+     * Add/update the radiologist report (inc-06A C5 / ITEM2, legacy radiologies/add_report).
+     * Gated on the BILL status ({@code PAID|COVERED|VERIFIED}), independent of order status.
+     * Guard + bill-gate enforced in the service.
+     */
+    RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
+                           TxAuditContext ctx);
 
     // -------------------------------------------------------------------------
     // Delete
