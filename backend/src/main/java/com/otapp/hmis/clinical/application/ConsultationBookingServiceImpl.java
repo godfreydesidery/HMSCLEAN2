@@ -3,6 +3,7 @@ package com.otapp.hmis.clinical.application;
 import com.otapp.hmis.clinical.api.BookConsultationCommand;
 import com.otapp.hmis.clinical.api.ConsultationBookingService;
 import com.otapp.hmis.clinical.api.ConsultationDto;
+import com.otapp.hmis.clinical.api.ConsultationTransferCompletion;
 import com.otapp.hmis.clinical.domain.Consultation;
 import com.otapp.hmis.clinical.domain.ConsultationRepository;
 import com.otapp.hmis.shared.audit.AuditAction;
@@ -28,6 +29,14 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>{@code false} — CASH-OPD (must pay before {@code open_consultation})</li>
  * </ul>
  *
+ * <p><strong>Transfer-completion seam (inc-05 C3):</strong>
+ * Before persisting the new consultation, {@link ConsultationTransferCompletion#completePendingTransferOnRebook}
+ * is called. If a PENDING transfer exists for the patient and the target clinic matches the
+ * transfer's destination, the transfer is marked COMPLETED in the same transaction. If the
+ * target clinic does NOT match, an {@link com.otapp.hmis.shared.error.InvalidPatientOperationException}
+ * (422) is thrown, aborting the booking (PatientServiceImpl.java:431-435 — the completion seam).
+ * The seam runs with MANDATORY propagation — same tx as the caller.
+ *
  * <p>The audit entity-type string {@code "clinical.Consultation"} is the stable identifier
  * used in the audit trail. It moved from {@code "registration.Consultation"} (inc-03)
  * to {@code "clinical.Consultation"} with the ownership transfer (ADR-0022 D6). All NEW
@@ -35,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * may still carry {@code "registration.Consultation"} in the audit_logs table — they are not
  * backfilled (audit records are append-only per ADR-0007).
  *
- * <p>Legacy citation: PatientServiceImpl.java:494-511 (consultation creation in do_consultation).
+ * <p>Legacy citation: PatientServiceImpl.java:425-511 (do_consultation / consultation creation).
  */
 @Service
 @RequiredArgsConstructor
@@ -47,16 +56,31 @@ class ConsultationBookingServiceImpl implements ConsultationBookingService {
     private final ConsultationRepository consultationRepository;
     private final AuditRecorder auditRecorder;
     private final ConsultationMapper consultationMapper;
+    private final ConsultationTransferCompletion transferCompletion;
 
     /**
      * {@inheritDoc}
      *
      * <p>Runs in the caller's transaction (MANDATORY propagation — the registration
      * {@code sendToDoctor} transaction is the owner; ADR-0008 §4).
+     *
+     * <p>Transfer-completion seam: before creating the new consultation, checks for a PENDING
+     * transfer for the patient. If one exists and the target clinic matches the transfer's
+     * destination, the transfer is marked COMPLETED in the same transaction. If the clinic
+     * does NOT match, throws 422 to abort the booking (PatientServiceImpl.java:431-435).
      */
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public ConsultationDto book(BookConsultationCommand cmd, TxAuditContext ctx) {
+
+        // Transfer-completion seam (inc-05 C3, PatientServiceImpl.java:431-435).
+        // If a PENDING transfer exists for this patient, the target clinic MUST match its
+        // destination — else 422. On match: transfer is marked COMPLETED atomically here.
+        // If no pending transfer: no-op.
+        transferCompletion.completePendingTransferOnRebook(
+                cmd.patientUid(),
+                cmd.clinicUid(),
+                ctx.actorUsername());
 
         Consultation consultation = new Consultation(
                 cmd.patientUid(),

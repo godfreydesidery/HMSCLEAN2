@@ -285,6 +285,32 @@ public class Consultation extends AuditableEntity {
     }
 
     /**
+     * Mark this consultation TRANSFERED: IN_PROCESS → TRANSFERED.
+     *
+     * <p>Called by {@link com.otapp.hmis.clinical.application.ConsultationTransferService#raise}
+     * as the first step of raising a clinic-to-clinic transfer.
+     * Guard (status == IN_PROCESS) is verified by the service layer before calling this.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:2808 (set status TRANSFERED before saving
+     * the ConsultationTransfer row).
+     */
+    public void markTransferred() {
+        this.status = ConsultationStatus.TRANSFERED;
+    }
+
+    /**
+     * Revert a TRANSFERED consultation back to IN_PROCESS.
+     *
+     * <p>Called by {@link com.otapp.hmis.clinical.application.ConsultationTransferService#cancelByConsultation}
+     * when a pending transfer is canceled. The consultation returns to the active doctor-open
+     * state rather than PENDING (PatientServiceImpl.java:2824-2826 — the status is explicitly
+     * set to IN_PROCESS on cancel, NOT reverted to PENDING).
+     */
+    public void revertToInProcess() {
+        this.status = ConsultationStatus.IN_PROCESS;
+    }
+
+    /**
      * Reassign the clinician (e.g. doctor handover in queue — inc-05 extension point).
      * Guarded by application service (affiliation check).
      */
