@@ -26,9 +26,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * </ol>
  *
  * <p>Uses raw JDBC (not repositories) because the clinical entities are not yet mapped in C1.
- * The {@link com.otapp.hmis.registration.domain.ConsultationStatusConverter} round-trip is
- * exercised separately by the registration ITs (which create PENDING consultations) and will be
- * extended in C2 when the lifecycle transitions land.
+ * The {@link com.otapp.hmis.clinical.domain.ConsultationStatusConverter} round-trip is
+ * exercised separately by the registration ITs (which create PENDING consultations) and is
+ * now live in C2 (ADR-0022 — ownership transferred to clinical.domain).
  */
 class ClinicalSchemaIT extends AbstractIntegrationTest {
 

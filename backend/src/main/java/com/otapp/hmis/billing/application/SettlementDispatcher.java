@@ -30,7 +30,21 @@ public class SettlementDispatcher {
      */
     public void onBillPaid(PatientBill bill, TxAuditContext ctx) {
         bill.markSettled(ctx.timestamp());
-        // inc-05/06: also set the downstream encounter/order LOCAL settled flag here
-        // (billing -> encounter only; same tx; no async; no reverse edge).
+        // DEFERRED SEAM (inc-05 C2): when a CASH consultation bill is paid, the clinical
+        // module's Consultation.settled flag must also be flipped to true in this same tx.
+        //
+        // The chosen design (ADR-0022 D5, clinical-Consultation.java deferred note):
+        // billing publishes a Spring ApplicationEvent<ConsultationSettledEvent>(billUid)
+        // and the clinical module's ConsultationSettlementListener consumes it in the
+        // SAME transaction (TransactionPhase.BEFORE_COMMIT) to call
+        // consultationRepository.findByPatientBillUid(billUid).ifPresent(Consultation::markSettled).
+        //
+        // This keeps the direction billing→clinical (event consumer is in clinical, not here),
+        // avoids a billing→clinical method call (which would require billing to import clinical),
+        // and avoids a reverse clinical→billing edge. Implementation is deferred to the
+        // dedicated settlement-seam chunk (post-C2).
+        //
+        // Until then: INSURANCE/COVERED/NONE consultations work end-to-end (settled=true at
+        // booking). CASH-OPD open is correctly blocked (422 PAY_BEFORE_SERVICE) — legacy parity.
     }
 }

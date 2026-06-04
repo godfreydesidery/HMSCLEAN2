@@ -39,5 +39,6 @@
  * </ul>
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = {"shared", "billing :: api", "masterdata :: lookup", "iam :: lookup"})
+        allowedDependencies = {"shared", "billing :: api", "masterdata :: lookup", "iam :: lookup",
+                               "clinical :: api"})
 package com.otapp.hmis.registration;
