@@ -69,6 +69,12 @@ public interface LabTestPort {
     /** Reject: PENDING|ACCEPTED → REJECTED. Guard enforced in service. */
     LabTestDto reject(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
 
+    /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
+     */
+    LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
+
     /** Collect: ACCEPTED → COLLECTED. Guard enforced in service. */
     LabTestDto collect(String labTestUid, TxAuditContext ctx);
 

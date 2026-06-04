@@ -484,6 +484,23 @@ public class LabTest extends AuditableEntity {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
+     * sets ONLY {@code rejectComment}, with NO status change and NO audit-triplet re-stamp,
+     * re-callable any number of times. The legacy code applies no null/blank validation, so a
+     * null/empty comment is persisted verbatim.
+     *
+     * <p>Guard: caller must verify {@code status == REJECTED} before calling (distinct from
+     * {@link #reject} which requires PENDING|ACCEPTED).
+     *
+     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
+     */
+    public void updateRejectComment(String rejectComment) {
+        this.rejectComment = rejectComment;
+    }
+
+    /**
      * Collect specimen: ACCEPTED → COLLECTED.
      *
      * <p>Guard: caller must verify status == ACCEPTED before calling.

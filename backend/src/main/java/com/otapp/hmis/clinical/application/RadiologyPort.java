@@ -73,6 +73,13 @@ public interface RadiologyPort {
     RadiologyDto reject(String radiologyUid, RadiologyRejectRequest request, TxAuditContext ctx);
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
+     */
+    RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
+                                   TxAuditContext ctx);
+
+    /**
      * Verify: ACCEPTED → VERIFIED. Writes result/report/attachment blob.
      *
      * <p>Active path goes ACCEPTED → VERIFIED DIRECTLY (PatientResource.java:4280-4281).

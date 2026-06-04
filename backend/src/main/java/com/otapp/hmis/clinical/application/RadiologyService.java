@@ -294,6 +294,31 @@ class RadiologyService implements RadiologyPort {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
+     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, no status change.
+     *
+     * <p>Guard: status must be REJECTED, else 422 verbatim
+     * "Could not save. Only allowed for rejected tests". No null/blank validation.
+     */
+    @Override
+    @Transactional
+    public RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
+                                          TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.REJECTED) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Only allowed for rejected tests");
+        }
+
+        r.updateRejectComment(request.rejectComment());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
      * Verify: ACCEPTED → VERIFIED. Writes result/report/inline-attachment-blob.
      *
      * <p><strong>Active path: ACCEPTED → VERIFIED DIRECTLY</strong> (PatientResource.java:4280-4281).

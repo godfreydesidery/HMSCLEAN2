@@ -195,6 +195,21 @@ public class LabTestController {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
+     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
+     * Authenticated-only.
+     */
+    @PostMapping("/lab-tests/uid/{uid}/reject-comment")
+    public LabTestDto saveRejectComment(
+            @PathVariable("uid") String labTestUid,
+            @RequestBody(required = false) LabTestRejectRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        LabTestRejectRequest req = request != null ? request : new LabTestRejectRequest(null);
+        return labTestService.saveRejectComment(labTestUid, req, ctxFrom(jwt));
+    }
+
+    /**
      * Collect specimen: ACCEPTED → COLLECTED.
      * Guard: status must be ACCEPTED (else 422 "Please accept the lab test first").
      * Authenticated-only.

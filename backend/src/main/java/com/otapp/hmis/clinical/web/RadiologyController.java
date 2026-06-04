@@ -198,6 +198,21 @@ public class RadiologyController {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
+     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
+     * Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/reject-comment")
+    public RadiologyDto saveRejectComment(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody(required = false) RadiologyRejectRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        RadiologyRejectRequest req = request != null ? request : new RadiologyRejectRequest(null);
+        return radiologyService.saveRejectComment(radiologyUid, req, ctxFrom(jwt));
+    }
+
+    /**
      * Verify result: ACCEPTED → VERIFIED DIRECTLY. Writes result/report/inline-blob from body.
      *
      * <p><strong>Active path goes ACCEPTED → VERIFIED with NO collect step (CR-INC05-14).</strong>

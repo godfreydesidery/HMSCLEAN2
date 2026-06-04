@@ -515,6 +515,20 @@ public class Radiology extends AuditableEntity {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
+     * sets ONLY {@code rejectComment}, no status change, re-callable; no null/blank validation.
+     *
+     * <p>Guard: caller must verify {@code status == REJECTED} before calling.
+     *
+     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
+     */
+    public void updateRejectComment(String rejectComment) {
+        this.rejectComment = rejectComment;
+    }
+
+    /**
      * Verify the result: ACCEPTED → VERIFIED (PatientResource.java:4280-4281).
      *
      * <p><strong>Active path is ACCEPTED → VERIFIED DIRECTLY.</strong>

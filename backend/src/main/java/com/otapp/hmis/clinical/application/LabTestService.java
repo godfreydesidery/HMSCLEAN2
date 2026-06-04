@@ -64,13 +64,10 @@ import org.springframework.transaction.annotation.Transactional;
  * The clinical module NEVER reads billing bill status post-hoc (ADR-0008 §6, CR-INC05-01).
  * The cash-PAID→settled=true propagation is DEFERRED (same pattern as Consultation).
  *
- * <p><strong>DEFERRED — delete credit-note seam:</strong>
- * When a PENDING lab test is deleted, if the patient already PAID the bill (bill status == PAID),
- * a credit-note must be raised in the billing module. The billing module does not yet publish a
- * cancel/credit-note command via {@code billing.api}. Until that seam is published:
- * the lab test IS hard-deleted when PENDING (correct parity for the common case — unpaid);
- * the credit-note for already-PAID bills is NOT raised. A TODO marks this gap. The operational
- * risk is low: CASH labs are rarely paid before the specimen is even collected.
+ * <p><strong>Delete credit-note seam (wired, inc-06A C1):</strong>
+ * When a PENDING lab test is deleted, {@link BillingCommands#cancelCharge} reverses its bill in
+ * the same transaction — soft-cancel the bill and, only when a RECEIVED payment existed, refund
+ * it and raise a PENDING credit-note (reference "Canceled lab test"). See {@link #delete}.
  *
  * <p><strong>DEFERRED — admission lab path:</strong>
  * The {@code admissionUid} path is not implemented. Deferred to the Inpatient/Nursing increment.
@@ -300,6 +297,32 @@ class LabTestService implements LabTestPort {
         }
 
         lt.reject(request.rejectComment(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return labTestMapper.toDto(lt);
+    }
+
+    /**
+     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
+     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, with no status change.
+     *
+     * <p>Guard: status must be REJECTED, else 422 with verbatim
+     * "Could not save. Only allowed for rejected tests". No null/blank validation on the
+     * incoming comment (legacy persists null/empty as-is).
+     */
+    @Override
+    @Transactional
+    public LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request,
+                                        TxAuditContext ctx) {
+        LabTest lt = requireLabTest(labTestUid);
+
+        if (lt.getStatus() != LabTestStatus.REJECTED) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Only allowed for rejected tests");
+        }
+
+        lt.updateRejectComment(request.rejectComment());
         auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
         return labTestMapper.toDto(lt);
     }

@@ -316,6 +316,59 @@ class RadiologyIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C3 (ITEM3): save_reason_for_rejection — re-callable rejectComment edit on a
+    // REJECTED order; edit on a non-REJECTED order → 422 verbatim.
+    // =========================================================================
+
+    @Test
+    void saveRejectComment_onRejected_editsComment_reCallable() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Initial reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Corrected reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectComment").value("Corrected reason"));
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Second correction\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rejectComment").value("Second correction"));
+    }
+
+    @Test
+    void saveRejectComment_onNonRejected_422_verbatim() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING (not REJECTED)
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Should fail\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not save. Only allowed for rejected tests"));
+    }
+
+    // =========================================================================
     // Hold: ACCEPTED → PENDING
     // =========================================================================
 
