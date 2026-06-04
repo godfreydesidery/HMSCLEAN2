@@ -1,0 +1,3168 @@
+diff --git a/backend/src/main/java/com/otapp/hmis/billing/api/BillingCommands.java b/backend/src/main/java/com/otapp/hmis/billing/api/BillingCommands.java
+index cdb3799..c77c65f 100644
+--- a/backend/src/main/java/com/otapp/hmis/billing/api/BillingCommands.java
++++ b/backend/src/main/java/com/otapp/hmis/billing/api/BillingCommands.java
+@@ -46,6 +46,9 @@ public interface BillingCommands {
+      *   <li>"Canceled consultation" — cancel_consultation (PatientResource.java:644)</li>
+      *   <li>"Freed consultation" — free_consultation child-order cancel</li>
+      *   <li>"Deleted prescription" — deletePrescription (clinical parity)</li>
++     *   <li>"Canceled lab test" — deleteLabTest (PatientResource.java:2936)</li>
++     *   <li>"Canceled radiology" — deleteRadiology (PatientResource.java:3436)</li>
++     *   <li>"Canceled procedure" — deleteProcedure (PatientResource.java:3503)</li>
+      * </ul>
+      *
+      * <p>Parameters are Strings only — no billing domain type crosses the module boundary
+diff --git a/backend/src/main/java/com/otapp/hmis/billing/api/BillingQueries.java b/backend/src/main/java/com/otapp/hmis/billing/api/BillingQueries.java
+new file mode 100644
+index 0000000..d577326
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/billing/api/BillingQueries.java
+@@ -0,0 +1,37 @@
++package com.otapp.hmis.billing.api;
++
++import com.otapp.hmis.billing.domain.BillStatus;
++
++/**
++ * Narrow read-only cross-module query surface for the {@code billing} module (inc-06A C4, ITEM2/4).
++ *
++ * <p>Published in the {@code billing :: api} named interface alongside {@link BillingCommands}.
++ * Only the already-published {@link BillStatus} enum crosses the boundary — no new billing domain
++ * type is exposed (ADR-0008 §1 honoured).
++ *
++ * <p><strong>Why this seam exists (ADR-0008 §6 scoped relaxation):</strong>
++ * ADR-0008 §6 states the clinical module never reads billing bill-status post-hoc. That principle
++ * is RELAXED here NARROWLY for the legacy {@code add_report} bill-gate parity case ONLY
++ * (PatientResource.java:3183-3197 radiology, :3381-3395 lab): legacy reads the LIVE
++ * {@code PatientBill.status} and admits {@code PAID|COVERED|VERIFIED}. The clinical-local
++ * {@code settled} boolean is provably insufficient — it is captured at order-creation time and the
++ * cash-PAID→settled propagation is deferred, so a bill paid at the cashier AFTER the order was
++ * created still shows {@code settled=false}; a settled-flag gate would wrongly reject an
++ * {@code add_report} that legacy allows. Settlement gates (open_consultation, worklist filters)
++ * MUST keep using the local settled flag — this seam is for add_report bill-gating only.
++ *
++ * <p>This is a {@code clinical → billing::api} READ edge; clinical already depends on
++ * {@code billing::api} for {@link BillingCommands}, so no new module edge and no cycle
++ * (billing does not depend on clinical) — {@code ApplicationModules.verify()} stays green.
++ */
++public interface BillingQueries {
++
++    /**
++     * Read the current status of a bill by its public uid.
++     *
++     * @param billUid the ULID of the bill
++     * @return the bill's current {@link BillStatus}
++     * @throws com.otapp.hmis.shared.error.NotFoundException if no bill with that uid exists
++     */
++    BillStatus getBillStatus(String billUid);
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/billing/api/package-info.java b/backend/src/main/java/com/otapp/hmis/billing/api/package-info.java
+index 71f9970..d9c8cc8 100644
+--- a/backend/src/main/java/com/otapp/hmis/billing/api/package-info.java
++++ b/backend/src/main/java/com/otapp/hmis/billing/api/package-info.java
+@@ -3,8 +3,10 @@
+  * modules may reference (Spring Modulith, ADR-0001, ADR-0008, build-spec §4.1).
+  *
+  * <p>Exposes {@link com.otapp.hmis.billing.api.BillingCommands} (the cross-module API
+- * for recording clinical charges) and the associated request/result records.
+- * Downstream modules (Registration/inc-03, Clinical/inc-05) call
++ * for recording clinical charges) and the associated request/result records, plus
++ * {@link com.otapp.hmis.billing.api.BillingQueries} (a narrow read-only bill-status query
++ * added in inc-06A C4 for the legacy add_report bill-gate parity case — ADR-0008 §6 scoped
++ * relaxation). Downstream modules (Registration/inc-03, Clinical/inc-05) call
+  * {@code BillingCommands.recordClinicalCharge} in their own transaction.
+  *
+  * <p>Implementation is package-private in {@code billing.application}. Controllers and
+diff --git a/backend/src/main/java/com/otapp/hmis/billing/application/BillingQueriesImpl.java b/backend/src/main/java/com/otapp/hmis/billing/application/BillingQueriesImpl.java
+new file mode 100644
+index 0000000..4c03638
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/billing/application/BillingQueriesImpl.java
+@@ -0,0 +1,35 @@
++package com.otapp.hmis.billing.application;
++
++import com.otapp.hmis.billing.api.BillingQueries;
++import com.otapp.hmis.billing.domain.BillStatus;
++import com.otapp.hmis.billing.domain.PatientBillRepository;
++import com.otapp.hmis.shared.error.NotFoundException;
++import lombok.RequiredArgsConstructor;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Propagation;
++import org.springframework.transaction.annotation.Transactional;
++
++/**
++ * Package-private implementation of {@link BillingQueries} (inc-06A C4, ITEM2/4).
++ *
++ * <p>Intentionally package-private in {@code billing.application} — callers depend only on the
++ * {@link BillingQueries} interface from {@code billing.api}. Delegates to the existing
++ * {@link PatientBillRepository} read path.
++ *
++ * <p>{@code @Transactional(readOnly = true)} with propagation REQUIRED — the read runs inside the
++ * caller's (clinical) transaction. NOT {@code @PreAuthorize}-gated (authz at the caller's REST edge).
++ */
++@Service
++@RequiredArgsConstructor
++class BillingQueriesImpl implements BillingQueries {
++
++    private final PatientBillRepository patientBillRepository;
++
++    @Override
++    @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
++    public BillStatus getBillStatus(String billUid) {
++        return patientBillRepository.findByUid(billUid)
++                .orElseThrow(() -> new NotFoundException("Bill not found: " + billUid))
++                .getStatus();
++    }
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java b/backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java
+index d5ca60b..afe6ce7 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/ConsultationLifecycleService.java
+@@ -250,6 +250,14 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
+         // Legacy PatientResource.java:644 reference label: "Canceled consultation".
+         billingCommands.cancelCharge(c.getPatientBillUid(), REF_CANCEL_CONSULTATION, ctx);
+ 
++        // C2 (ITEM6): also cascade to any unsettled child-order bills (lab/radiology/procedure/
++        // prescription). Legacy cancel (PatientResource.java:434-494) removes PENDING child
++        // orders with UNPAID/null bills together with their bills; we soft-cancel each unsettled
++        // child bill via cancelCharge with the same "Canceled consultation" reference. (A PENDING
++        // consultation usually has no child orders yet, but reproducing the cascade is correct
++        // and harmless, and covers any edge case where orders exist.)
++        cancelUnsettledChildOrders(c, REF_CANCEL_CONSULTATION, ctx);
++
+         auditRecorder.record(AUDIT_ENTITY_CONSULTATION, c.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+ 
+         return consultationMapper.toDto(c);
+@@ -312,7 +320,7 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
+         // Legacy PatientResource.java:701-754 cancels UNPAID/null lab/radiology/procedure/
+         // prescription bills when the doctor frees the patient. Our settled=false flag is
+         // the local projection of "UNPAID" (CR-INC05-01). Reference label: "Freed consultation".
+-        cancelUnsettledChildOrders(c, ctx);
++        cancelUnsettledChildOrders(c, REF_FREED_CONSULTATION, ctx);
+ 
+         auditRecorder.record(AUDIT_ENTITY_CONSULTATION, c.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+ 
+@@ -409,38 +417,44 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
+     // -------------------------------------------------------------------------
+ 
+     /**
+-     * Cancel all unsettled child-order bills for the consultation (F6 — free path).
++     * Cancel all unsettled child-order bills for the consultation (inc-06A C2 / ITEM6).
+      *
+-     * <p>Legacy PatientResource.java:701-754: when the doctor frees a patient, any lab/
+-     * radiology/procedure/prescription bill that is still UNPAID (null or "UNPAID" in legacy)
+-     * is canceled + credit-noted. Our local settled=false flag is the UNPAID projection
+-     * (CR-INC05-01). Reference label "Freed consultation" is stamped on every credit note.
++     * <p>Legacy cancels UNPAID/null lab/radiology/procedure/prescription bills both when the
++     * doctor FREES a patient (PatientResource.java:701-754, reference "Freed consultation") and
++     * when a PENDING consultation is CANCELED (PatientResource.java:434-494, where PENDING
++     * child orders with UNPAID/null bills are removed together with their bills). Our local
++     * {@code settled=false} flag is the UNPAID projection (CR-INC05-01); the soft-cancel +
++     * RECEIVED→credit-note reversal is delegated to {@code billing.api.cancelCharge} (the
++     * ratified soft-flag standard supersedes the legacy hard-delete).
+      *
+-     * <p>Ordered: lab → radiology → procedure → prescription (legacy order).
++     * <p>Ordered: lab → radiology → procedure → prescription (legacy order). The
++     * {@code reference} label is stamped on every credit note ("Freed consultation" for the
++     * free path, "Canceled consultation" for the cancel path).
+      */
+-    private void cancelUnsettledChildOrders(Consultation consultation, TxAuditContext ctx) {
++    private void cancelUnsettledChildOrders(Consultation consultation, String reference,
++                                            TxAuditContext ctx) {
+         for (com.otapp.hmis.clinical.domain.LabTest lt :
+                 labTestRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+             if (!lt.isSettled()) {
+-                billingCommands.cancelCharge(lt.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
++                billingCommands.cancelCharge(lt.getPatientBillUid(), reference, ctx);
+             }
+         }
+         for (Radiology r :
+                 radiologyRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+             if (!r.isSettled()) {
+-                billingCommands.cancelCharge(r.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
++                billingCommands.cancelCharge(r.getPatientBillUid(), reference, ctx);
+             }
+         }
+         for (Procedure p :
+                 procedureRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+             if (!p.isSettled()) {
+-                billingCommands.cancelCharge(p.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
++                billingCommands.cancelCharge(p.getPatientBillUid(), reference, ctx);
+             }
+         }
+         for (Prescription rx :
+                 prescriptionRepository.findByConsultationOrderByCreatedAtAsc(consultation)) {
+             if (!rx.isSettled()) {
+-                billingCommands.cancelCharge(rx.getPatientBillUid(), REF_FREED_CONSULTATION, ctx);
++                billingCommands.cancelCharge(rx.getPatientBillUid(), reference, ctx);
+             }
+         }
+     }
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/FileDownload.java b/backend/src/main/java/com/otapp/hmis/clinical/application/FileDownload.java
+new file mode 100644
+index 0000000..3401b33
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/FileDownload.java
+@@ -0,0 +1,19 @@
++package com.otapp.hmis.clinical.application;
++
++/**
++ * Carries the file bytes and storage filename for a download response (inc-06A C7 / ITEM5).
++ *
++ * <p>Returned by {@link LabTestPort#downloadAttachment} and {@link RadiologyPort#downloadAttachment}
++ * so that the controller can build a {@code ResponseEntity<byte[]>} with the correct
++ * {@code Content-Disposition: inline; filename="<fileName>"} header without coupling the
++ * service layer to the web framework.
++ *
++ * <p>Legacy analogue: PatientResource.java:5960-6007 (lab download),
++ * PatientResource.java:6093-6140 (radiology download) — the legacy returns the bytes directly
++ * from the resource method; this record decouples the service from the response-building.
++ *
++ * @param fileName storage filename (used to set Content-Disposition and derive Content-Type)
++ * @param bytes    raw file bytes
++ */
++public record FileDownload(String fileName, byte[] bytes) {
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestMapper.java b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestMapper.java
+index 2da9933..d205443 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestMapper.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestMapper.java
+@@ -55,6 +55,10 @@ class LabTestMapper {
+                 lt.getTestRange(),
+                 lt.getLevel(),
+                 lt.getUnit(),
++                lt.getPriorReport(),
++                lt.getReportAmendedByUserUid(),
++                lt.getReportAmendedOnDayUid(),
++                lt.getReportAmendedAt(),
+                 lt.getOrderedByUserUid(),
+                 lt.getOrderedOnDayUid(),
+                 lt.getOrderedAt(),
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestPort.java b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestPort.java
+index 0916e02..e5f68f3 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestPort.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestPort.java
+@@ -69,6 +69,18 @@ public interface LabTestPort {
+     /** Reject: PENDING|ACCEPTED → REJECTED. Guard enforced in service. */
+     LabTestDto reject(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
+ 
++    /**
++     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
++     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
++     */
++    LabTestDto amendReport(String labTestUid, LabTestReportRequest request, TxAuditContext ctx);
++
++    /**
++     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
++     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
++     */
++    LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
++
+     /** Collect: ACCEPTED → COLLECTED. Guard enforced in service. */
+     LabTestDto collect(String labTestUid, TxAuditContext ctx);
+ 
+@@ -111,6 +123,37 @@ public interface LabTestPort {
+     LabTestAttachmentDto addAttachment(String labTestUid, LabTestAttachmentRequest request,
+                                        TxAuditContext ctx);
+ 
++    /**
++     * Upload a file attachment to a lab test (multipart path, inc-06A C7 / ITEM5).
++     *
++     * <p>Guard order (legacy-parity): (1) size cap → 422 "File exceeds maximum file size allowed";
++     * (2) status/count gate via {@code canAttach} → 422 verbatim messages. On success: stores
++     * bytes via {@link com.otapp.hmis.shared.storage.FileStoragePort}, persists the row with
++     * the generated storage filename, audit CREATE, returns 201 DTO.
++     *
++     * <p>Legacy citations: PatientServiceImpl.java:2823-2906 (upload), 2842-2844 (cap).
++     *
++     * @param labTestUid       owning lab test ULID
++     * @param bytes            raw file bytes extracted at the controller layer
++     * @param originalFilename client-supplied filename (used to derive extension only)
++     * @param name             optional display name for the attachment
++     * @param ctx              transaction audit context
++     * @return the created LabTestAttachmentDto (fileName is the opaque storage key)
++     */
++    LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes, String originalFilename,
++                                          String name, TxAuditContext ctx);
++
++    /**
++     * Download the bytes of an attachment (VERIFIED-gate, inc-06A C7 / ITEM5).
++     *
++     * <p>Guard: parent lab test must be VERIFIED (PatientResource.java:6021) —
++     * else 422 "Could not download. Lab test is not verified".
++     *
++     * @param attachmentUid the ULID of the attachment to download
++     * @return a {@link FileDownload} record with the storage filename and bytes
++     */
++    FileDownload downloadAttachment(String attachmentUid);
++
+     /** List attachments for a lab test. */
+     List<LabTestAttachmentDto> listAttachments(String labTestUid);
+ 
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestService.java b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestService.java
+index 6636193..fa4cc2b 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestService.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/LabTestService.java
+@@ -1,6 +1,7 @@
+ package com.otapp.hmis.clinical.application;
+ 
+ import com.otapp.hmis.billing.api.BillingCommands;
++import com.otapp.hmis.billing.api.BillingQueries;
+ import com.otapp.hmis.billing.api.ChargeRequest;
+ import com.otapp.hmis.billing.api.ChargeResult;
+ import com.otapp.hmis.billing.api.SettlementPolicy;
+@@ -30,6 +31,8 @@ import com.otapp.hmis.shared.audit.AuditRecorder;
+ import com.otapp.hmis.shared.domain.TxAuditContext;
+ import com.otapp.hmis.shared.error.InvalidPatientOperationException;
+ import com.otapp.hmis.shared.error.NotFoundException;
++import com.otapp.hmis.shared.storage.AttachmentStorageProperties;
++import com.otapp.hmis.shared.storage.FileStoragePort;
+ import java.math.BigDecimal;
+ import java.time.Instant;
+ import java.util.List;
+@@ -64,13 +67,10 @@ import org.springframework.transaction.annotation.Transactional;
+  * The clinical module NEVER reads billing bill status post-hoc (ADR-0008 §6, CR-INC05-01).
+  * The cash-PAID→settled=true propagation is DEFERRED (same pattern as Consultation).
+  *
+- * <p><strong>DEFERRED — delete credit-note seam:</strong>
+- * When a PENDING lab test is deleted, if the patient already PAID the bill (bill status == PAID),
+- * a credit-note must be raised in the billing module. The billing module does not yet publish a
+- * cancel/credit-note command via {@code billing.api}. Until that seam is published:
+- * the lab test IS hard-deleted when PENDING (correct parity for the common case — unpaid);
+- * the credit-note for already-PAID bills is NOT raised. A TODO marks this gap. The operational
+- * risk is low: CASH labs are rarely paid before the specimen is even collected.
++ * <p><strong>Delete credit-note seam (wired, inc-06A C1):</strong>
++ * When a PENDING lab test is deleted, {@link BillingCommands#cancelCharge} reverses its bill in
++ * the same transaction — soft-cancel the bill and, only when a RECEIVED payment existed, refund
++ * it and raise a PENDING credit-note (reference "Canceled lab test"). See {@link #delete}.
+  *
+  * <p><strong>DEFERRED — admission lab path:</strong>
+  * The {@code admissionUid} path is not implemented. Deferred to the Inpatient/Nursing increment.
+@@ -102,11 +102,20 @@ class LabTestService implements LabTestPort {
+     private final NonConsultationRepository   nonConsultationRepository;
+     private final LabTestTypeLookup           labTestTypeLookup;
+     private final BillingCommands             billingCommands;
++    private final BillingQueries              billingQueries;
+     private final AuditRecorder               auditRecorder;
+     private final LabTestMapper               labTestMapper;
++    /** Local-disk file storage (inc-06A C7 / ITEM5). */
++    private final FileStoragePort             fileStoragePort;
++    /** Max file size + base path config (inc-06A C7 / ITEM5). */
++    private final AttachmentStorageProperties storageProperties;
+ 
+     private static final String AUDIT_ENTITY      = "clinical.LabTest";
++    /** Legacy credit-note reference for a deleted lab test (PatientResource.java:2936). */
++    private static final String REF_CANCEL_LAB_TEST = "Canceled lab test";
+     private static final String AUDIT_ATTACHMENT  = "clinical.LabTestAttachment";
++    /** Storage prefix for lab test attachments (inc-06A C7; approved deviation from legacy "LT"+id+patientNo). */
++    private static final String STORAGE_PREFIX    = "LT";
+ 
+     // =========================================================================
+     // Order creation — consultation path
+@@ -302,6 +311,32 @@ class LabTestService implements LabTestPort {
+         return labTestMapper.toDto(lt);
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3).
++     *
++     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
++     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, with no status change.
++     *
++     * <p>Guard: status must be REJECTED, else 422 with verbatim
++     * "Could not save. Only allowed for rejected tests". No null/blank validation on the
++     * incoming comment (legacy persists null/empty as-is).
++     */
++    @Override
++    @Transactional
++    public LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request,
++                                        TxAuditContext ctx) {
++        LabTest lt = requireLabTest(labTestUid);
++
++        if (lt.getStatus() != LabTestStatus.REJECTED) {
++            throw new InvalidPatientOperationException(
++                    "Could not save. Only allowed for rejected tests");
++        }
++
++        lt.updateRejectComment(request.rejectComment());
++        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
++        return labTestMapper.toDto(lt);
++    }
++
+     /**
+      * Collect: ACCEPTED → COLLECTED.
+      *
+@@ -394,8 +429,18 @@ class LabTestService implements LabTestPort {
+     }
+ 
+     /**
+-     * Add/update report text without status change. Allowed only when status == COLLECTED.
+-     * Message: "Please collect the lab test first" (status guard parity).
++     * Add/update the report text without status change (inc-06A C5 / ITEM2 lab correction).
++     *
++     * <p>Reproduces legacy {@code lab_tests/add_report} (PatientResource.java:3381-3395): the gate
++     * is on the BILL status ({@code PAID|COVERED|VERIFIED}), NOT the order status — verbatim 422
++     * "Could not add report. Payment not verified" otherwise. This replaces the as-built
++     * COLLECTED order-status gate ("Please collect the lab test first"), which was not legacy parity.
++     *
++     * <p><strong>Post-VERIFIED amendment:</strong> the legacy gate allows overwriting the report
++     * even after the order is VERIFIED. Per the ratified ITEM4 policy (audited-amend, C6), a
++     * post-VERIFIED change must go through the dedicated {@code amendReport} path (added in C6);
++     * this endpoint blocks a VERIFIED-order overwrite so the verified report cannot be silently
++     * mutated. Until C6 lands, a VERIFIED order's report is immutable via this path.
+      */
+     @Override
+     @Transactional
+@@ -403,9 +448,13 @@ class LabTestService implements LabTestPort {
+                                 TxAuditContext ctx) {
+         LabTest lt = requireLabTest(labTestUid);
+ 
+-        if (lt.getStatus() != LabTestStatus.COLLECTED) {
++        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
++        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
++
++        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
++        if (lt.getStatus() == LabTestStatus.VERIFIED) {
+             throw new InvalidPatientOperationException(
+-                    "Please collect the lab test first");
++                    "Could not add report. A verified report can only be amended via the amend path");
+         }
+ 
+         lt.addReport(request.report());
+@@ -413,25 +462,72 @@ class LabTestService implements LabTestPort {
+         return labTestMapper.toDto(lt);
+     }
+ 
++    /**
++     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
++     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
++     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
++     * insufficient because a bill paid after order creation still shows {@code settled=false}.
++     *
++     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
++     */
++    private void requireBillPaidCoveredOrVerified(String billUid) {
++        BillStatus status = billingQueries.getBillStatus(billUid);
++        if (status != BillStatus.PAID && status != BillStatus.COVERED
++                && status != BillStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not add report. Payment not verified");
++        }
++    }
++
++    /**
++     * Amend the report of a VERIFIED lab test via the audited-amend path (inc-06A C6 / ITEM4).
++     *
++     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): a verified report may be
++     * changed ONLY here, which retains the prior narrative ({@code priorReport}) and stamps the
++     * amend audit triplet. Same bill-gate as {@link #addReport} ({@code PAID|COVERED|VERIFIED},
++     * read live via {@link BillingQueries}). Guard: status must be VERIFIED, else 422
++     * "Could not amend report. Lab test is not verified".
++     */
++    @Override
++    @Transactional
++    public LabTestDto amendReport(String labTestUid, LabTestReportRequest request,
++                                  TxAuditContext ctx) {
++        LabTest lt = requireLabTest(labTestUid);
++
++        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
++
++        if (lt.getStatus() != LabTestStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not amend report. Lab test is not verified");
++        }
++
++        lt.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
++        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
++        return labTestMapper.toDto(lt);
++    }
++
+     // =========================================================================
+     // Delete
+     // =========================================================================
+ 
+     /**
+-     * Hard-delete a PENDING lab test order.
++     * Hard-delete a PENDING lab test order, reversing its bill (inc-06A C1, ITEM1).
+      *
+-     * <p>Guard: status must be PENDING (else 422 "Only a pending lab test can be deleted").
++     * <p>Guard: status must be PENDING (else 422, legacy verbatim
++     * "Could not delete, only a PENDING lab test can be deleted",
++     * PatientResource.java:2917-2919).
+      *
+-     * <p><strong>DEFERRED — credit-note seam:</strong>
+-     * If the bill has already been PAID (CASH-OPD paid at cashier before specimen collected),
+-     * a credit-note should be raised in billing. The billing module does not yet publish a
+-     * cancel/credit-note command via {@code billing.api}. This is the same deferral as C2's
+-     * cancel-consultation credit-note gap. Until the seam lands:
+-     * <ul>
+-     *   <li>The lab test IS deleted (correct for the common unpaid case).</li>
+-     *   <li>No credit-note is raised for already-PAID bills.</li>
+-     * </ul>
+-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
++     * <p><strong>Bill reversal (credit-note seam — now wired):</strong>
++     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
++     * SAME transaction (propagation REQUIRED) with the legacy reference label
++     * {@value #REF_CANCEL_LAB_TEST}. The published {@code billing.api} command reproduces the
++     * legacy reversal: soft-cancel the bill (→ CANCELED), and ONLY when a RECEIVED payment
++     * existed, refund it (RECEIVED → REFUNDED) and raise a PENDING {@code PatientCreditNote}
++     * for the full bill amount; the invoice detail is detached and the parent invoice deleted
++     * only when empty (the CR-10 fix — the legacy {@code j=j++} always-delete bug is NOT
++     * reproduced). The legacy hard-delete of the bill/payment rows is NOT reproduced (the
++     * ratified soft-flag standard supersedes it). The clinical ORDER row is still hard-deleted
++     * (matches legacy for the order entity). Legacy: PatientResource.java:2912-2965.
+      *
+      * @param labTestUid the ULID of the lab test to delete
+      * @param ctx        transaction audit context
+@@ -443,11 +539,12 @@ class LabTestService implements LabTestPort {
+ 
+         if (lt.getStatus() != LabTestStatus.PENDING) {
+             throw new InvalidPatientOperationException(
+-                    "Only a pending lab test can be deleted");
++                    "Could not delete, only a PENDING lab test can be deleted");
+         }
+ 
+-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
+-        // not yet published in billing.api; see LabTestService javadoc).
++        // Reverse the bill (soft-cancel + RECEIVED→credit-note) BEFORE deleting the order row,
++        // inside this transaction (ITEM1; legacy PatientResource.java:2922-2961).
++        billingCommands.cancelCharge(lt.getPatientBillUid(), REF_CANCEL_LAB_TEST, ctx);
+ 
+         labTestRepository.delete(lt);
+         auditRecorder.record(AUDIT_ENTITY, labTestUid, AuditAction.DELETE, ctx.actorUsername());
+@@ -458,13 +555,13 @@ class LabTestService implements LabTestPort {
+     // =========================================================================
+ 
+     /**
+-     * Add an attachment to a lab test.
++     * Add an attachment (JSON path — the original endpoint; keeps existing tests green).
+      *
+      * <p>Guards (PatientServiceImpl.java:2828-2834):
+      * <ol>
+      *   <li>Lab test must exist (404).</li>
+-     *   <li>Status must be COLLECTED (422 "Lab test must be collected before adding attachments").</li>
+-     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed per lab test").</li>
++     *   <li>Status must be COLLECTED (422 "Can only attach for collected tests").</li>
++     *   <li>Attachment count must be less than 5 (422 "Can not add more than 5 attachments").</li>
+      * </ol>
+      */
+     @Override
+@@ -493,6 +590,86 @@ class LabTestService implements LabTestPort {
+         return labTestMapper.toAttachmentDto(saved);
+     }
+ 
++    /**
++     * Upload a file attachment via multipart (inc-06A C7 / ITEM5).
++     *
++     * <p><strong>Guard order (legacy-parity):</strong>
++     * <ol>
++     *   <li>Size cap: {@code bytes.length > maxFileSizeBytes} → 422 verbatim
++     *       "File exceeds maximum file size allowed"
++     *       (PatientServiceImpl.java:2842-2844).</li>
++     *   <li>Status/count gate via {@code canAttach} — same messages as {@link #addAttachment}.
++     *       The legacy gate checks status first then count; the same order is preserved here.</li>
++     * </ol>
++     *
++     * <p><strong>On success:</strong> stores bytes via {@link FileStoragePort} (prefix "LT"),
++     * persists the row with the generated opaque storage filename, audits CREATE, returns DTO.
++     *
++     * <p>Legacy citations: PatientServiceImpl.java:2823-2906 (upload), 2842-2844 (cap),
++     * 2828-2834 (status/count gate).
++     */
++    @Override
++    @Transactional
++    public LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes,
++                                                  String originalFilename, String name,
++                                                  TxAuditContext ctx) {
++        // (1) Size cap — legacy-parity (PatientServiceImpl.java:2842-2844).
++        if (bytes.length > storageProperties.maxFileSizeBytes()) {
++            throw new InvalidPatientOperationException(
++                    "File exceeds maximum file size allowed");
++        }
++
++        // (2) Status / count gate — same as addAttachment.
++        LabTest lt = requireLabTest(labTestUid);
++        long count = attachmentRepository.countByLabTest(lt);
++
++        if (!lt.canAttach(count)) {
++            if (lt.getStatus() != LabTestStatus.COLLECTED) {
++                throw new InvalidPatientOperationException(
++                        "Can only attach for collected tests");
++            }
++            throw new InvalidPatientOperationException(
++                    "Can not add more than 5 attachments");
++        }
++
++        // (3) Store bytes — generates opaque storage filename.
++        String storageName = fileStoragePort.store(bytes, originalFilename,
++                STORAGE_PREFIX, lt.getUid());
++
++        LabTestAttachment attachment = LabTestAttachment.create(lt, name, storageName);
++        LabTestAttachment saved = attachmentRepository.save(attachment);
++        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
++                ctx.actorUsername());
++
++        return labTestMapper.toAttachmentDto(saved);
++    }
++
++    /**
++     * Download the bytes of a lab test attachment (inc-06A C7 / ITEM5).
++     *
++     * <p>Guard: parent lab test must be VERIFIED (PatientResource.java:6021) —
++     * else 422 "Could not download. Lab test is not verified".
++     *
++     * <p>Reads bytes via {@link FileStoragePort#read}; a missing file throws
++     * {@link com.otapp.hmis.shared.error.NotFoundException} (→ 404) from the storage layer.
++     */
++    @Override
++    @Transactional(readOnly = true)
++    public FileDownload downloadAttachment(String attachmentUid) {
++        LabTestAttachment attachment = attachmentRepository.findByUid(attachmentUid)
++                .orElseThrow(() -> new NotFoundException(
++                        "Lab test attachment not found: " + attachmentUid));
++
++        LabTest lt = attachment.getLabTest();
++        if (lt.getStatus() != LabTestStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not download. Lab test is not verified");
++        }
++
++        byte[] bytes = fileStoragePort.read(attachment.getFileName());
++        return new FileDownload(attachment.getFileName(), bytes);
++    }
++
+     /**
+      * List all attachments for a lab test.
+      *
+@@ -512,8 +689,14 @@ class LabTestService implements LabTestPort {
+      * Delete an attachment.
+      *
+      * <p>Guard: blocked when parent lab test status == VERIFIED (order is finalized).
+-     * Message: "Cannot delete attachment from a verified lab test"
+-     * (PatientResource.java:6021 parity — VERIFIED gate).
++     * Verbatim legacy message: "Could not delete. Lab Test already verified"
++     * (PatientResource.java:6021-6022).
++     *
++     * <p><strong>Approved deviation:</strong> after the row is deleted, the backing file is
++     * also removed from disk via {@link FileStoragePort#delete} (best-effort — a missing file
++     * is ignored). The legacy does NOT unlink the disk file (PatientResource.java:6021-6022).
++     * Unlinking here prevents orphaned files on the storage volume; deviation is
++     * security-architect-approved and documented in {@link FileStoragePort#delete}.
+      */
+     @Override
+     @Transactional
+@@ -524,13 +707,18 @@ class LabTestService implements LabTestPort {
+ 
+         LabTest lt = attachment.getLabTest();
+         if (!lt.canDeleteAttachment()) {
++            // Verbatim legacy message (PatientResource.java:6021-6022).
+             throw new InvalidPatientOperationException(
+-                    "Cannot delete attachment from a verified lab test");
++                    "Could not delete. Lab Test already verified");
+         }
+ 
++        String fileName = attachment.getFileName();
+         attachmentRepository.delete(attachment);
+         auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
+                 ctx.actorUsername());
++
++        // Best-effort disk unlink (approved deviation — prevents orphaned files).
++        fileStoragePort.delete(fileName);
+     }
+ 
+     // =========================================================================
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/ProcedureService.java b/backend/src/main/java/com/otapp/hmis/clinical/application/ProcedureService.java
+index da0139f..654ebb9 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/ProcedureService.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/ProcedureService.java
+@@ -102,6 +102,8 @@ class ProcedureService implements ProcedurePort {
+     private final ProcedureMapper           procedureMapper;
+ 
+     private static final String AUDIT_ENTITY = "clinical.Procedure";
++    /** Legacy credit-note reference for a deleted procedure (PatientResource.java:3503). */
++    private static final String REF_CANCEL_PROCEDURE = "Canceled procedure";
+ 
+     // =========================================================================
+     // Order creation — consultation path
+@@ -332,9 +334,13 @@ class ProcedureService implements ProcedurePort {
+      * <p>Guard: status must be PENDING (else 422 "Only a pending procedure order can be deleted").
+      *
+      * <p><strong>DEFERRED — credit-note seam:</strong>
+-     * Same deferral as LabTestService / RadiologyService — no credit-note raised for
+-     * already-PAID bills. TODO: Wire billing cancel seam when billing.api publishes
+-     * CancelBillCommand.
++     * <p><strong>Bill reversal (credit-note seam — now wired, inc-06A C1, ITEM1):</strong>
++     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
++     * SAME transaction with the legacy reference label {@value #REF_CANCEL_PROCEDURE}: soft-cancel
++     * the bill (→ CANCELED), and ONLY when a RECEIVED payment existed, refund it and raise a
++     * PENDING credit-note for the full bill amount (CR-10 fix applied; legacy hard-delete of
++     * bill/payment NOT reproduced). The clinical ORDER row is still hard-deleted. Legacy:
++     * PatientResource.java:3473-3537.
+      */
+     @Override
+     @Transactional
+@@ -343,11 +349,11 @@ class ProcedureService implements ProcedurePort {
+ 
+         if (p.getStatus() != ProcedureStatus.PENDING) {
+             throw new InvalidPatientOperationException(
+-                    "Only a pending procedure order can be deleted");
++                    "Could not delete, only a PENDING procedure can be deleted");
+         }
+ 
+-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
+-        // not yet published in billing.api; mirrors LabTestService / RadiologyService deferral).
++        // Reverse the bill BEFORE deleting the order row (ITEM1; legacy 3486-3535).
++        billingCommands.cancelCharge(p.getPatientBillUid(), REF_CANCEL_PROCEDURE, ctx);
+ 
+         procedureRepository.delete(p);
+         auditRecorder.record(AUDIT_ENTITY, procedureUid, AuditAction.DELETE, ctx.actorUsername());
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyMapper.java b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyMapper.java
+index 54f5868..7c07bd5 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyMapper.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyMapper.java
+@@ -59,6 +59,10 @@ class RadiologyMapper {
+                 r.getResult(),
+                 r.getReport(),
+                 r.getDescription(),
++                r.getPriorReport(),
++                r.getReportAmendedByUserUid(),
++                r.getReportAmendedOnDayUid(),
++                r.getReportAmendedAt(),
+                 r.getAttachment() != null && r.getAttachment().length > 0,
+                 r.getOrderedByUserUid(),
+                 r.getOrderedOnDayUid(),
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyPort.java b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyPort.java
+index 79afc90..3f6145c 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyPort.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyPort.java
+@@ -5,6 +5,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyDto;
+ import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
++import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
+ import com.otapp.hmis.clinical.domain.RadiologyStatus;
+@@ -72,6 +73,13 @@ public interface RadiologyPort {
+     /** Reject: PENDING|ACCEPTED → REJECTED. Guard enforced in service. */
+     RadiologyDto reject(String radiologyUid, RadiologyRejectRequest request, TxAuditContext ctx);
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
++     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
++     */
++    RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
++                                   TxAuditContext ctx);
++
+     /**
+      * Verify: ACCEPTED → VERIFIED. Writes result/report/attachment blob.
+      *
+@@ -94,6 +102,21 @@ public interface RadiologyPort {
+     RadiologyDto saveResult(String radiologyUid, RadiologyResultRequest request,
+                             TxAuditContext ctx);
+ 
++    /**
++     * Add/update the radiologist report (inc-06A C5 / ITEM2, legacy radiologies/add_report).
++     * Gated on the BILL status ({@code PAID|COVERED|VERIFIED}), independent of order status.
++     * Guard + bill-gate enforced in the service.
++     */
++    RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
++                           TxAuditContext ctx);
++
++    /**
++     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
++     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
++     */
++    RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
++                             TxAuditContext ctx);
++
+     // -------------------------------------------------------------------------
+     // Delete
+     // -------------------------------------------------------------------------
+@@ -120,6 +143,38 @@ public interface RadiologyPort {
+     RadiologyAttachmentDto addAttachment(String radiologyUid, RadiologyAttachmentRequest request,
+                                          TxAuditContext ctx);
+ 
++    /**
++     * Upload a file attachment to a radiology order (multipart path, inc-06A C7 / ITEM5).
++     *
++     * <p>Guard order (legacy-parity): (1) size cap → 422 "File exceeds maximum file size allowed";
++     * (2) status/count gate via {@code canAttach} → 422 verbatim messages. On success: stores
++     * bytes via {@link com.otapp.hmis.shared.storage.FileStoragePort}, persists the row with
++     * the generated storage filename, audit CREATE, returns 201 DTO.
++     *
++     * <p>ACCEPTED gate for radiology — PatientServiceImpl.java:2922-2996.
++     *
++     * @param radiologyUid     owning radiology order ULID
++     * @param bytes            raw file bytes extracted at the controller layer
++     * @param originalFilename client-supplied filename (used to derive extension only)
++     * @param name             optional display name for the attachment
++     * @param ctx              transaction audit context
++     * @return the created RadiologyAttachmentDto (fileName is the opaque storage key)
++     */
++    RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
++                                            String originalFilename, String name,
++                                            TxAuditContext ctx);
++
++    /**
++     * Download the bytes of a radiology attachment (VERIFIED-gate, inc-06A C7 / ITEM5).
++     *
++     * <p>Guard: parent radiology order must be VERIFIED (PatientResource.java:6154) —
++     * else 422 "Could not download. Radiology is not verified".
++     *
++     * @param attachmentUid the ULID of the attachment to download
++     * @return a {@link FileDownload} record with the storage filename and bytes
++     */
++    FileDownload downloadAttachment(String attachmentUid);
++
+     /** List named attachments for a radiology order. */
+     List<RadiologyAttachmentDto> listAttachments(String radiologyUid);
+ 
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyService.java b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyService.java
+index 8a947e6..3185d76 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyService.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/RadiologyService.java
+@@ -1,6 +1,7 @@
+ package com.otapp.hmis.clinical.application;
+ 
+ import com.otapp.hmis.billing.api.BillingCommands;
++import com.otapp.hmis.billing.api.BillingQueries;
+ import com.otapp.hmis.billing.api.ChargeRequest;
+ import com.otapp.hmis.billing.api.ChargeResult;
+ import com.otapp.hmis.billing.api.SettlementPolicy;
+@@ -11,6 +12,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyDto;
+ import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
++import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
+ import com.otapp.hmis.clinical.domain.Consultation;
+@@ -29,6 +31,8 @@ import com.otapp.hmis.shared.audit.AuditRecorder;
+ import com.otapp.hmis.shared.domain.TxAuditContext;
+ import com.otapp.hmis.shared.error.InvalidPatientOperationException;
+ import com.otapp.hmis.shared.error.NotFoundException;
++import com.otapp.hmis.shared.storage.AttachmentStorageProperties;
++import com.otapp.hmis.shared.storage.FileStoragePort;
+ import java.math.BigDecimal;
+ import java.time.Instant;
+ import java.util.List;
+@@ -102,11 +106,20 @@ class RadiologyService implements RadiologyPort {
+     private final NonConsultationRepository     nonConsultationRepository;
+     private final RadiologyTypeLookup           radiologyTypeLookup;
+     private final BillingCommands               billingCommands;
++    private final BillingQueries                billingQueries;
+     private final AuditRecorder                 auditRecorder;
+     private final RadiologyMapper               radiologyMapper;
++    /** Local-disk file storage (inc-06A C7 / ITEM5). */
++    private final FileStoragePort               fileStoragePort;
++    /** Max file size + base path config (inc-06A C7 / ITEM5). */
++    private final AttachmentStorageProperties   storageProperties;
+ 
+     private static final String AUDIT_ENTITY     = "clinical.Radiology";
++    /** Legacy credit-note reference for a deleted radiology (PatientResource.java:3436). */
++    private static final String REF_CANCEL_RADIOLOGY = "Canceled radiology";
+     private static final String AUDIT_ATTACHMENT = "clinical.RadiologyAttachment";
++    /** Storage prefix for radiology attachments (inc-06A C7; approved deviation from legacy scheme). */
++    private static final String STORAGE_PREFIX   = "RAD";
+ 
+     // =========================================================================
+     // Order creation — consultation path
+@@ -291,6 +304,31 @@ class RadiologyService implements RadiologyPort {
+         return radiologyMapper.toDto(r);
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3).
++     *
++     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
++     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, no status change.
++     *
++     * <p>Guard: status must be REJECTED, else 422 verbatim
++     * "Could not save. Only allowed for rejected tests". No null/blank validation.
++     */
++    @Override
++    @Transactional
++    public RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
++                                          TxAuditContext ctx) {
++        Radiology r = requireRadiology(radiologyUid);
++
++        if (r.getStatus() != RadiologyStatus.REJECTED) {
++            throw new InvalidPatientOperationException(
++                    "Could not save. Only allowed for rejected tests");
++        }
++
++        r.updateRejectComment(request.rejectComment());
++        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
++        return radiologyMapper.toDto(r);
++    }
++
+     /**
+      * Verify: ACCEPTED → VERIFIED. Writes result/report/inline-attachment-blob.
+      *
+@@ -363,6 +401,82 @@ class RadiologyService implements RadiologyPort {
+         return radiologyMapper.toDto(r);
+     }
+ 
++    /**
++     * Stand-alone add/update of the radiologist report (inc-06A C5 / ITEM2).
++     *
++     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
++     * ONLY the {@code report} field, gated on the BILL status ({@code PAID|COVERED|VERIFIED}) and
++     * INDEPENDENT of order status — verbatim 422 "Could not add report. Payment not verified"
++     * otherwise. As-built radiology previously wrote the report only inline at verify; this adds
++     * the dedicated bill-gated endpoint to match legacy.
++     *
++     * <p><strong>Post-VERIFIED amendment:</strong> per the ratified ITEM4 policy (audited-amend,
++     * C6), a post-VERIFIED change must go through the dedicated {@code amendReport} path (added in
++     * C6). This endpoint blocks a VERIFIED-order overwrite so the verified report is not silently
++     * mutated; until C6 lands a VERIFIED order's report is immutable via this path.
++     */
++    @Override
++    @Transactional
++    public RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
++                                  TxAuditContext ctx) {
++        Radiology r = requireRadiology(radiologyUid);
++
++        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
++        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
++
++        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
++        if (r.getStatus() == RadiologyStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not add report. A verified report can only be amended via the amend path");
++        }
++
++        r.addReport(request.report());
++        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
++        return radiologyMapper.toDto(r);
++    }
++
++    /**
++     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
++     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
++     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
++     * insufficient because a bill paid after order creation still shows {@code settled=false}.
++     *
++     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
++     */
++    private void requireBillPaidCoveredOrVerified(String billUid) {
++        BillStatus status = billingQueries.getBillStatus(billUid);
++        if (status != BillStatus.PAID && status != BillStatus.COVERED
++                && status != BillStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not add report. Payment not verified");
++        }
++    }
++
++    /**
++     * Amend the report of a VERIFIED radiology order via the audited-amend path (inc-06A C6 / ITEM4).
++     *
++     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): retains the prior narrative
++     * and stamps the amend audit triplet. Same bill-gate as {@link #addReport}. Guard: status must
++     * be VERIFIED, else 422 "Could not amend report. Radiology is not verified".
++     */
++    @Override
++    @Transactional
++    public RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
++                                    TxAuditContext ctx) {
++        Radiology r = requireRadiology(radiologyUid);
++
++        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
++
++        if (r.getStatus() != RadiologyStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not amend report. Radiology is not verified");
++        }
++
++        r.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
++        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
++        return radiologyMapper.toDto(r);
++    }
++
+     // =========================================================================
+     // Delete
+     // =========================================================================
+@@ -372,9 +486,13 @@ class RadiologyService implements RadiologyPort {
+      *
+      * <p>Guard: status must be PENDING (else 422 "Only a pending radiology order can be deleted").
+      *
+-     * <p><strong>DEFERRED — credit-note seam:</strong>
+-     * Same deferral as LabTestService — no credit-note raised for already-PAID bills.
+-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
++     * <p><strong>Bill reversal (credit-note seam — now wired, inc-06A C1, ITEM1):</strong>
++     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
++     * SAME transaction with the legacy reference label {@value #REF_CANCEL_RADIOLOGY}: soft-cancel
++     * the bill (→ CANCELED), and ONLY when a RECEIVED payment existed, refund it and raise a
++     * PENDING credit-note for the full bill amount (CR-10 fix applied — parent invoice deleted
++     * only when empty; the legacy hard-delete of bill/payment is NOT reproduced). The clinical
++     * ORDER row is still hard-deleted. Legacy: PatientResource.java:3418-3471.
+      */
+     @Override
+     @Transactional
+@@ -383,11 +501,11 @@ class RadiologyService implements RadiologyPort {
+ 
+         if (r.getStatus() != RadiologyStatus.PENDING) {
+             throw new InvalidPatientOperationException(
+-                    "Only a pending radiology order can be deleted");
++                    "Could not delete, only a PENDING radiology can be deleted");
+         }
+ 
+-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
+-        // not yet published in billing.api; mirrors LabTestService deferral).
++        // Reverse the bill BEFORE deleting the order row (ITEM1; legacy 3431-3467).
++        billingCommands.cancelCharge(r.getPatientBillUid(), REF_CANCEL_RADIOLOGY, ctx);
+ 
+         radiologyRepository.delete(r);
+         auditRecorder.record(AUDIT_ENTITY, radiologyUid, AuditAction.DELETE, ctx.actorUsername());
+@@ -398,15 +516,13 @@ class RadiologyService implements RadiologyPort {
+     // =========================================================================
+ 
+     /**
+-     * Add a named file attachment to a radiology order.
++     * Add a named file attachment (JSON path — original endpoint; keeps existing tests green).
+      *
+      * <p>Guards (PatientServiceImpl.java:2928-2933):
+      * <ol>
+      *   <li>Radiology order must exist (404).</li>
+-     *   <li>Status must be ACCEPTED (422 "Radiology order must be accepted before adding
+-     *       attachments"). NOTE: ACCEPTED gate — different from lab COLLECTED gate.</li>
+-     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed
+-     *       per radiology order").</li>
++     *   <li>Status must be ACCEPTED (422 "Can only attach for accepted tests").</li>
++     *   <li>Attachment count must be less than 5 (422 "Can not add more than 5 attachments").</li>
+      * </ol>
+      */
+     @Override
+@@ -420,10 +536,10 @@ class RadiologyService implements RadiologyPort {
+         if (!r.canAttach(count)) {
+             if (r.getStatus() != RadiologyStatus.ACCEPTED) {
+                 throw new InvalidPatientOperationException(
+-                        "Radiology order must be accepted before adding attachments");
++                        "Can only attach for accepted tests");
+             }
+             throw new InvalidPatientOperationException(
+-                    "Maximum of 5 attachments allowed per radiology order");
++                    "Can not add more than 5 attachments");
+         }
+ 
+         RadiologyAttachment attachment = RadiologyAttachment.create(r, request.name(),
+@@ -434,6 +550,85 @@ class RadiologyService implements RadiologyPort {
+         return radiologyMapper.toAttachmentDto(saved);
+     }
+ 
++    /**
++     * Upload a file attachment via multipart (inc-06A C7 / ITEM5).
++     *
++     * <p><strong>Guard order (legacy-parity):</strong>
++     * <ol>
++     *   <li>Size cap: {@code bytes.length > maxFileSizeBytes} → 422 verbatim
++     *       "File exceeds maximum file size allowed"
++     *       (PatientServiceImpl.java:2940-2942).</li>
++     *   <li>Status/count gate via {@code canAttach} — same messages as {@link #addAttachment}.
++     *       ACCEPTED gate for radiology (PatientServiceImpl.java:2931-2933).</li>
++     * </ol>
++     *
++     * <p><strong>On success:</strong> stores bytes via {@link FileStoragePort} (prefix "RAD"),
++     * persists the row with the generated opaque storage filename, audits CREATE, returns DTO.
++     *
++     * <p>Legacy citations: PatientServiceImpl.java:2922-2996 (upload), 2940-2942 (cap),
++     * 2928-2933 (status/count gate).
++     */
++    @Override
++    @Transactional
++    public RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
++                                                    String originalFilename, String name,
++                                                    TxAuditContext ctx) {
++        // (1) Size cap — legacy-parity (PatientServiceImpl.java:2940-2942).
++        if (bytes.length > storageProperties.maxFileSizeBytes()) {
++            throw new InvalidPatientOperationException(
++                    "File exceeds maximum file size allowed");
++        }
++
++        // (2) Status / count gate — ACCEPTED gate for radiology.
++        Radiology r = requireRadiology(radiologyUid);
++        long count = attachmentRepository.countByRadiology(r);
++
++        if (!r.canAttach(count)) {
++            if (r.getStatus() != RadiologyStatus.ACCEPTED) {
++                throw new InvalidPatientOperationException(
++                        "Can only attach for accepted tests");
++            }
++            throw new InvalidPatientOperationException(
++                    "Can not add more than 5 attachments");
++        }
++
++        // (3) Store bytes — generates opaque storage filename.
++        String storageName = fileStoragePort.store(bytes, originalFilename,
++                STORAGE_PREFIX, r.getUid());
++
++        RadiologyAttachment attachment = RadiologyAttachment.create(r, name, storageName);
++        RadiologyAttachment saved = attachmentRepository.save(attachment);
++        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
++                ctx.actorUsername());
++        return radiologyMapper.toAttachmentDto(saved);
++    }
++
++    /**
++     * Download the bytes of a radiology attachment (inc-06A C7 / ITEM5).
++     *
++     * <p>Guard: parent radiology order must be VERIFIED (PatientResource.java:6154) —
++     * else 422 "Could not download. Radiology is not verified".
++     *
++     * <p>Reads bytes via {@link FileStoragePort#read}; a missing file throws
++     * {@link com.otapp.hmis.shared.error.NotFoundException} (→ 404) from the storage layer.
++     */
++    @Override
++    @Transactional(readOnly = true)
++    public FileDownload downloadAttachment(String attachmentUid) {
++        RadiologyAttachment attachment = attachmentRepository.findByUid(attachmentUid)
++                .orElseThrow(() -> new NotFoundException(
++                        "Radiology attachment not found: " + attachmentUid));
++
++        Radiology r = attachment.getRadiology();
++        if (r.getStatus() != RadiologyStatus.VERIFIED) {
++            throw new InvalidPatientOperationException(
++                    "Could not download. Radiology is not verified");
++        }
++
++        byte[] bytes = fileStoragePort.read(attachment.getFileName());
++        return new FileDownload(attachment.getFileName(), bytes);
++    }
++
+     /**
+      * List all named attachments for a radiology order.
+      *
+@@ -452,7 +647,13 @@ class RadiologyService implements RadiologyPort {
+      * Delete a named attachment.
+      *
+      * <p>Guard: blocked when parent radiology order status == VERIFIED (order is finalized).
+-     * Message: "Cannot delete attachment from a verified radiology order".
++     * Verbatim legacy message: "Could not delete. Radiology already verified"
++     * (PatientResource.java:6154-6156).
++     *
++     * <p><strong>Approved deviation:</strong> after the row is deleted, the backing file is
++     * also removed from disk via {@link FileStoragePort#delete} (best-effort — a missing file
++     * is ignored). The legacy does NOT unlink the disk file. Deviation is
++     * security-architect-approved; see {@link FileStoragePort#delete}.
+      */
+     @Override
+     @Transactional
+@@ -463,13 +664,18 @@ class RadiologyService implements RadiologyPort {
+ 
+         Radiology r = attachment.getRadiology();
+         if (!r.canDeleteAttachment()) {
++            // Verbatim legacy message (PatientResource.java:6154-6156).
+             throw new InvalidPatientOperationException(
+-                    "Cannot delete attachment from a verified radiology order");
++                    "Could not delete. Radiology already verified");
+         }
+ 
++        String fileName = attachment.getFileName();
+         attachmentRepository.delete(attachment);
+         auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
+                 ctx.actorUsername());
++
++        // Best-effort disk unlink (approved deviation — prevents orphaned files).
++        fileStoragePort.delete(fileName);
+     }
+ 
+     // =========================================================================
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/dto/LabTestDto.java b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/LabTestDto.java
+index 37d8b87..cbf2ccc 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/dto/LabTestDto.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/LabTestDto.java
+@@ -32,6 +32,11 @@ public record LabTestDto(
+         String testRange,
+         String level,
+         String unit,
++        // Report-amendment audit (inc-06A C6 / ITEM4)
++        String priorReport,
++        String reportAmendedByUserUid,
++        String reportAmendedOnDayUid,
++        Instant reportAmendedAt,
+         // Lifecycle audit
+         String orderedByUserUid,
+         String orderedOnDayUid,
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyDto.java b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyDto.java
+index 04ccce3..d9d8f1c 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyDto.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyDto.java
+@@ -40,6 +40,11 @@ public record RadiologyDto(
+         String result,
+         String report,
+         String description,
++        // Report-amendment audit (inc-06A C6 / ITEM4)
++        String priorReport,
++        String reportAmendedByUserUid,
++        String reportAmendedOnDayUid,
++        Instant reportAmendedAt,
+         /**
+          * Indicates whether the inline attachment blob is set on this radiology row.
+          * The raw bytes are not included in the DTO — use a dedicated download endpoint.
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyReportRequest.java b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyReportRequest.java
+new file mode 100644
+index 0000000..1d95f19
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/clinical/application/dto/RadiologyReportRequest.java
+@@ -0,0 +1,14 @@
++package com.otapp.hmis.clinical.application.dto;
++
++/**
++ * Request body for the radiology stand-alone {@code add_report} (inc-06A C5 / ITEM2).
++ *
++ * <p>Writes ONLY the {@code report} field on the radiology row, gated on the BILL status
++ * ({@code PAID|COVERED|VERIFIED}) and independent of order status — reproducing legacy
++ * {@code radiologies/add_report} (PatientResource.java:3183-3197).
++ */
++public record RadiologyReportRequest(
++        /** The radiologist report text to write / overwrite. */
++        String report
++) {
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/domain/LabTest.java b/backend/src/main/java/com/otapp/hmis/clinical/domain/LabTest.java
+index cbb92ac..d9b26b9 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/domain/LabTest.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/domain/LabTest.java
+@@ -97,6 +97,23 @@ public class LabTest extends AuditableEntity {
+     @Column(name = "report", columnDefinition = "TEXT")
+     private String report;
+ 
++    /**
++     * Retained prior report narrative — set when a VERIFIED report is amended (inc-06A C6 / ITEM4).
++     * Append-only audit of the pre-amendment text; never overwritten back into {@code report}.
++     */
++    @Column(name = "prior_report", columnDefinition = "TEXT")
++    private String priorReport;
++
++    /** Amend audit triplet (inc-06A C6): who/when last amended a VERIFIED report. */
++    @Column(name = "report_amended_by_user_uid", length = 26)
++    private String reportAmendedByUserUid;
++
++    @Column(name = "report_amended_on_day_uid", length = 26)
++    private String reportAmendedOnDayUid;
++
++    @Column(name = "report_amended_at")
++    private Instant reportAmendedAt;
++
+     /** Optional description / clinical notes. */
+     @Column(name = "description", columnDefinition = "TEXT")
+     private String description;
+@@ -483,6 +500,23 @@ public class LabTest extends AuditableEntity {
+         this.acceptedAt = null;
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
++     *
++     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
++     * sets ONLY {@code rejectComment}, with NO status change and NO audit-triplet re-stamp,
++     * re-callable any number of times. The legacy code applies no null/blank validation, so a
++     * null/empty comment is persisted verbatim.
++     *
++     * <p>Guard: caller must verify {@code status == REJECTED} before calling (distinct from
++     * {@link #reject} which requires PENDING|ACCEPTED).
++     *
++     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
++     */
++    public void updateRejectComment(String rejectComment) {
++        this.rejectComment = rejectComment;
++    }
++
+     /**
+      * Collect specimen: ACCEPTED → COLLECTED.
+      *
+@@ -569,6 +603,30 @@ public class LabTest extends AuditableEntity {
+         this.report = report;
+     }
+ 
++    /**
++     * Amend the report narrative of an already-VERIFIED lab test (inc-06A C6 / ITEM4).
++     *
++     * <p>Ratified audited-amend policy: rather than reproduce the legacy silent post-VERIFIED
++     * overwrite (a patient-safety defect — no amendment trail), a VERIFIED report may be changed
++     * ONLY through this path, which RETAINS the current narrative into {@code priorReport}
++     * (append-only) and stamps the amend audit triplet ({@code reportAmendedBy/On/At}).
++     * {@code result}/{@code testRange}/{@code level}/{@code unit} stay immutable after VERIFIED.
++     *
++     * <p>Guard: caller must verify {@code status == VERIFIED} and the bill-gate before calling.
++     *
++     * @param newReport     the amended report text
++     * @param actorUserUid  user performing the amendment
++     * @param dayUid        current business day uid
++     * @param now           current instant
++     */
++    public void amendReport(String newReport, String actorUserUid, String dayUid, Instant now) {
++        this.priorReport = this.report;
++        this.report = newReport;
++        this.reportAmendedByUserUid = actorUserUid;
++        this.reportAmendedOnDayUid = dayUid;
++        this.reportAmendedAt = now;
++    }
++
+     /**
+      * Mark as settled (clinical-local settlement flag).
+      *
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/domain/Radiology.java b/backend/src/main/java/com/otapp/hmis/clinical/domain/Radiology.java
+index 029d5fb..e99236f 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/domain/Radiology.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/domain/Radiology.java
+@@ -120,6 +120,23 @@ public class Radiology extends AuditableEntity {
+     @Column(name = "report", columnDefinition = "TEXT")
+     private String report;
+ 
++    /**
++     * Retained prior report narrative — set when a VERIFIED report is amended (inc-06A C6 / ITEM4).
++     * Append-only audit of the pre-amendment text.
++     */
++    @Column(name = "prior_report", columnDefinition = "TEXT")
++    private String priorReport;
++
++    /** Amend audit triplet (inc-06A C6): who/when last amended a VERIFIED report. */
++    @Column(name = "report_amended_by_user_uid", length = 26)
++    private String reportAmendedByUserUid;
++
++    @Column(name = "report_amended_on_day_uid", length = 26)
++    private String reportAmendedOnDayUid;
++
++    @Column(name = "report_amended_at")
++    private Instant reportAmendedAt;
++
+     /** Optional description / clinical notes. */
+     @Column(name = "description", columnDefinition = "TEXT")
+     private String description;
+@@ -514,6 +531,20 @@ public class Radiology extends AuditableEntity {
+         this.acceptedAt = null;
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
++     *
++     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
++     * sets ONLY {@code rejectComment}, no status change, re-callable; no null/blank validation.
++     *
++     * <p>Guard: caller must verify {@code status == REJECTED} before calling.
++     *
++     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
++     */
++    public void updateRejectComment(String rejectComment) {
++        this.rejectComment = rejectComment;
++    }
++
+     /**
+      * Verify the result: ACCEPTED → VERIFIED (PatientResource.java:4280-4281).
+      *
+@@ -573,6 +604,40 @@ public class Radiology extends AuditableEntity {
+         this.result = result;
+     }
+ 
++    /**
++     * Add/update the radiologist report text without status change (inc-06A C5 / ITEM2).
++     *
++     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
++     * ONLY the {@code report} field, gated on the BILL status (not order status). The bill-gate is
++     * enforced in the service layer; this domain method just sets the field.
++     *
++     * @param report the report text to write / overwrite
++     */
++    public void addReport(String report) {
++        this.report = report;
++    }
++
++    /**
++     * Amend the report narrative of an already-VERIFIED radiology order (inc-06A C6 / ITEM4).
++     *
++     * <p>Ratified audited-amend policy: retains the current narrative into {@code priorReport}
++     * (append-only) and stamps the amend audit triplet. result stays immutable after VERIFIED.
++     *
++     * <p>Guard: caller must verify {@code status == VERIFIED} and the bill-gate before calling.
++     *
++     * @param newReport    the amended report text
++     * @param actorUserUid user performing the amendment
++     * @param dayUid       current business day uid
++     * @param now          current instant
++     */
++    public void amendReport(String newReport, String actorUserUid, String dayUid, Instant now) {
++        this.priorReport = this.report;
++        this.report = newReport;
++        this.reportAmendedByUserUid = actorUserUid;
++        this.reportAmendedOnDayUid = dayUid;
++        this.reportAmendedAt = now;
++    }
++
+     /**
+      * Mark as settled (clinical-local settlement flag).
+      *
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/web/LabTestController.java b/backend/src/main/java/com/otapp/hmis/clinical/web/LabTestController.java
+index 8dc7591..40bc2a6 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/web/LabTestController.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/web/LabTestController.java
+@@ -1,5 +1,6 @@
+ package com.otapp.hmis.clinical.web;
+ 
++import com.otapp.hmis.clinical.application.FileDownload;
+ import com.otapp.hmis.clinical.application.LabTestPort;
+ import com.otapp.hmis.clinical.application.dto.LabTestAttachmentDto;
+ import com.otapp.hmis.clinical.application.dto.LabTestAttachmentRequest;
+@@ -13,10 +14,16 @@ import com.otapp.hmis.clinical.domain.LabTestStatus;
+ import com.otapp.hmis.shared.domain.BusinessDayService;
+ import com.otapp.hmis.shared.domain.TxAuditContext;
+ import jakarta.validation.Valid;
++import java.io.IOException;
+ import java.time.Instant;
+ import java.util.List;
+ import lombok.RequiredArgsConstructor;
++import org.springframework.http.ContentDisposition;
++import org.springframework.http.HttpHeaders;
+ import org.springframework.http.HttpStatus;
++import org.springframework.http.MediaType;
++import org.springframework.http.MediaTypeFactory;
++import org.springframework.http.ResponseEntity;
+ import org.springframework.security.core.annotation.AuthenticationPrincipal;
+ import org.springframework.security.oauth2.jwt.Jwt;
+ import org.springframework.web.bind.annotation.DeleteMapping;
+@@ -27,8 +34,10 @@ import org.springframework.web.bind.annotation.PutMapping;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestMapping;
+ import org.springframework.web.bind.annotation.RequestParam;
++import org.springframework.web.bind.annotation.RequestPart;
+ import org.springframework.web.bind.annotation.ResponseStatus;
+ import org.springframework.web.bind.annotation.RestController;
++import org.springframework.web.multipart.MultipartFile;
+ 
+ /**
+  * REST controller for the LabTest aggregate (inc-05 C7).
+@@ -194,6 +203,21 @@ public class LabTestController {
+         return labTestService.reject(labTestUid, req, ctxFrom(jwt));
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3,
++     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
++     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
++     * Authenticated-only.
++     */
++    @PostMapping("/lab-tests/uid/{uid}/reject-comment")
++    public LabTestDto saveRejectComment(
++            @PathVariable("uid") String labTestUid,
++            @RequestBody(required = false) LabTestRejectRequest request,
++            @AuthenticationPrincipal Jwt jwt) {
++        LabTestRejectRequest req = request != null ? request : new LabTestRejectRequest(null);
++        return labTestService.saveRejectComment(labTestUid, req, ctxFrom(jwt));
++    }
++
+     /**
+      * Collect specimen: ACCEPTED → COLLECTED.
+      * Guard: status must be ACCEPTED (else 422 "Please accept the lab test first").
+@@ -252,8 +276,10 @@ public class LabTestController {
+     }
+ 
+     /**
+-     * Add/update report text without status change. Status must be COLLECTED.
+-     * Authenticated-only.
++     * Add/update report text without status change (inc-06A C5 / ITEM2). Gated on the BILL status
++     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
++     * "Could not add report. Payment not verified" otherwise. A VERIFIED order's report is
++     * immutable via this path; use {@code /amend-report}. Authenticated-only.
+      */
+     @PutMapping("/lab-tests/uid/{uid}/report")
+     public LabTestDto addReport(
+@@ -263,6 +289,19 @@ public class LabTestController {
+         return labTestService.addReport(labTestUid, request, ctxFrom(jwt));
+     }
+ 
++    /**
++     * Amend a VERIFIED lab test's report via the audited-amend path (inc-06A C6 / ITEM4).
++     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
++     * guard: status must be VERIFIED. Authenticated-only.
++     */
++    @PostMapping("/lab-tests/uid/{uid}/amend-report")
++    public LabTestDto amendReport(
++            @PathVariable("uid") String labTestUid,
++            @RequestBody LabTestReportRequest request,
++            @AuthenticationPrincipal Jwt jwt) {
++        return labTestService.amendReport(labTestUid, request, ctxFrom(jwt));
++    }
++
+     // =========================================================================
+     // Delete
+     // DELETE /api/v1/clinical/lab-tests/uid/{uid}
+@@ -328,6 +367,49 @@ public class LabTestController {
+         labTestService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+     }
+ 
++    // =========================================================================
++    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
++    // POST /api/v1/clinical/lab-tests/uid/{uid}/attachments/upload
++    // GET  /api/v1/clinical/lab-tests/attachments/uid/{attachmentUid}/download
++    // =========================================================================
++
++    /**
++     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
++     * "File exceeds maximum file size allowed"), then the COLLECTED status + max-5 gate.
++     * The bytes are stored on local disk; the row holds the opaque storage filename.
++     * Authenticated-only.
++     */
++    @PostMapping(path = "/lab-tests/uid/{uid}/attachments/upload",
++            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
++    @ResponseStatus(HttpStatus.CREATED)
++    public LabTestAttachmentDto uploadAttachment(
++            @PathVariable("uid") String labTestUid,
++            @RequestPart("file") MultipartFile file,
++            @RequestParam(value = "name", required = false) String name,
++            @AuthenticationPrincipal Jwt jwt) throws IOException {
++        return labTestService.uploadAttachment(
++                labTestUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
++    }
++
++    /**
++     * Download an attachment's bytes inline. Guard: parent lab test must be VERIFIED
++     * (else 422 "Could not download. Lab test is not verified"). Authenticated-only.
++     */
++    @GetMapping("/lab-tests/attachments/uid/{attachmentUid}/download")
++    public ResponseEntity<byte[]> downloadAttachment(
++            @PathVariable("attachmentUid") String attachmentUid,
++            @AuthenticationPrincipal Jwt jwt) {
++        FileDownload dl = labTestService.downloadAttachment(attachmentUid);
++        MediaType contentType = MediaTypeFactory.getMediaType(dl.fileName())
++                .orElse(MediaType.APPLICATION_OCTET_STREAM);
++        ContentDisposition disposition = ContentDisposition.inline()
++                .filename(dl.fileName()).build();
++        return ResponseEntity.ok()
++                .contentType(contentType)
++                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
++                .body(dl.bytes());
++    }
++
+     // =========================================================================
+     // Worklist
+     // GET /api/v1/clinical/lab-tests/worklist
+diff --git a/backend/src/main/java/com/otapp/hmis/clinical/web/RadiologyController.java b/backend/src/main/java/com/otapp/hmis/clinical/web/RadiologyController.java
+index ff8149c..9e4bf5d 100644
+--- a/backend/src/main/java/com/otapp/hmis/clinical/web/RadiologyController.java
++++ b/backend/src/main/java/com/otapp/hmis/clinical/web/RadiologyController.java
+@@ -1,21 +1,29 @@
+ package com.otapp.hmis.clinical.web;
+ 
++import com.otapp.hmis.clinical.application.FileDownload;
+ import com.otapp.hmis.clinical.application.RadiologyPort;
+ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentDto;
+ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyDto;
+ import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
++import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
+ import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
+ import com.otapp.hmis.clinical.domain.RadiologyStatus;
+ import com.otapp.hmis.shared.domain.BusinessDayService;
+ import com.otapp.hmis.shared.domain.TxAuditContext;
+ import jakarta.validation.Valid;
++import java.io.IOException;
+ import java.time.Instant;
+ import java.util.List;
+ import lombok.RequiredArgsConstructor;
++import org.springframework.http.ContentDisposition;
++import org.springframework.http.HttpHeaders;
+ import org.springframework.http.HttpStatus;
++import org.springframework.http.MediaType;
++import org.springframework.http.MediaTypeFactory;
++import org.springframework.http.ResponseEntity;
+ import org.springframework.security.core.annotation.AuthenticationPrincipal;
+ import org.springframework.security.oauth2.jwt.Jwt;
+ import org.springframework.web.bind.annotation.DeleteMapping;
+@@ -26,8 +34,10 @@ import org.springframework.web.bind.annotation.PutMapping;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestMapping;
+ import org.springframework.web.bind.annotation.RequestParam;
++import org.springframework.web.bind.annotation.RequestPart;
+ import org.springframework.web.bind.annotation.ResponseStatus;
+ import org.springframework.web.bind.annotation.RestController;
++import org.springframework.web.multipart.MultipartFile;
+ 
+ /**
+  * REST controller for the Radiology aggregate (inc-05 C8).
+@@ -197,6 +207,21 @@ public class RadiologyController {
+         return radiologyService.reject(radiologyUid, req, ctxFrom(jwt));
+     }
+ 
++    /**
++     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3,
++     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
++     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
++     * Authenticated-only.
++     */
++    @PostMapping("/radiologies/uid/{uid}/reject-comment")
++    public RadiologyDto saveRejectComment(
++            @PathVariable("uid") String radiologyUid,
++            @RequestBody(required = false) RadiologyRejectRequest request,
++            @AuthenticationPrincipal Jwt jwt) {
++        RadiologyRejectRequest req = request != null ? request : new RadiologyRejectRequest(null);
++        return radiologyService.saveRejectComment(radiologyUid, req, ctxFrom(jwt));
++    }
++
+     /**
+      * Verify result: ACCEPTED → VERIFIED DIRECTLY. Writes result/report/inline-blob from body.
+      *
+@@ -246,6 +271,37 @@ public class RadiologyController {
+         return radiologyService.saveResult(radiologyUid, request, ctxFrom(jwt));
+     }
+ 
++    // =========================================================================
++    // Stand-alone bill-gated add_report (inc-06A C5 / ITEM2)
++    // POST /api/v1/clinical/radiologies/uid/{uid}/add-report
++    // =========================================================================
++
++    /**
++     * Add/update the radiologist report (legacy radiologies/add_report). Gated on the BILL status
++     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
++     * "Could not add report. Payment not verified" otherwise. Authenticated-only.
++     */
++    @PostMapping("/radiologies/uid/{uid}/add-report")
++    public RadiologyDto addReport(
++            @PathVariable("uid") String radiologyUid,
++            @RequestBody RadiologyReportRequest request,
++            @AuthenticationPrincipal Jwt jwt) {
++        return radiologyService.addReport(radiologyUid, request, ctxFrom(jwt));
++    }
++
++    /**
++     * Amend a VERIFIED radiology report via the audited-amend path (inc-06A C6 / ITEM4).
++     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
++     * guard: status must be VERIFIED. Authenticated-only.
++     */
++    @PostMapping("/radiologies/uid/{uid}/amend-report")
++    public RadiologyDto amendReport(
++            @PathVariable("uid") String radiologyUid,
++            @RequestBody RadiologyReportRequest request,
++            @AuthenticationPrincipal Jwt jwt) {
++        return radiologyService.amendReport(radiologyUid, request, ctxFrom(jwt));
++    }
++
+     // =========================================================================
+     // Delete
+     // DELETE /api/v1/clinical/radiologies/uid/{uid}
+@@ -314,6 +370,48 @@ public class RadiologyController {
+         radiologyService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+     }
+ 
++    // =========================================================================
++    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
++    // POST /api/v1/clinical/radiologies/uid/{uid}/attachments/upload
++    // GET  /api/v1/clinical/radiologies/attachments/uid/{attachmentUid}/download
++    // =========================================================================
++
++    /**
++     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
++     * "File exceeds maximum file size allowed"), then the ACCEPTED status + max-5 gate.
++     * Bytes stored on local disk; the row holds the opaque storage filename. Authenticated-only.
++     */
++    @PostMapping(path = "/radiologies/uid/{uid}/attachments/upload",
++            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
++    @ResponseStatus(HttpStatus.CREATED)
++    public RadiologyAttachmentDto uploadAttachment(
++            @PathVariable("uid") String radiologyUid,
++            @RequestPart("file") MultipartFile file,
++            @RequestParam(value = "name", required = false) String name,
++            @AuthenticationPrincipal Jwt jwt) throws IOException {
++        return radiologyService.uploadAttachment(
++                radiologyUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
++    }
++
++    /**
++     * Download an attachment's bytes inline. Guard: parent radiology must be VERIFIED
++     * (else 422 "Could not download. Radiology is not verified"). Authenticated-only.
++     */
++    @GetMapping("/radiologies/attachments/uid/{attachmentUid}/download")
++    public ResponseEntity<byte[]> downloadAttachment(
++            @PathVariable("attachmentUid") String attachmentUid,
++            @AuthenticationPrincipal Jwt jwt) {
++        FileDownload dl = radiologyService.downloadAttachment(attachmentUid);
++        MediaType contentType = MediaTypeFactory.getMediaType(dl.fileName())
++                .orElse(MediaType.APPLICATION_OCTET_STREAM);
++        ContentDisposition disposition = ContentDisposition.inline()
++                .filename(dl.fileName()).build();
++        return ResponseEntity.ok()
++                .contentType(contentType)
++                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
++                .body(dl.bytes());
++    }
++
+     // =========================================================================
+     // Worklist
+     // GET /api/v1/clinical/radiologies/worklist
+diff --git a/backend/src/main/java/com/otapp/hmis/shared/storage/AttachmentStorageProperties.java b/backend/src/main/java/com/otapp/hmis/shared/storage/AttachmentStorageProperties.java
+new file mode 100644
+index 0000000..afd5fc3
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/shared/storage/AttachmentStorageProperties.java
+@@ -0,0 +1,59 @@
++package com.otapp.hmis.shared.storage;
++
++import java.nio.file.Path;
++import java.nio.file.Paths;
++import org.springframework.boot.context.properties.ConfigurationProperties;
++
++/**
++ * External configuration for the local-disk attachment storage (inc-06A C7 / ITEM5).
++ *
++ * <p>Bound from the {@code hmis.attachments} section of {@code application.yml}:
++ * <pre>
++ * hmis:
++ *   attachments:
++ *     base-path: ${HMIS_ATTACHMENTS_PATH:}
++ *     max-file-size-bytes: 10485760
++ * </pre>
++ *
++ * <p>If {@code basePath} is blank (the default for local-dev and tests that do not set
++ * {@code HMIS_ATTACHMENTS_PATH}), the implementation falls back to a JVM temp-dir
++ * subfolder so tests work without any external configuration.
++ *
++ * <p>{@code maxFileSizeBytes} defaults to {@code 10 485 760} (10 MiB), matching the legacy
++ * guard at PatientServiceImpl.java:2842-2844 (lab) and 2940-2942 (radiology).
++ *
++ * @param basePath         base directory for stored files; blank → temp-dir fallback
++ * @param maxFileSizeBytes maximum allowed upload size in bytes (default 10 MiB)
++ */
++@ConfigurationProperties(prefix = "hmis.attachments")
++public record AttachmentStorageProperties(
++        String basePath,
++        long maxFileSizeBytes) {
++
++    /** 10 MiB — verbatim legacy cap (PatientServiceImpl.java:2842). */
++    private static final long DEFAULT_MAX = 10_485_760L;
++
++    /**
++     * Compact canonical constructor: apply defaults when values are absent or zero.
++     */
++    public AttachmentStorageProperties {
++        if (maxFileSizeBytes <= 0) {
++            maxFileSizeBytes = DEFAULT_MAX;
++        }
++    }
++
++    /**
++     * Resolve the effective base path.
++     *
++     * <p>If {@code basePath} is blank, returns a deterministic subfolder under the
++     * system temp directory so that unit/integration tests work without any config.
++     *
++     * @return an absolute {@link Path} under which files will be stored
++     */
++    public Path effectiveBasePath() {
++        if (basePath == null || basePath.isBlank()) {
++            return Paths.get(System.getProperty("java.io.tmpdir"), "hmis-attachments");
++        }
++        return Paths.get(basePath);
++    }
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/shared/storage/FileStoragePort.java b/backend/src/main/java/com/otapp/hmis/shared/storage/FileStoragePort.java
+new file mode 100644
+index 0000000..8a0e08e
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/shared/storage/FileStoragePort.java
+@@ -0,0 +1,59 @@
++package com.otapp.hmis.shared.storage;
++
++/**
++ * Storage abstraction for clinical attachment files (inc-06A C7 / ITEM5).
++ *
++ * <p>Keeps the service layer free of I/O framework specifics. The default implementation is
++ * {@link LocalDiskFileStorage} (legacy-parity local-disk, owner-ratified). Object storage
++ * (MinIO / S3) is an approved future swap — only this interface changes.
++ *
++ * <p>Legacy analogue: PatientServiceImpl.java:2823-2906 (lab store), 2922-2996 (radiology
++ * store) — direct {@code FileOutputStream} to a configured base directory.
++ */
++public interface FileStoragePort {
++
++    /**
++     * Persist {@code bytes} under a server-generated storage filename derived from
++     * {@code originalFilename} and return that filename.
++     *
++     * <p>The returned filename is an opaque, globally-unique storage key (NOT the original
++     * client filename). It is what gets persisted in the {@code fileName} column of the
++     * attachment row and passed back to {@link #read} or {@link #delete} later.
++     *
++     * @param bytes            raw file bytes
++     * @param originalFilename the client-supplied filename (used only to derive the extension)
++     * @param prefix           short prefix for the generated name ("LT" for lab / "RAD" for
++     *                         radiology) — keeps the on-disk file vaguely human-sortable
++     * @param ownerUid         the UID of the owning order (lab test uid or radiology uid);
++     *                         embedded in the generated filename for traceability
++     * @return the generated storage filename (relative, no path separators)
++     * @throws com.otapp.hmis.shared.error.InvalidPatientOperationException if
++     *         {@code originalFilename} contains path-traversal sequences
++     */
++    String store(byte[] bytes, String originalFilename, String prefix, String ownerUid);
++
++    /**
++     * Read and return the bytes of a previously stored file.
++     *
++     * @param storageFilename the opaque name returned by {@link #store}
++     * @return the file bytes
++     * @throws com.otapp.hmis.shared.error.NotFoundException if the file does not exist on disk
++     * @throws com.otapp.hmis.shared.error.InvalidPatientOperationException if the filename
++     *         contains path-traversal sequences
++     */
++    byte[] read(String storageFilename);
++
++    /**
++     * Delete a previously stored file. This is a best-effort operation — if the file does not
++     * exist the call is a no-op (no exception thrown).
++     *
++     * <p>Approved deviation from legacy (PatientResource.java:6021-6022 does NOT unlink the
++     * disk file on attachment-row delete). Unlinking here prevents orphaned files from
++     * accumulating on the storage volume. Documented as security-architect-approved deviation.
++     *
++     * @param storageFilename the opaque name returned by {@link #store}
++     * @throws com.otapp.hmis.shared.error.InvalidPatientOperationException if the filename
++     *         contains path-traversal sequences
++     */
++    void delete(String storageFilename);
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/shared/storage/LocalDiskFileStorage.java b/backend/src/main/java/com/otapp/hmis/shared/storage/LocalDiskFileStorage.java
+new file mode 100644
+index 0000000..0a0b9ff
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/shared/storage/LocalDiskFileStorage.java
+@@ -0,0 +1,245 @@
++package com.otapp.hmis.shared.storage;
++
++import com.otapp.hmis.shared.error.InvalidPatientOperationException;
++import com.otapp.hmis.shared.error.NotFoundException;
++import java.io.IOException;
++import java.io.UncheckedIOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardOpenOption;
++import lombok.RequiredArgsConstructor;
++import lombok.extern.slf4j.Slf4j;
++import org.springframework.stereotype.Component;
++
++/**
++ * Local-disk implementation of {@link FileStoragePort} (inc-06A C7 / ITEM5).
++ *
++ * <p><strong>Storage layout:</strong> all files are written as flat files directly under
++ * the configured {@code hmis.attachments.base-path} directory. The directory is created on
++ * first use if absent. No sub-directory sharding is applied (legacy parity: the legacy writes
++ * directly under one configured directory, PatientServiceImpl.java:2823-2906).
++ *
++ * <p><strong>Generated filename scheme (approved deviation from legacy):</strong>
++ * {@code <prefix><ownerUid>-<nanoTime>.<ext>}
++ * where the extension is lower-cased and derived safely from the client filename.
++ * The legacy scheme embeds patient.getNo() (PatientServiceImpl.java:2856 "LT"+id+patientNo+...).
++ * That scheme is NOT reproduced here because: (a) the clinical module has no access to
++ * patientNo (a registration-module field), and (b) crossing into registration would create
++ * a prohibited module dependency (ADR-0008 §3). The opaque name is sufficient — only
++ * uniqueness is observable to the client.
++ *
++ * <p><strong>Path-traversal hardening (approved deviation):</strong> the legacy code performs
++ * raw string concatenation (PatientServiceImpl.java:2858 {@code basePath + fileName}).
++ * This implementation rejects any filename containing {@code ..}, {@code /}, or {@code \}
++ * by throwing {@link InvalidPatientOperationException}. Security-architect-approved.
++ *
++ * <p><strong>Read-missing:</strong> throws {@link NotFoundException} when the file does not
++ * exist on disk (patched to 404 by the global exception handler).
++ *
++ * <p><strong>Delete:</strong> best-effort; missing file is silently ignored (approved deviation
++ * from the legacy non-deletion, documented in {@link FileStoragePort#delete}).
++ *
++ * <p>Legacy citations:
++ * <ul>
++ *   <li>Lab storage:      PatientServiceImpl.java:2823-2906</li>
++ *   <li>Radiology storage: PatientServiceImpl.java:2922-2996</li>
++ *   <li>10 MiB cap:       PatientServiceImpl.java:2842-2844</li>
++ *   <li>Download:         PatientResource.java:5960-6007 (lab), 6093-6140 (radiology)</li>
++ * </ul>
++ */
++@Slf4j
++@Component
++@RequiredArgsConstructor
++public class LocalDiskFileStorage implements FileStoragePort {
++
++    private final AttachmentStorageProperties properties;
++
++    // =========================================================================
++    // Store
++    // =========================================================================
++
++    /**
++     * {@inheritDoc}
++     *
++     * <p>Generates a unique storage filename and writes the bytes atomically to disk. The
++     * base directory is created if it does not already exist.
++     */
++    @Override
++    public String store(byte[] bytes, String originalFilename, String prefix, String ownerUid) {
++        String storageName = generateStorageName(prefix, ownerUid, originalFilename);
++        Path basePath = ensureBaseDir();
++        Path target = basePath.resolve(storageName);
++        // resolve() + normalize() then verify the result is still inside basePath
++        target = target.normalize();
++        guardInsideBase(target, basePath);
++        try {
++            Files.write(target, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
++            log.debug("Stored attachment file: {}", storageName);
++        } catch (IOException e) {
++            throw new UncheckedIOException(
++                    "Failed to write attachment file: " + storageName, e);
++        }
++        return storageName;
++    }
++
++    // =========================================================================
++    // Read
++    // =========================================================================
++
++    /**
++     * {@inheritDoc}
++     *
++     * <p>Reads and returns all bytes from the stored file. Throws {@link NotFoundException}
++     * (→ HTTP 404) if the file is absent.
++     */
++    @Override
++    public byte[] read(String storageFilename) {
++        guardNoTraversal(storageFilename);
++        Path basePath = properties.effectiveBasePath();
++        Path target   = basePath.resolve(storageFilename).normalize();
++        guardInsideBase(target, basePath);
++        if (!Files.exists(target)) {
++            throw new NotFoundException("Attachment file not found: " + storageFilename);
++        }
++        try {
++            return Files.readAllBytes(target);
++        } catch (IOException e) {
++            throw new UncheckedIOException(
++                    "Failed to read attachment file: " + storageFilename, e);
++        }
++    }
++
++    // =========================================================================
++    // Delete (best-effort)
++    // =========================================================================
++
++    /**
++     * {@inheritDoc}
++     *
++     * <p>Silently ignores missing files. Path-traversal inputs are still rejected.
++     *
++     * <p><strong>Approved deviation:</strong> the legacy PatientResource.java:6021-6022
++     * does NOT unlink the disk file when deleting an attachment row. Unlinking here prevents
++     * orphaned files from accumulating. Security-architect-approved.
++     */
++    @Override
++    public void delete(String storageFilename) {
++        guardNoTraversal(storageFilename);
++        Path basePath = properties.effectiveBasePath();
++        Path target   = basePath.resolve(storageFilename).normalize();
++        guardInsideBase(target, basePath);
++        try {
++            boolean deleted = Files.deleteIfExists(target);
++            if (deleted) {
++                log.debug("Deleted attachment file: {}", storageFilename);
++            } else {
++                log.debug("Attachment file not found on disk (best-effort delete): {}",
++                        storageFilename);
++            }
++        } catch (IOException e) {
++            // Best-effort: log but do not propagate.
++            log.warn("Could not delete attachment file {} (best-effort): {}",
++                    storageFilename, e.getMessage());
++        }
++    }
++
++    // =========================================================================
++    // Private helpers
++    // =========================================================================
++
++    /**
++     * Generate a globally-unique storage filename.
++     *
++     * <p>Scheme: {@code <prefix><ownerUid>-<System.nanoTime()>.<ext>}
++     * <ul>
++     *   <li>{@code prefix} — "LT" or "RAD", passed by the caller.</li>
++     *   <li>{@code ownerUid} — the UID of the owning order (embedded for traceability).</li>
++     *   <li>{@code nanoTime} — monotonic nanosecond counter (sufficient uniqueness within a
++     *       single JVM; combined with ownerUid the collision probability is negligible).</li>
++     *   <li>{@code ext} — lower-cased extension derived from {@code originalFilename}; empty
++     *       string if no extension is present.</li>
++     * </ul>
++     *
++     * <p>Legacy deviation: the legacy scheme is {@code "LT"+id+patientNo+random+timestamp}
++     * (PatientServiceImpl.java:2856). This is NOT reproduced to avoid a cross-module dependency
++     * on the registration/patient context. Uniqueness is the only observable property.
++     */
++    private static String generateStorageName(String prefix, String ownerUid,
++                                              String originalFilename) {
++        String ext = deriveExtension(originalFilename);
++        long nano  = System.nanoTime();
++        return prefix + ownerUid + "-" + nano + (ext.isEmpty() ? "" : "." + ext);
++    }
++
++    /**
++     * Derive a lower-cased extension from the original filename. Returns an empty string if
++     * there is no dot, or if the only dot is at position 0 (hidden file like ".gitignore").
++     */
++    private static String deriveExtension(String originalFilename) {
++        if (originalFilename == null || originalFilename.isBlank()) {
++            return "";
++        }
++        // Strip any leading path separators that a naive caller might include
++        String name = originalFilename;
++        int lastSep = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
++        if (lastSep >= 0) {
++            name = name.substring(lastSep + 1);
++        }
++        int dotIdx = name.lastIndexOf('.');
++        if (dotIdx <= 0) {
++            return "";
++        }
++        return name.substring(dotIdx + 1).toLowerCase();
++    }
++
++    /**
++     * Ensure the storage base directory exists, creating it (with parents) if necessary.
++     *
++     * @return the resolved, existing base directory path
++     */
++    private Path ensureBaseDir() {
++        Path dir = properties.effectiveBasePath();
++        if (!Files.exists(dir)) {
++            try {
++                Files.createDirectories(dir);
++                log.info("Created attachment storage directory: {}", dir);
++            } catch (IOException e) {
++                throw new UncheckedIOException(
++                        "Cannot create attachment storage directory: " + dir, e);
++            }
++        }
++        return dir;
++    }
++
++    /**
++     * Reject filenames containing path-traversal sequences ({@code ..}, {@code /}, {@code \}).
++     *
++     * <p>Security-architect-approved hardening over the legacy raw concat
++     * (PatientServiceImpl.java:2858). The guard is intentionally strict — a legitimate
++     * attachment filename is always a plain name (no slashes, no dots-only segments).
++     *
++     * @throws InvalidPatientOperationException (→ HTTP 422) if the filename is suspicious
++     */
++    private static void guardNoTraversal(String filename) {
++        if (filename == null || filename.isBlank()) {
++            throw new InvalidPatientOperationException("Attachment filename must not be blank");
++        }
++        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
++            throw new InvalidPatientOperationException(
++                    "Invalid attachment filename (path traversal rejected): " + filename);
++        }
++    }
++
++    /**
++     * Verify that the resolved {@code target} path is still inside {@code basePath}, preventing
++     * any traversal that slipped through the string check (e.g., encoded sequences).
++     *
++     * @throws InvalidPatientOperationException (→ HTTP 422) if the target escapes the base dir
++     */
++    private static void guardInsideBase(Path target, Path basePath) {
++        if (!target.startsWith(basePath.normalize())) {
++            throw new InvalidPatientOperationException(
++                    "Invalid attachment path (outside storage root)");
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/otapp/hmis/shared/storage/StorageConfig.java b/backend/src/main/java/com/otapp/hmis/shared/storage/StorageConfig.java
+new file mode 100644
+index 0000000..4185a48
+--- /dev/null
++++ b/backend/src/main/java/com/otapp/hmis/shared/storage/StorageConfig.java
+@@ -0,0 +1,17 @@
++package com.otapp.hmis.shared.storage;
++
++import org.springframework.boot.context.properties.EnableConfigurationProperties;
++import org.springframework.context.annotation.Configuration;
++
++/**
++ * Enables {@link AttachmentStorageProperties} binding (inc-06A C7 / ITEM5).
++ *
++ * <p>Follows the same pattern as the IAM module's {@code JwtProperties} wiring:
++ * a small @{@code Configuration} class carries {@code @EnableConfigurationProperties} so
++ * the record is bound by Spring Boot without requiring {@code @ConfigurationPropertiesScan}.
++ */
++@Configuration
++@EnableConfigurationProperties(AttachmentStorageProperties.class)
++public class StorageConfig {
++    // intentionally empty — the annotation does the work
++}
+diff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml
+index ea31f89..a6cf9f3 100644
+--- a/backend/src/main/resources/application.yml
++++ b/backend/src/main/resources/application.yml
+@@ -41,6 +41,13 @@ hmis:
+     refresh-token-ttl-hours: 8
+   cors:
+     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
++  attachments:
++    # Base directory for local-disk attachment storage (inc-06A C7 / ITEM5, legacy-parity).
++    # Blank → falls back to ${java.io.tmpdir}/hmis-attachments (suitable for dev/test).
++    # Production: inject HMIS_ATTACHMENTS_PATH pointing to a persistent, backed-up volume.
++    base-path: ${HMIS_ATTACHMENTS_PATH:}
++    # 10 MiB cap — verbatim legacy guard (PatientServiceImpl.java:2842-2844).
++    max-file-size-bytes: 10485760
+ 
+ management:
+   endpoints:
+diff --git a/backend/src/main/resources/db/migration/V38__clinical_report_amendment_audit.sql b/backend/src/main/resources/db/migration/V38__clinical_report_amendment_audit.sql
+new file mode 100644
+index 0000000..ae745bc
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V38__clinical_report_amendment_audit.sql
+@@ -0,0 +1,29 @@
++-- =====================================================================================
++-- V38 — lab_tests + radiologies: post-VERIFIED report-amendment audit trail (inc-06A C6).
++--
++-- Ratified ITEM4 policy (audited-amend): legacy add_report (PatientResource.java:3183-3197
++-- radiology, :3381-3395 lab) has NO order-status guard, so a VERIFIED clinical report is
++-- silently overwritable forever with NO amendment trail (Envers is a confirmed phantom dep —
++-- no DB catch-net). Rather than reproduce that patient-safety defect, a post-VERIFIED report
++-- change is allowed ONLY via an explicit amend path that:
++--   (1) retains the PRIOR report narrative (append-only — prior_report column), and
++--   (2) records WHO/WHEN amended (amend audit triplet).
++--
++-- This is a NET-NEW capability beyond pure legacy parity, recorded as a ratified deviation
++-- (engagement-owner choice, 2026-06-04). result/range/level/unit remain immutable after VERIFIED;
++-- only the report narrative is amendable, and only through this audited path.
++--
++-- Reversible: a down-migration would DROP these four columns from each table (no data transform).
++-- =====================================================================================
++
++ALTER TABLE lab_tests
++    ADD COLUMN prior_report                TEXT,
++    ADD COLUMN report_amended_by_user_uid  VARCHAR(26),
++    ADD COLUMN report_amended_on_day_uid   VARCHAR(26),
++    ADD COLUMN report_amended_at           TIMESTAMPTZ;
++
++ALTER TABLE radiologies
++    ADD COLUMN prior_report                TEXT,
++    ADD COLUMN report_amended_by_user_uid  VARCHAR(26),
++    ADD COLUMN report_amended_on_day_uid   VARCHAR(26),
++    ADD COLUMN report_amended_at           TIMESTAMPTZ;
+diff --git a/backend/src/test/java/com/otapp/hmis/billing/BillingQueriesIT.java b/backend/src/test/java/com/otapp/hmis/billing/BillingQueriesIT.java
+new file mode 100644
+index 0000000..706f096
+--- /dev/null
++++ b/backend/src/test/java/com/otapp/hmis/billing/BillingQueriesIT.java
+@@ -0,0 +1,69 @@
++package com.otapp.hmis.billing;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatThrownBy;
++
++import com.otapp.hmis.billing.api.BillingQueries;
++import com.otapp.hmis.billing.domain.BillStatus;
++import com.otapp.hmis.billing.domain.PatientBill;
++import com.otapp.hmis.billing.domain.PatientBillRepository;
++import com.otapp.hmis.masterdata.lookup.ServiceKind;
++import com.otapp.hmis.shared.domain.BusinessDayService;
++import com.otapp.hmis.shared.domain.Money;
++import com.otapp.hmis.shared.domain.NoDayOpenException;
++import com.otapp.hmis.shared.error.NotFoundException;
++import com.otapp.hmis.support.AbstractIntegrationTest;
++import java.math.BigDecimal;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++
++/**
++ * Integration test for the inc-06A C4 bill-status read seam ({@link BillingQueries}).
++ *
++ * <p>Proves the narrow read-only seam returns the live bill status and 404s on an unknown uid.
++ * This seam exists for the legacy add_report bill-gate parity case (ITEM2/4) — see
++ * {@link BillingQueries} for the ADR-0008 §6 scoped relaxation rationale.
++ */
++class BillingQueriesIT extends AbstractIntegrationTest {
++
++    @Autowired BillingQueries billingQueries;
++    @Autowired PatientBillRepository billRepository;
++    @Autowired BusinessDayService businessDayService;
++
++    private String ensureDayOpen() {
++        try {
++            return businessDayService.currentUid();
++        } catch (NoDayOpenException e) {
++            businessDayService.openToday();
++            return businessDayService.currentUid();
++        }
++    }
++
++    private static String fakeUid(String prefix) {
++        String base = (prefix + Long.toHexString(System.nanoTime())).replaceAll("[^A-Za-z0-9]", "");
++        return (base + "00000000000000000000000000").substring(0, 26);
++    }
++
++    @Test
++    void getBillStatus_returnsLiveStatus() {
++        String dayUid = ensureDayOpen();
++        PatientBill bill = new PatientBill(
++                fakeUid("PAT"),
++                ServiceKind.LAB_TEST,
++                "Lab test",
++                "Lab test (queries IT)",
++                BigDecimal.ONE,
++                Money.of(new BigDecimal("2500.00")),
++                dayUid);
++        String billUid = billRepository.save(bill).getUid();
++
++        // A freshly-created CASH charge defaults to UNPAID — the seam must report it.
++        assertThat(billingQueries.getBillStatus(billUid)).isEqualTo(BillStatus.UNPAID);
++    }
++
++    @Test
++    void getBillStatus_unknownUid_throwsNotFound() {
++        assertThatThrownBy(() -> billingQueries.getBillStatus("NOSUCHBILL0000000000000001"))
++                .isInstanceOf(NotFoundException.class);
++    }
++}
+diff --git a/backend/src/test/java/com/otapp/hmis/clinical/AttachmentUploadCapIT.java b/backend/src/test/java/com/otapp/hmis/clinical/AttachmentUploadCapIT.java
+new file mode 100644
+index 0000000..9b3076a
+--- /dev/null
++++ b/backend/src/test/java/com/otapp/hmis/clinical/AttachmentUploadCapIT.java
+@@ -0,0 +1,146 @@
++package com.otapp.hmis.clinical;
++
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.otapp.hmis.billing.domain.PaymentMode;
++import com.otapp.hmis.clinical.domain.Consultation;
++import com.otapp.hmis.clinical.domain.ConsultationRepository;
++import com.otapp.hmis.shared.domain.BusinessDayService;
++import com.otapp.hmis.shared.domain.NoDayOpenException;
++import com.otapp.hmis.support.AbstractIntegrationTest;
++import com.otapp.hmis.support.TestJwtFactory;
++import java.nio.charset.StandardCharsets;
++import java.util.List;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.http.MediaType;
++import org.springframework.mock.web.MockMultipartFile;
++import org.springframework.test.context.TestPropertySource;
++import org.springframework.test.web.servlet.MockMvc;
++import org.springframework.test.web.servlet.MvcResult;
++
++/**
++ * Integration test for the inc-06A C7 attachment size cap (ITEM5).
++ *
++ * <p>Stand-alone IT with a TINY configured cap ({@code hmis.attachments.max-file-size-bytes=10})
++ * so an 11-byte upload trips the cap without allocating a 10 MiB test fixture. A {@code @TestPropertySource}
++ * is used because the cap is a bound {@link com.otapp.hmis.shared.storage.AttachmentStorageProperties}
++ * value — overriding it here keeps the main {@link LabTestIT}/{@link RadiologyIT} suites at the
++ * realistic 10 MiB default.
++ *
++ * <p>Legacy cap: PatientServiceImpl.java:2842-2844 (10485760 bytes).
++ */
++@TestPropertySource(properties = "hmis.attachments.max-file-size-bytes=10")
++class AttachmentUploadCapIT extends AbstractIntegrationTest {
++
++    private static final String BASE         = "/api/v1/clinical";
++    private static final String CONSULT_BASE = BASE + "/consultations/uid/";
++    private static final String LAB_BASE     = BASE + "/lab-tests";
++    private static final String PRICES_URL   = "/api/v1/masterdata/service-prices";
++    private static final String LAB_TYPES    = "/api/v1/masterdata/lab-test-types";
++
++    @Autowired MockMvc mockMvc;
++    @Autowired ObjectMapper objectMapper;
++    @Autowired TestJwtFactory jwtFactory;
++    @Autowired ConsultationRepository consultationRepository;
++    @Autowired BusinessDayService businessDayService;
++
++    private String adminToken;
++    private String dayUid;
++
++    @BeforeEach
++    void setUp() {
++        adminToken = jwtFactory.tokenWithPrivileges("admin",
++                List.of("ADMIN-ACCESS", "USER-ALL", "PATIENT-ALL", "BILL-A"));
++        try {
++            dayUid = businessDayService.currentUid();
++        } catch (NoDayOpenException e) {
++            businessDayService.openToday();
++            dayUid = businessDayService.currentUid();
++        }
++    }
++
++    private static String uniq() {
++        return "CAP" + Long.toHexString(System.nanoTime()).substring(0, 9);
++    }
++
++    private static String fakeUid(String prefix, String tag) {
++        String base = (prefix + tag).replaceAll("[^A-Za-z0-9]", "");
++        return (base + "00000000000000000000000000").substring(0, 26);
++    }
++
++    @Test
++    void uploadAttachment_overCap_422() throws Exception {
++        String tag = uniq();
++
++        // Lab type + cash price.
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(labTypeUid);
++
++        // Seed an INSURANCE (settled) consultation directly, drive a lab order to COLLECTED.
++        String consultUid = seedConsultation(tag);
++        // Order via endpoint.
++        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
++                .andExpect(status().isCreated())
++                .andReturn();
++        String labUid = objectMapper.readTree(orderResult.getResponse().getContentAsString())
++                .get("uid").asText();
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++
++        // 11 bytes > 10-byte cap → 422 verbatim.
++        byte[] tooBig = "12345678901".getBytes(StandardCharsets.UTF_8); // 11 bytes
++        MockMultipartFile file = new MockMultipartFile("file", "big.pdf", "application/pdf", tooBig);
++        mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
++                        .file(file)
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("File exceeds maximum file size allowed"));
++    }
++
++    private String createLabTestType(String tag) throws Exception {
++        String body = """
++                {"code":"LTT-%s","name":"Lab Type %s","description":null,"range":null,
++                 "uom":null,"price":1000.00,"active":false}
++                """.formatted(tag, tag);
++        MvcResult r = mockMvc.perform(post(LAB_TYPES)
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON).content(body))
++                .andExpect(status().isCreated())
++                .andReturn();
++        return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
++    }
++
++    private void seedPrice(String labTypeUid) throws Exception {
++        String body = """
++                {"planUid":null,"kind":"LAB_TEST","serviceUid":"%s","currency":"TZS",
++                 "amount":1000.00,"covered":true,"minAmount":null,"maxAmount":null,"active":true}
++                """.formatted(labTypeUid);
++        mockMvc.perform(post(PRICES_URL)
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON).content(body))
++                .andExpect(status().is(org.hamcrest.Matchers.anyOf(
++                        org.hamcrest.Matchers.is(200), org.hamcrest.Matchers.is(201),
++                        org.hamcrest.Matchers.is(409))));
++    }
++
++    /** Seed an INSURANCE (settled) consultation directly so the lab order is settled. */
++    private String seedConsultation(String tag) {
++        Consultation c = new Consultation(
++                fakeUid("PAT", tag), null, fakeUid("CLN", tag), fakeUid("DOC", tag),
++                fakeUid("BIL", tag), PaymentMode.INSURANCE, false, true,
++                "MEM-" + tag, fakeUid("PLN", tag), dayUid);
++        c.open();  // PENDING → IN_PROCESS so lab orders can be placed
++        return consultationRepository.save(c).getUid();
++    }
++}
+diff --git a/backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java b/backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java
+index 120a274..804c76c 100644
+--- a/backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java
++++ b/backend/src/test/java/com/otapp/hmis/clinical/ConsultationLifecycleIT.java
+@@ -7,10 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+ 
+ import com.fasterxml.jackson.databind.ObjectMapper;
++import com.otapp.hmis.billing.domain.BillStatus;
+ import com.otapp.hmis.billing.domain.PaymentMode;
+ import com.otapp.hmis.clinical.domain.Consultation;
+ import com.otapp.hmis.clinical.domain.ConsultationRepository;
+ import com.otapp.hmis.clinical.domain.ConsultationStatus;
++import com.otapp.hmis.clinical.domain.LabTest;
++import com.otapp.hmis.clinical.domain.LabTestRepository;
+ import com.otapp.hmis.iam.domain.Role;
+ import com.otapp.hmis.iam.domain.RoleRepository;
+ import com.otapp.hmis.registration.domain.PatientRepository;
+@@ -58,6 +61,7 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
+     @Autowired ConsultationRepository consultationRepository;
+     @Autowired BusinessDayService businessDayService;
+     @Autowired com.otapp.hmis.billing.domain.PatientBillRepository patientBillRepository;
++    @Autowired LabTestRepository labTestRepository;
+ 
+     private String adminToken;
+ 
+@@ -245,6 +249,42 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
+                 .isEqualTo(ConsultationStatus.CANCELED);
+     }
+ 
++    // =========================================================================
++    // C2 (ITEM6): cancel also cascades to UNSETTLED child-order bills.
++    // Legacy cancel (PatientResource.java:434-494) removes PENDING child orders with
++    // UNPAID/null bills together with their bills; we soft-cancel each unsettled child
++    // bill via cancelCharge ("Canceled consultation"). A SETTLED child bill is left alone.
++    // =========================================================================
++
++    @Test
++    void cancel_cascadesToUnsettledChildOrderBills() throws Exception {
++        String u = uniq();
++        // PENDING consultation with its own (settled) consultation-fee bill.
++        String consultationUid = seedConsultation(u, PaymentMode.CASH, false, true);
++        Consultation consultation = consultationRepository.findByUid(consultationUid).orElseThrow();
++
++        // Seed an UNSETTLED lab order bound to this consultation, with its own real bill.
++        String unsettledLabBillUid = seedRealBill(u + "LABU", "2500.00");
++        String settledLabBillUid   = seedRealBill(u + "LABS", "3000.00");
++        seedLabTest(consultation, u + "U", unsettledLabBillUid, false);  // unsettled → should cancel
++        seedLabTest(consultation, u + "S", settledLabBillUid,   true);   // settled  → should NOT cancel
++
++        // Cancel the consultation.
++        mockMvc.perform(post(CLINICAL_URL + "/uid/" + consultationUid + "/cancel")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("CANCELED"));
++
++        // The unsettled child bill must be CANCELED (cascade fired)...
++        assertThat(patientBillRepository.findByUid(unsettledLabBillUid).orElseThrow().getStatus())
++                .as("unsettled child-order bill must be CANCELED by the cancel cascade")
++                .isEqualTo(BillStatus.CANCELED);
++        // ...and the settled child bill must be left untouched.
++        assertThat(patientBillRepository.findByUid(settledLabBillUid).orElseThrow().getStatus())
++                .as("settled child-order bill must NOT be canceled")
++                .isNotEqualTo(BillStatus.CANCELED);
++    }
++
+     // =========================================================================
+     // cancel — non-PENDING → 422 verbatim message
+     // =========================================================================
+@@ -482,6 +522,39 @@ class ConsultationLifecycleIT extends AbstractIntegrationTest {
+         return consultationRepository.save(c).getUid();
+     }
+ 
++    /** Seed a real billable PatientBill (so cancelCharge finds it) and return its uid. */
++    private String seedRealBill(String tag, String amount) {
++        com.otapp.hmis.billing.domain.PatientBill bill = new com.otapp.hmis.billing.domain.PatientBill(
++                fakeUid("PAT", tag),
++                com.otapp.hmis.masterdata.lookup.ServiceKind.LAB_TEST,
++                "Lab test",
++                "Lab test fee (cascade test " + tag + ")",
++                java.math.BigDecimal.ONE,
++                com.otapp.hmis.shared.domain.Money.of(new java.math.BigDecimal(amount)),
++                businessDayService.currentUid());
++        return patientBillRepository.save(bill).getUid();
++    }
++
++    /** Seed a PENDING LabTest bound to the consultation, referencing a real bill uid. */
++    private void seedLabTest(Consultation consultation, String tag, String labBillUid,
++                             boolean settled) {
++        String day = businessDayService.currentUid();
++        LabTest lt = LabTest.forConsultation(
++                consultation,
++                fakeUid("LTT", tag),   // labTestTypeUid (loose, no FK)
++                labBillUid,
++                settled,
++                "CASH",
++                "",
++                null,
++                null,
++                fakeUid("DOC", tag),
++                fakeUid("DOC", tag),
++                day,
++                java.time.Instant.now());
++        labTestRepository.save(lt);
++    }
++
+     private String seedConsultationForClinician(String tag, String clinicianUid,
+                                                  boolean followUp, boolean settled) {
+         Consultation c = new Consultation(
+diff --git a/backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java b/backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java
+index faef2c1..1670d8b 100644
+--- a/backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java
++++ b/backend/src/test/java/com/otapp/hmis/clinical/LabTestIT.java
+@@ -5,11 +5,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+ 
+ import com.fasterxml.jackson.databind.JsonNode;
+ import com.fasterxml.jackson.databind.ObjectMapper;
++import com.otapp.hmis.billing.domain.BillStatus;
++import com.otapp.hmis.billing.domain.PatientBillRepository;
++import com.otapp.hmis.billing.domain.PatientCreditNoteRepository;
++import com.otapp.hmis.billing.domain.PatientPaymentDetailRepository;
++import com.otapp.hmis.billing.domain.PaymentDetailStatus;
+ import com.otapp.hmis.billing.domain.PaymentMode;
+ import com.otapp.hmis.clinical.domain.Consultation;
+ import com.otapp.hmis.clinical.domain.ConsultationRepository;
+@@ -69,6 +76,9 @@ class LabTestIT extends AbstractIntegrationTest {
+     @Autowired ConsultationRepository   consultationRepository;
+     @Autowired NonConsultationRepository nonConsultationRepository;
+     @Autowired LabTestRepository        labTestRepository;
++    @Autowired PatientBillRepository    billRepository;
++    @Autowired PatientPaymentDetailRepository paymentDetailRepository;
++    @Autowired PatientCreditNoteRepository    creditNoteRepository;
+     @Autowired BusinessDayService       businessDayService;
+     @Autowired DataSource               dataSource;
+ 
+@@ -256,6 +266,62 @@ class LabTestIT extends AbstractIntegrationTest {
+                 .andExpect(jsonPath("$.acceptedByUserUid").isNotEmpty());
+     }
+ 
++    // =========================================================================
++    // C3 (ITEM3): save_reason_for_rejection — re-callable rejectComment edit on a
++    // REJECTED order; edit on a non-REJECTED order → 422 verbatim.
++    // =========================================================================
++
++    @Test
++    void saveRejectComment_onRejected_editsComment_reCallable() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(null, "LAB_TEST", labTypeUid, "5500.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++        String labUid = orderLabTest(consultUid, labTypeUid);
++
++        // Reject first.
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Initial reason\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("REJECTED"));
++
++        // Edit the reject comment (status stays REJECTED).
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Corrected reason\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("REJECTED"))
++                .andExpect(jsonPath("$.rejectComment").value("Corrected reason"));
++
++        // Re-callable: edit again.
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Second correction\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.rejectComment").value("Second correction"));
++    }
++
++    @Test
++    void saveRejectComment_onNonRejected_422_verbatim() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(null, "LAB_TEST", labTypeUid, "5500.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING (not REJECTED)
++
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Should fail\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail")
++                        .value("Could not save. Only allowed for rejected tests"));
++    }
++
+     // =========================================================================
+     // Hold: ACCEPTED → PENDING
+     // =========================================================================
+@@ -373,7 +439,70 @@ class LabTestIT extends AbstractIntegrationTest {
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Only a pending lab test can be deleted"));
++                        .value("Could not delete, only a PENDING lab test can be deleted"));
++    }
++
++    // =========================================================================
++    // C1 (ITEM1): deleting a PENDING lab test whose bill was already PAID raises the
++    // credit-note reversal via billing.api.cancelCharge — bill→CANCELED, payment→REFUNDED,
++    // a PENDING PatientCreditNote (ref "Canceled lab test") for the full amount.
++    // (Legacy PatientResource.java:2922-2961; soft-flag + CR-10 fix per the ratified standard.)
++    // =========================================================================
++
++    @Test
++    void delete_paidPendingLabTest_reversesBill_refunds_raisesCreditNote() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        // CASH order so a real billable PatientBill exists and can be paid at the cashier.
++        seedPrice(null, "LAB_TEST", labTypeUid, "2500.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++
++        // Order → PENDING; capture the order's real bill uid from the DTO.
++        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
++                .andExpect(status().isCreated())
++                .andReturn();
++        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
++        String labUid  = orderNode.get("uid").asText();
++        String billUid = orderNode.get("patientBillUid").asText();
++        assertThat(billUid).isNotBlank();
++
++        // Pay the bill at the cashier → PatientPaymentDetail RECEIVED, bill PAID.
++        mockMvc.perform(post("/api/v1/billing/payments")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"billUids\":[\"" + billUid + "\"],"
++                                + "\"tenderedTotal\":{\"amount\":2500.00,\"currency\":\"TZS\"},"
++                                + "\"paymentMode\":\"CASH\"}"))
++                .andExpect(status().isCreated());
++        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
++                .isEqualTo(PaymentDetailStatus.RECEIVED);
++
++        // Delete the still-PENDING lab test → seam fires.
++        mockMvc.perform(delete(LAB_BASE + "/uid/" + labUid)
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isNoContent());
++
++        // Order row gone.
++        assertThat(labTestRepository.findByUid(labUid)).isEmpty();
++
++        // Bill soft-canceled (NOT hard-deleted — ratified deviation).
++        assertThat(billRepository.findByUid(billUid).orElseThrow().getStatus())
++                .as("deleted lab test's bill must be CANCELED").isEqualTo(BillStatus.CANCELED);
++
++        // Payment refunded (soft, kept).
++        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
++                .as("RECEIVED payment must flip to REFUNDED").isEqualTo(PaymentDetailStatus.REFUNDED);
++
++        // A PENDING credit-note for this bill, full amount, legacy reference label.
++        boolean creditNoteRaised = creditNoteRepository.findAll().stream()
++                .anyMatch(cn -> billUid.equals(cn.getPatientBillUid())
++                        && "Canceled lab test".equals(cn.getReference()));
++        assertThat(creditNoteRaised)
++                .as("a PENDING credit-note (ref 'Canceled lab test') must be raised for the paid bill")
++                .isTrue();
+     }
+ 
+     // =========================================================================
+@@ -583,12 +712,73 @@ class LabTestIT extends AbstractIntegrationTest {
+                         .content(verifyBody("14.0", "NORMAL", "12-16", "g/dL")))
+                 .andExpect(status().isOk());
+ 
+-        // Try to delete attachment when VERIFIED → 422
++        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
+         mockMvc.perform(delete(LAB_BASE + "/attachments/uid/" + attUid)
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Cannot delete attachment from a verified lab test"));
++                        .value("Could not delete. Lab Test already verified"));
++    }
++
++    // =========================================================================
++    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
++    // Upload (COLLECTED, settled) → 201; download before VERIFIED → 422; download after
++    // VERIFIED → 200 inline bytes.
++    // =========================================================================
++
++    @Test
++    void uploadAttachment_thenDownload_afterVerified() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String labUid = orderLabTest(consultUid, labTypeUid);
++
++        // Accept → Collect (lab attach-gate is COLLECTED).
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++
++        // Upload a small file (multipart) → 201 with a fileName.
++        byte[] content = ("PDF-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
++        org.springframework.mock.web.MockMultipartFile file =
++                new org.springframework.mock.web.MockMultipartFile(
++                        "file", "scan.pdf", "application/pdf", content);
++        MvcResult upload = mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
++                        .file(file)
++                        .param("name", "Scan")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isCreated())
++                .andExpect(jsonPath("$.uid").isNotEmpty())
++                .andExpect(jsonPath("$.fileName").isNotEmpty())
++                .andReturn();
++        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
++                .get("uid").asText();
++
++        // Download BEFORE VERIFIED → 422 (download gate).
++        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not download. Lab test is not verified"));
++
++        // Verify the order.
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/verify")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(verifyBody("12.5", "NORMAL", "10-15", "g/dL")))
++                .andExpect(status().isOk());
++
++        // Download AFTER VERIFIED → 200 inline bytes.
++        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isOk())
++                .andExpect(header().string("Content-Disposition",
++                        org.hamcrest.Matchers.containsString("inline")))
++                .andExpect(result -> org.assertj.core.api.Assertions
++                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
+     }
+ 
+     // =========================================================================
+@@ -668,12 +858,22 @@ class LabTestIT extends AbstractIntegrationTest {
+     // =========================================================================
+ 
+     @Test
+-    void saveResult_andAddReport_whenCollected() throws Exception {
++    void saveResult_andAddReport_billGated() throws Exception {
+         String tag = uniq();
+         String labTypeUid = createLabTestType(tag);
+         seedPrice(null, "LAB_TEST", labTypeUid, "4200.00", true);
+         String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+-        String labUid = orderLabTest(consultUid, labTypeUid);
++
++        // Order via raw endpoint to capture the bill uid (CASH → bill UNPAID).
++        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
++                .andExpect(status().isCreated())
++                .andReturn();
++        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
++        String labUid  = orderNode.get("uid").asText();
++        String billUid = orderNode.get("patientBillUid").asText();
+ 
+         // Accept → Collect
+         mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+@@ -683,7 +883,7 @@ class LabTestIT extends AbstractIntegrationTest {
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isOk());
+ 
+-        // saveResult
++        // saveResult (COLLECTED gate, unchanged)
+         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/result")
+                         .header("Authorization", "Bearer " + adminToken)
+                         .contentType(MediaType.APPLICATION_JSON)
+@@ -692,7 +892,24 @@ class LabTestIT extends AbstractIntegrationTest {
+                 .andExpect(jsonPath("$.result").value("Positive"))
+                 .andExpect(jsonPath("$.status").value("COLLECTED"));
+ 
+-        // addReport
++        // addReport BEFORE payment → 422 bill-gate (legacy parity, C5).
++        mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Should be blocked\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
++
++        // Pay the bill at the cashier → bill PAID.
++        mockMvc.perform(post("/api/v1/billing/payments")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"billUids\":[\"" + billUid + "\"],"
++                                + "\"tenderedTotal\":{\"amount\":4200.00,\"currency\":\"TZS\"},"
++                                + "\"paymentMode\":\"CASH\"}"))
++                .andExpect(status().isCreated());
++
++        // addReport AFTER payment → 200 (bill PAID; order still COLLECTED, not VERIFIED).
+         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
+                         .header("Authorization", "Bearer " + adminToken)
+                         .contentType(MediaType.APPLICATION_JSON)
+@@ -702,6 +919,82 @@ class LabTestIT extends AbstractIntegrationTest {
+                 .andExpect(jsonPath("$.status").value("COLLECTED"));
+     }
+ 
++    // =========================================================================
++    // C6 (ITEM4): post-VERIFIED report is immutable via add-report (-> 422) and amendable only via
++    // the audited amend-report path, which retains the prior narrative + stamps the amend triplet.
++    // =========================================================================
++
++    @Test
++    void verifiedReport_blockedViaAddReport_amendableViaAmendPath_retainsPrior() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
++        // INSURANCE → bill COVERED → bill-gate passes without a cashier payment.
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String labUid = orderLabTest(consultUid, labTypeUid);
++
++        // Drive to VERIFIED, writing the original report at verify.
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/verify")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(verifyBody("12.5", "NORMAL", "10-15", "g/dL")))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("VERIFIED"));
++
++        // Set an original report via amend (first amend; prior was null/empty from verify body).
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Original verified narrative\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.report").value("Original verified narrative"));
++
++        // add-report on a VERIFIED order must be BLOCKED (routes to amend).
++        mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Sneaky overwrite\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail")
++                        .value("Could not add report. A verified report can only be amended via the amend path"));
++
++        // Amend again → new report written, PRIOR narrative retained, amend triplet stamped.
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Corrected narrative\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.report").value("Corrected narrative"))
++                .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
++                .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
++                .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
++                .andExpect(jsonPath("$.status").value("VERIFIED"));
++    }
++
++    @Test
++    void amendReport_onNonVerified_422() throws Exception {
++        String tag = uniq();
++        String labTypeUid = createLabTestType(tag);
++        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING, bill COVERED
++
++        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Too early\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not amend report. Lab test is not verified"));
++    }
++
+     // =========================================================================
+     // Get by uid
+     // =========================================================================
+diff --git a/backend/src/test/java/com/otapp/hmis/clinical/ProcedureIT.java b/backend/src/test/java/com/otapp/hmis/clinical/ProcedureIT.java
+index 5097855..5969dfd 100644
+--- a/backend/src/test/java/com/otapp/hmis/clinical/ProcedureIT.java
++++ b/backend/src/test/java/com/otapp/hmis/clinical/ProcedureIT.java
+@@ -403,7 +403,7 @@ class ProcedureIT extends AbstractIntegrationTest {
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Only a pending procedure order can be deleted"));
++                        .value("Could not delete, only a PENDING procedure can be deleted"));
+     }
+ 
+     // =========================================================================
+diff --git a/backend/src/test/java/com/otapp/hmis/clinical/RadiologyIT.java b/backend/src/test/java/com/otapp/hmis/clinical/RadiologyIT.java
+index 957ec91..d798847 100644
+--- a/backend/src/test/java/com/otapp/hmis/clinical/RadiologyIT.java
++++ b/backend/src/test/java/com/otapp/hmis/clinical/RadiologyIT.java
+@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+ 
+@@ -315,6 +317,167 @@ class RadiologyIT extends AbstractIntegrationTest {
+                 .andExpect(jsonPath("$.rejectComment").value("Equipment unavailable"));
+     }
+ 
++    // =========================================================================
++    // C3 (ITEM3): save_reason_for_rejection — re-callable rejectComment edit on a
++    // REJECTED order; edit on a non-REJECTED order → 422 verbatim.
++    // =========================================================================
++
++    @Test
++    void saveRejectComment_onRejected_editsComment_reCallable() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++        String radUid = orderRadiology(consultUid, radTypeUid);
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Initial reason\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("REJECTED"));
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Corrected reason\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("REJECTED"))
++                .andExpect(jsonPath("$.rejectComment").value("Corrected reason"));
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Second correction\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.rejectComment").value("Second correction"));
++    }
++
++    @Test
++    void saveRejectComment_onNonRejected_422_verbatim() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING (not REJECTED)
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"rejectComment\":\"Should fail\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail")
++                        .value("Could not save. Only allowed for rejected tests"));
++    }
++
++    // =========================================================================
++    // C5 (ITEM2): stand-alone bill-gated add_report. INSURANCE order (bill COVERED) →
++    // add_report writes the report at any order status; CASH order (bill UNPAID) → 422.
++    // =========================================================================
++
++    @Test
++    void addReport_insuranceCovered_writesReport_anyOrderStatus() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
++        // INSURANCE → bill COVERED → bill-gate passes without a cashier payment.
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING
++
++        // add_report on a PENDING order (no order-status guard — legacy parity).
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Chest X-ray: no acute findings.\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.report").value("Chest X-ray: no acute findings."))
++                .andExpect(jsonPath("$.status").value("PENDING"));
++    }
++
++    @Test
++    void addReport_cashUnpaid_422_paymentNotVerified() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null, "RADIOLOGY", radTypeUid, "8000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
++        String radUid = orderRadiology(consultUid, radTypeUid);  // bill UNPAID
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Should be blocked\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
++    }
++
++    // =========================================================================
++    // C6 (ITEM4): post-VERIFIED report is immutable via add-report (-> 422) and amendable only via
++    // the audited amend-report path, which retains the prior narrative + stamps the amend triplet.
++    // =========================================================================
++
++    @Test
++    void verifiedReport_blockedViaAddReport_amendableViaAmendPath_retainsPrior() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String radUid = orderRadiology(consultUid, radTypeUid);
++
++        // Drive to VERIFIED (radiology: ACCEPTED → VERIFIED direct), writing the original report.
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(verifyBody("Normal study", "Original verified narrative", null)))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("VERIFIED"))
++                .andExpect(jsonPath("$.report").value("Original verified narrative"));
++
++        // add-report on a VERIFIED order must be BLOCKED (routes to amend).
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Sneaky overwrite\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail")
++                        .value("Could not add report. A verified report can only be amended via the amend path"));
++
++        // Amend → new report, PRIOR narrative retained, amend triplet stamped.
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Corrected narrative\"}"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.report").value("Corrected narrative"))
++                .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
++                .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
++                .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
++                .andExpect(jsonPath("$.status").value("VERIFIED"));
++    }
++
++    @Test
++    void amendReport_onNonVerified_422() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING, bill COVERED
++
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content("{\"report\":\"Too early\"}"))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not amend report. Radiology is not verified"));
++    }
++
+     // =========================================================================
+     // Hold: ACCEPTED → PENDING
+     // =========================================================================
+@@ -386,7 +549,7 @@ class RadiologyIT extends AbstractIntegrationTest {
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Only a pending radiology order can be deleted"));
++                        .value("Could not delete, only a PENDING radiology can be deleted"));
+     }
+ 
+     // =========================================================================
+@@ -516,7 +679,7 @@ class RadiologyIT extends AbstractIntegrationTest {
+                         .content(attachmentBody("Report A", "rad-" + tag + "-a.pdf")))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Radiology order must be accepted before adding attachments"));
++                        .value("Can only attach for accepted tests"));
+     }
+ 
+     @Test
+@@ -549,7 +712,7 @@ class RadiologyIT extends AbstractIntegrationTest {
+                         .content(attachmentBody("Scan 6", "rad-" + tag + "-6.dcm")))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Maximum of 5 attachments allowed per radiology order"));
++                        .value("Can not add more than 5 attachments"));
+     }
+ 
+     @Test
+@@ -584,12 +747,71 @@ class RadiologyIT extends AbstractIntegrationTest {
+                 .andExpect(status().isOk())
+                 .andExpect(jsonPath("$.status").value("VERIFIED"));
+ 
+-        // Try to delete attachment when VERIFIED → 422
++        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
+         mockMvc.perform(delete(RAD_BASE + "/attachments/uid/" + attUid)
+                         .header("Authorization", "Bearer " + adminToken))
+                 .andExpect(status().isUnprocessableEntity())
+                 .andExpect(jsonPath("$.detail")
+-                        .value("Cannot delete attachment from a verified radiology order"));
++                        .value("Could not delete. Radiology already verified"));
++    }
++
++    // =========================================================================
++    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
++    // Upload (ACCEPTED, settled) → 201; download before VERIFIED → 422; download after
++    // VERIFIED → 200 inline bytes.
++    // =========================================================================
++
++    @Test
++    void uploadAttachment_thenDownload_afterVerified() throws Exception {
++        String tag = uniq();
++        String radTypeUid = createRadiologyType(tag);
++        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
++        String planUid    = createPlan(tag);
++        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
++        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
++        String radUid = orderRadiology(consultUid, radTypeUid);
++
++        // Accept (radiology attach-gate is ACCEPTED).
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
++                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
++
++        // Upload a small file (multipart) → 201 with a fileName.
++        byte[] content = ("IMG-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
++        org.springframework.mock.web.MockMultipartFile file =
++                new org.springframework.mock.web.MockMultipartFile(
++                        "file", "xray.png", "image/png", content);
++        MvcResult upload = mockMvc.perform(multipart(RAD_BASE + "/uid/" + radUid + "/attachments/upload")
++                        .file(file)
++                        .param("name", "X-ray")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isCreated())
++                .andExpect(jsonPath("$.uid").isNotEmpty())
++                .andExpect(jsonPath("$.fileName").isNotEmpty())
++                .andReturn();
++        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
++                .get("uid").asText();
++
++        // Download BEFORE VERIFIED → 422 (download gate).
++        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isUnprocessableEntity())
++                .andExpect(jsonPath("$.detail").value("Could not download. Radiology is not verified"));
++
++        // Verify (radiology ACCEPTED → VERIFIED direct).
++        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
++                        .header("Authorization", "Bearer " + adminToken)
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(verifyBody("Normal study", "No abnormality", null)))
++                .andExpect(status().isOk());
++
++        // Download AFTER VERIFIED → 200 inline bytes.
++        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
++                        .header("Authorization", "Bearer " + adminToken))
++                .andExpect(status().isOk())
++                .andExpect(header().string("Content-Disposition",
++                        org.hamcrest.Matchers.containsString("inline")))
++                .andExpect(result -> org.assertj.core.api.Assertions
++                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
+     }
+ 
+     // =========================================================================

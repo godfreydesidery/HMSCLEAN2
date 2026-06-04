@@ -120,6 +120,23 @@ public class Radiology extends AuditableEntity {
     @Column(name = "report", columnDefinition = "TEXT")
     private String report;
 
+    /**
+     * Retained prior report narrative — set when a VERIFIED report is amended (inc-06A C6 / ITEM4).
+     * Append-only audit of the pre-amendment text.
+     */
+    @Column(name = "prior_report", columnDefinition = "TEXT")
+    private String priorReport;
+
+    /** Amend audit triplet (inc-06A C6): who/when last amended a VERIFIED report. */
+    @Column(name = "report_amended_by_user_uid", length = 26)
+    private String reportAmendedByUserUid;
+
+    @Column(name = "report_amended_on_day_uid", length = 26)
+    private String reportAmendedOnDayUid;
+
+    @Column(name = "report_amended_at")
+    private Instant reportAmendedAt;
+
     /** Optional description / clinical notes. */
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -515,6 +532,20 @@ public class Radiology extends AuditableEntity {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
+     * sets ONLY {@code rejectComment}, no status change, re-callable; no null/blank validation.
+     *
+     * <p>Guard: caller must verify {@code status == REJECTED} before calling.
+     *
+     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
+     */
+    public void updateRejectComment(String rejectComment) {
+        this.rejectComment = rejectComment;
+    }
+
+    /**
      * Verify the result: ACCEPTED → VERIFIED (PatientResource.java:4280-4281).
      *
      * <p><strong>Active path is ACCEPTED → VERIFIED DIRECTLY.</strong>
@@ -574,6 +605,40 @@ public class Radiology extends AuditableEntity {
     }
 
     /**
+     * Add/update the radiologist report text without status change (inc-06A C5 / ITEM2).
+     *
+     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
+     * ONLY the {@code report} field, gated on the BILL status (not order status). The bill-gate is
+     * enforced in the service layer; this domain method just sets the field.
+     *
+     * @param report the report text to write / overwrite
+     */
+    public void addReport(String report) {
+        this.report = report;
+    }
+
+    /**
+     * Amend the report narrative of an already-VERIFIED radiology order (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified audited-amend policy: retains the current narrative into {@code priorReport}
+     * (append-only) and stamps the amend audit triplet. result stays immutable after VERIFIED.
+     *
+     * <p>Guard: caller must verify {@code status == VERIFIED} and the bill-gate before calling.
+     *
+     * @param newReport    the amended report text
+     * @param actorUserUid user performing the amendment
+     * @param dayUid       current business day uid
+     * @param now          current instant
+     */
+    public void amendReport(String newReport, String actorUserUid, String dayUid, Instant now) {
+        this.priorReport = this.report;
+        this.report = newReport;
+        this.reportAmendedByUserUid = actorUserUid;
+        this.reportAmendedOnDayUid = dayUid;
+        this.reportAmendedAt = now;
+    }
+
+    /**
      * Mark as settled (clinical-local settlement flag).
      *
      * <p>Called by the billing→clinical settlement event seam when the CASH bill is PAID.
@@ -620,7 +685,11 @@ public class Radiology extends AuditableEntity {
 
     /**
      * Returns true if named attachments can be downloaded/viewed (gated on VERIFIED).
-     * (PatientResource.java:6154.)
+     *
+     * <p><strong>NET-NEW PHI-safety control (inc-06A C7 review F3/SEC-05 — ratified deviation):</strong>
+     * the legacy download (PatientResource.java:6093-6140 radiology) is UNGATED. This VERIFIED
+     * download-gate is a deliberate tightening, NOT legacy parity. (PatientResource.java:6154 is the
+     * legacy attachment-DELETE VERIFIED gate, a different operation.)
      *
      * @return true if download is allowed
      */

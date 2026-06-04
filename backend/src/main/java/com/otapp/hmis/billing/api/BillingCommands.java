@@ -46,6 +46,9 @@ public interface BillingCommands {
      *   <li>"Canceled consultation" — cancel_consultation (PatientResource.java:644)</li>
      *   <li>"Freed consultation" — free_consultation child-order cancel</li>
      *   <li>"Deleted prescription" — deletePrescription (clinical parity)</li>
+     *   <li>"Canceled lab test" — deleteLabTest (PatientResource.java:2936)</li>
+     *   <li>"Canceled radiology" — deleteRadiology (PatientResource.java:3436)</li>
+     *   <li>"Canceled procedure" — deleteProcedure (PatientResource.java:3503)</li>
      * </ul>
      *
      * <p>Parameters are Strings only — no billing domain type crosses the module boundary

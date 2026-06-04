@@ -6,16 +6,20 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.RadiologyStatus;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,8 +30,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST controller for the Radiology aggregate (inc-05 C8).
@@ -198,6 +204,21 @@ public class RadiologyController {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
+     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
+     * Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/reject-comment")
+    public RadiologyDto saveRejectComment(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody(required = false) RadiologyRejectRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        RadiologyRejectRequest req = request != null ? request : new RadiologyRejectRequest(null);
+        return radiologyService.saveRejectComment(radiologyUid, req, ctxFrom(jwt));
+    }
+
+    /**
      * Verify result: ACCEPTED → VERIFIED DIRECTLY. Writes result/report/inline-blob from body.
      *
      * <p><strong>Active path goes ACCEPTED → VERIFIED with NO collect step (CR-INC05-14).</strong>
@@ -244,6 +265,37 @@ public class RadiologyController {
             @RequestBody RadiologyResultRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return radiologyService.saveResult(radiologyUid, request, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Stand-alone bill-gated add_report (inc-06A C5 / ITEM2)
+    // POST /api/v1/clinical/radiologies/uid/{uid}/add-report
+    // =========================================================================
+
+    /**
+     * Add/update the radiologist report (legacy radiologies/add_report). Gated on the BILL status
+     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
+     * "Could not add report. Payment not verified" otherwise. Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/add-report")
+    public RadiologyDto addReport(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody RadiologyReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return radiologyService.addReport(radiologyUid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Amend a VERIFIED radiology report via the audited-amend path (inc-06A C6 / ITEM4).
+     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
+     * guard: status must be VERIFIED. Authenticated-only.
+     */
+    @PostMapping("/radiologies/uid/{uid}/amend-report")
+    public RadiologyDto amendReport(
+            @PathVariable("uid") String radiologyUid,
+            @RequestBody RadiologyReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return radiologyService.amendReport(radiologyUid, request, ctxFrom(jwt));
     }
 
     // =========================================================================
@@ -312,6 +364,44 @@ public class RadiologyController {
             @PathVariable("attachmentUid") String attachmentUid,
             @AuthenticationPrincipal Jwt jwt) {
         radiologyService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
+    // POST /api/v1/clinical/radiologies/uid/{uid}/attachments/upload
+    // GET  /api/v1/clinical/radiologies/attachments/uid/{attachmentUid}/download
+    // =========================================================================
+
+    /**
+     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
+     * "File exceeds maximum file size allowed"), then the ACCEPTED status + max-5 gate.
+     * Bytes stored on local disk; the row holds the opaque storage filename. Authenticated-only.
+     */
+    @PostMapping(path = "/radiologies/uid/{uid}/attachments/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public RadiologyAttachmentDto uploadAttachment(
+            @PathVariable("uid") String radiologyUid,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "name", required = false) String name,
+            @AuthenticationPrincipal Jwt jwt) throws IOException {
+        return radiologyService.uploadAttachment(
+                radiologyUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
+    }
+
+    /**
+     * Download an attachment's bytes. Guard: parent radiology must be VERIFIED
+     * (else 422 "Could not download. Radiology is not verified"). Authenticated-only.
+     *
+     * <p>The response is built via {@link AttachmentDownloadSupport} (SEC-01 stored-XSS
+     * hardening): only PDF/raster-image types render inline; everything else downloads as
+     * octet-stream, and {@code X-Content-Type-Options: nosniff} is always set.
+     */
+    @GetMapping("/radiologies/attachments/uid/{attachmentUid}/download")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @PathVariable("attachmentUid") String attachmentUid,
+            @AuthenticationPrincipal Jwt jwt) {
+        return AttachmentDownloadSupport.build(radiologyService.downloadAttachment(attachmentUid));
     }
 
     // =========================================================================

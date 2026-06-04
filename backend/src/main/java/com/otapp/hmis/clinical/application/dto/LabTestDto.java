@@ -32,6 +32,11 @@ public record LabTestDto(
         String testRange,
         String level,
         String unit,
+        // Report-amendment audit (inc-06A C6 / ITEM4)
+        String priorReport,
+        String reportAmendedByUserUid,
+        String reportAmendedOnDayUid,
+        Instant reportAmendedAt,
         // Lifecycle audit
         String orderedByUserUid,
         String orderedOnDayUid,

@@ -97,6 +97,23 @@ public class LabTest extends AuditableEntity {
     @Column(name = "report", columnDefinition = "TEXT")
     private String report;
 
+    /**
+     * Retained prior report narrative — set when a VERIFIED report is amended (inc-06A C6 / ITEM4).
+     * Append-only audit of the pre-amendment text; never overwritten back into {@code report}.
+     */
+    @Column(name = "prior_report", columnDefinition = "TEXT")
+    private String priorReport;
+
+    /** Amend audit triplet (inc-06A C6): who/when last amended a VERIFIED report. */
+    @Column(name = "report_amended_by_user_uid", length = 26)
+    private String reportAmendedByUserUid;
+
+    @Column(name = "report_amended_on_day_uid", length = 26)
+    private String reportAmendedOnDayUid;
+
+    @Column(name = "report_amended_at")
+    private Instant reportAmendedAt;
+
     /** Optional description / clinical notes. */
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -484,6 +501,23 @@ public class LabTest extends AuditableEntity {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
+     * sets ONLY {@code rejectComment}, with NO status change and NO audit-triplet re-stamp,
+     * re-callable any number of times. The legacy code applies no null/blank validation, so a
+     * null/empty comment is persisted verbatim.
+     *
+     * <p>Guard: caller must verify {@code status == REJECTED} before calling (distinct from
+     * {@link #reject} which requires PENDING|ACCEPTED).
+     *
+     * @param rejectComment the new rejection reason (may be null/blank — persisted as-is)
+     */
+    public void updateRejectComment(String rejectComment) {
+        this.rejectComment = rejectComment;
+    }
+
+    /**
      * Collect specimen: ACCEPTED → COLLECTED.
      *
      * <p>Guard: caller must verify status == ACCEPTED before calling.
@@ -570,6 +604,30 @@ public class LabTest extends AuditableEntity {
     }
 
     /**
+     * Amend the report narrative of an already-VERIFIED lab test (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified audited-amend policy: rather than reproduce the legacy silent post-VERIFIED
+     * overwrite (a patient-safety defect — no amendment trail), a VERIFIED report may be changed
+     * ONLY through this path, which RETAINS the current narrative into {@code priorReport}
+     * (append-only) and stamps the amend audit triplet ({@code reportAmendedBy/On/At}).
+     * {@code result}/{@code testRange}/{@code level}/{@code unit} stay immutable after VERIFIED.
+     *
+     * <p>Guard: caller must verify {@code status == VERIFIED} and the bill-gate before calling.
+     *
+     * @param newReport     the amended report text
+     * @param actorUserUid  user performing the amendment
+     * @param dayUid        current business day uid
+     * @param now           current instant
+     */
+    public void amendReport(String newReport, String actorUserUid, String dayUid, Instant now) {
+        this.priorReport = this.report;
+        this.report = newReport;
+        this.reportAmendedByUserUid = actorUserUid;
+        this.reportAmendedOnDayUid = dayUid;
+        this.reportAmendedAt = now;
+    }
+
+    /**
      * Mark as settled (clinical-local settlement flag).
      *
      * <p>Called by the billing→clinical settlement event seam when the CASH bill is PAID.
@@ -615,7 +673,12 @@ public class LabTest extends AuditableEntity {
 
     /**
      * Returns true if attachments can be downloaded/viewed (gated on VERIFIED).
-     * (PatientResource.java:6021.)
+     *
+     * <p><strong>NET-NEW PHI-safety control (inc-06A C7 review F3/SEC-05 — ratified deviation):</strong>
+     * the legacy download (PatientResource.java:5960-6007 lab) is UNGATED — it streams at any order
+     * status. This VERIFIED download-gate is a deliberate tightening so unverified result images are
+     * not exposed; it is NOT legacy parity. (PatientResource.java:6021 is the legacy attachment-DELETE
+     * VERIFIED gate, a different operation — do not read it as the download source.)
      *
      * @return true if download is allowed
      */

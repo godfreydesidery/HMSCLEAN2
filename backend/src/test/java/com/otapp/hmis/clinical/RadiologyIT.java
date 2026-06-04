@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -316,6 +318,168 @@ class RadiologyIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C3 (ITEM3): save_reason_for_rejection — re-callable rejectComment edit on a
+    // REJECTED order; edit on a non-REJECTED order → 422 verbatim.
+    // =========================================================================
+
+    @Test
+    void saveRejectComment_onRejected_editsComment_reCallable() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Initial reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Corrected reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectComment").value("Corrected reason"));
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Second correction\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rejectComment").value("Second correction"));
+    }
+
+    @Test
+    void saveRejectComment_onNonRejected_422_verbatim() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "7500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING (not REJECTED)
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Should fail\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not save. Only allowed for rejected tests"));
+    }
+
+    // =========================================================================
+    // C5 (ITEM2): stand-alone bill-gated add_report. INSURANCE order (bill COVERED) →
+    // add_report writes the report at any order status; CASH order (bill UNPAID) → 422.
+    // =========================================================================
+
+    @Test
+    void addReport_insuranceCovered_writesReport_anyOrderStatus() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        // INSURANCE → bill COVERED → bill-gate passes without a cashier payment.
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING
+
+        // add_report on a PENDING order (no order-status guard — legacy parity).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Chest X-ray: no acute findings.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Chest X-ray: no acute findings."))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void addReport_cashUnpaid_422_paymentNotVerified() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null, "RADIOLOGY", radTypeUid, "8000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // bill UNPAID
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Should be blocked\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
+    }
+
+    // =========================================================================
+    // C6 (ITEM4): post-VERIFIED report is immutable via add-report (-> 422) and amendable only via
+    // the audited amend-report path, which retains the prior narrative + stamps the amend triplet.
+    // =========================================================================
+
+    @Test
+    void verifiedReport_blockedViaAddReport_amendableViaAmendPath_retainsPrior() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        // Drive to VERIFIED (radiology: ACCEPTED → VERIFIED direct), writing the original report.
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("Normal study", "Original verified narrative", null)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"))
+                .andExpect(jsonPath("$.report").value("Original verified narrative"));
+
+        // add-report on a VERIFIED order must be BLOCKED (routes to amend).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/add-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Sneaky overwrite\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not add report. A verified report can only be amended via the amend path"));
+
+        // Amend → new report, PRIOR narrative retained, amend triplet stamped.
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Corrected narrative\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Corrected narrative"))
+                .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
+                .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
+                .andExpect(jsonPath("$.reportAmendedOnDayUid").isNotEmpty())
+                .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+    }
+
+    @Test
+    void amendReport_onNonVerified_422() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);  // PENDING, bill COVERED
+
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Too early\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not amend report. Radiology is not verified"));
+    }
+
+    // =========================================================================
     // Hold: ACCEPTED → PENDING
     // =========================================================================
 
@@ -386,7 +550,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Only a pending radiology order can be deleted"));
+                        .value("Could not delete, only a PENDING radiology can be deleted"));
     }
 
     // =========================================================================
@@ -516,7 +680,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .content(attachmentBody("Report A", "rad-" + tag + "-a.pdf")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Radiology order must be accepted before adding attachments"));
+                        .value("Can only attach for accepted tests"));
     }
 
     @Test
@@ -549,7 +713,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                         .content(attachmentBody("Scan 6", "rad-" + tag + "-6.dcm")))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Maximum of 5 attachments allowed per radiology order"));
+                        .value("Can not add more than 5 attachments"));
     }
 
     @Test
@@ -584,12 +748,71 @@ class RadiologyIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("VERIFIED"));
 
-        // Try to delete attachment when VERIFIED → 422
+        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
         mockMvc.perform(delete(RAD_BASE + "/attachments/uid/" + attUid)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Cannot delete attachment from a verified radiology order"));
+                        .value("Could not delete. Radiology already verified"));
+    }
+
+    // =========================================================================
+    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
+    // Upload (ACCEPTED, settled) → 201; download before VERIFIED → 422; download after
+    // VERIFIED → 200 inline bytes.
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_thenDownload_afterVerified() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(null,    "RADIOLOGY", radTypeUid, "8000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "RADIOLOGY", radTypeUid, "6000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String radUid = orderRadiology(consultUid, radTypeUid);
+
+        // Accept (radiology attach-gate is ACCEPTED).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        // Upload a small file (multipart) → 201 with a fileName.
+        byte[] content = ("IMG-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "xray.png", "image/png", content);
+        MvcResult upload = mockMvc.perform(multipart(RAD_BASE + "/uid/" + radUid + "/attachments/upload")
+                        .file(file)
+                        .param("name", "X-ray")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty())
+                .andExpect(jsonPath("$.fileName").isNotEmpty())
+                .andReturn();
+        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
+                .get("uid").asText();
+
+        // Download BEFORE VERIFIED → 422 (download gate).
+        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not download. Radiology is not verified"));
+
+        // Verify (radiology ACCEPTED → VERIFIED direct).
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("Normal study", "No abnormality", null)))
+                .andExpect(status().isOk());
+
+        // Download AFTER VERIFIED → 200 inline bytes.
+        mockMvc.perform(get(RAD_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(result -> org.assertj.core.api.Assertions
+                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
     }
 
     // =========================================================================

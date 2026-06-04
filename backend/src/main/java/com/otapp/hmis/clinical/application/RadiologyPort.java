@@ -5,6 +5,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.RadiologyStatus;
@@ -73,6 +74,13 @@ public interface RadiologyPort {
     RadiologyDto reject(String radiologyUid, RadiologyRejectRequest request, TxAuditContext ctx);
 
     /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
+     */
+    RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
+                                   TxAuditContext ctx);
+
+    /**
      * Verify: ACCEPTED → VERIFIED. Writes result/report/attachment blob.
      *
      * <p>Active path goes ACCEPTED → VERIFIED DIRECTLY (PatientResource.java:4280-4281).
@@ -93,6 +101,21 @@ public interface RadiologyPort {
      */
     RadiologyDto saveResult(String radiologyUid, RadiologyResultRequest request,
                             TxAuditContext ctx);
+
+    /**
+     * Add/update the radiologist report (inc-06A C5 / ITEM2, legacy radiologies/add_report).
+     * Gated on the BILL status ({@code PAID|COVERED|VERIFIED}), independent of order status.
+     * Guard + bill-gate enforced in the service.
+     */
+    RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
+                           TxAuditContext ctx);
+
+    /**
+     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
+     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
+     */
+    RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
+                             TxAuditContext ctx);
 
     // -------------------------------------------------------------------------
     // Delete
@@ -119,6 +142,38 @@ public interface RadiologyPort {
      */
     RadiologyAttachmentDto addAttachment(String radiologyUid, RadiologyAttachmentRequest request,
                                          TxAuditContext ctx);
+
+    /**
+     * Upload a file attachment to a radiology order (multipart path, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard order (legacy-parity): (1) size cap → 422 "File exceeds maximum file size allowed";
+     * (2) status/count gate via {@code canAttach} → 422 verbatim messages. On success: stores
+     * bytes via {@link com.otapp.hmis.shared.storage.FileStoragePort}, persists the row with
+     * the generated storage filename, audit CREATE, returns 201 DTO.
+     *
+     * <p>ACCEPTED gate for radiology — PatientServiceImpl.java:2922-2996.
+     *
+     * @param radiologyUid     owning radiology order ULID
+     * @param bytes            raw file bytes extracted at the controller layer
+     * @param originalFilename client-supplied filename (used to derive extension only)
+     * @param name             optional display name for the attachment
+     * @param ctx              transaction audit context
+     * @return the created RadiologyAttachmentDto (fileName is the opaque storage key)
+     */
+    RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
+                                            String originalFilename, String name,
+                                            TxAuditContext ctx);
+
+    /**
+     * Download the bytes of a radiology attachment (VERIFIED-gate, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent radiology order must be VERIFIED (PatientResource.java:6154) —
+     * else 422 "Could not download. Radiology is not verified".
+     *
+     * @param attachmentUid the ULID of the attachment to download
+     * @return a {@link FileDownload} record with the storage filename and bytes
+     */
+    FileDownload downloadAttachment(String attachmentUid);
 
     /** List named attachments for a radiology order. */
     List<RadiologyAttachmentDto> listAttachments(String radiologyUid);

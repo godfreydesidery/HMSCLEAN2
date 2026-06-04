@@ -1,6 +1,7 @@
 package com.otapp.hmis.clinical.application;
 
 import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.billing.api.BillingQueries;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.api.SettlementPolicy;
@@ -11,6 +12,7 @@ import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyOrderRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyRejectRequest;
+import com.otapp.hmis.clinical.application.dto.RadiologyReportRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyResultRequest;
 import com.otapp.hmis.clinical.application.dto.RadiologyVerifyRequest;
 import com.otapp.hmis.clinical.domain.Consultation;
@@ -29,6 +31,8 @@ import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.NotFoundException;
+import com.otapp.hmis.shared.storage.AttachmentStorageProperties;
+import com.otapp.hmis.shared.storage.FileStoragePort;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -102,11 +106,20 @@ class RadiologyService implements RadiologyPort {
     private final NonConsultationRepository     nonConsultationRepository;
     private final RadiologyTypeLookup           radiologyTypeLookup;
     private final BillingCommands               billingCommands;
+    private final BillingQueries                billingQueries;
     private final AuditRecorder                 auditRecorder;
     private final RadiologyMapper               radiologyMapper;
+    /** Local-disk file storage (inc-06A C7 / ITEM5). */
+    private final FileStoragePort               fileStoragePort;
+    /** Max file size + base path config (inc-06A C7 / ITEM5). */
+    private final AttachmentStorageProperties   storageProperties;
 
     private static final String AUDIT_ENTITY     = "clinical.Radiology";
+    /** Legacy credit-note reference for a deleted radiology (PatientResource.java:3436). */
+    private static final String REF_CANCEL_RADIOLOGY = "Canceled radiology";
     private static final String AUDIT_ATTACHMENT = "clinical.RadiologyAttachment";
+    /** Storage prefix for radiology attachments (inc-06A C7; approved deviation from legacy scheme). */
+    private static final String STORAGE_PREFIX   = "RAD";
 
     // =========================================================================
     // Order creation — consultation path
@@ -292,6 +305,31 @@ class RadiologyService implements RadiologyPort {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED radiology order (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2018-2032):
+     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, no status change.
+     *
+     * <p>Guard: status must be REJECTED, else 422 verbatim
+     * "Could not save. Only allowed for rejected tests". No null/blank validation.
+     */
+    @Override
+    @Transactional
+    public RadiologyDto saveRejectComment(String radiologyUid, RadiologyRejectRequest request,
+                                          TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        if (r.getStatus() != RadiologyStatus.REJECTED) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Only allowed for rejected tests");
+        }
+
+        r.updateRejectComment(request.rejectComment());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
      * Verify: ACCEPTED → VERIFIED. Writes result/report/inline-attachment-blob.
      *
      * <p><strong>Active path: ACCEPTED → VERIFIED DIRECTLY</strong> (PatientResource.java:4280-4281).
@@ -363,6 +401,82 @@ class RadiologyService implements RadiologyPort {
         return radiologyMapper.toDto(r);
     }
 
+    /**
+     * Stand-alone add/update of the radiologist report (inc-06A C5 / ITEM2).
+     *
+     * <p>Reproduces legacy {@code radiologies/add_report} (PatientResource.java:3183-3197): writes
+     * ONLY the {@code report} field, gated on the BILL status ({@code PAID|COVERED|VERIFIED}) and
+     * INDEPENDENT of order status — verbatim 422 "Could not add report. Payment not verified"
+     * otherwise. As-built radiology previously wrote the report only inline at verify; this adds
+     * the dedicated bill-gated endpoint to match legacy.
+     *
+     * <p><strong>Post-VERIFIED amendment:</strong> per the ratified ITEM4 policy (audited-amend,
+     * C6), a post-VERIFIED change must go through the dedicated {@code amendReport} path (added in
+     * C6). This endpoint blocks a VERIFIED-order overwrite so the verified report is not silently
+     * mutated; until C6 lands a VERIFIED order's report is immutable via this path.
+     */
+    @Override
+    @Transactional
+    public RadiologyDto addReport(String radiologyUid, RadiologyReportRequest request,
+                                  TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
+        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
+
+        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
+        if (r.getStatus() == RadiologyStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. A verified report can only be amended via the amend path");
+        }
+
+        r.addReport(request.report());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
+    /**
+     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
+     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
+     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
+     * insufficient because a bill paid after order creation still shows {@code settled=false}.
+     *
+     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
+     */
+    private void requireBillPaidCoveredOrVerified(String billUid) {
+        BillStatus status = billingQueries.getBillStatus(billUid);
+        if (status != BillStatus.PAID && status != BillStatus.COVERED
+                && status != BillStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. Payment not verified");
+        }
+    }
+
+    /**
+     * Amend the report of a VERIFIED radiology order via the audited-amend path (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): retains the prior narrative
+     * and stamps the amend audit triplet. Same bill-gate as {@link #addReport}. Guard: status must
+     * be VERIFIED, else 422 "Could not amend report. Radiology is not verified".
+     */
+    @Override
+    @Transactional
+    public RadiologyDto amendReport(String radiologyUid, RadiologyReportRequest request,
+                                    TxAuditContext ctx) {
+        Radiology r = requireRadiology(radiologyUid);
+
+        requireBillPaidCoveredOrVerified(r.getPatientBillUid());
+
+        if (r.getStatus() != RadiologyStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not amend report. Radiology is not verified");
+        }
+
+        r.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
+        auditRecorder.record(AUDIT_ENTITY, r.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return radiologyMapper.toDto(r);
+    }
+
     // =========================================================================
     // Delete
     // =========================================================================
@@ -372,9 +486,13 @@ class RadiologyService implements RadiologyPort {
      *
      * <p>Guard: status must be PENDING (else 422 "Only a pending radiology order can be deleted").
      *
-     * <p><strong>DEFERRED — credit-note seam:</strong>
-     * Same deferral as LabTestService — no credit-note raised for already-PAID bills.
-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     * <p><strong>Bill reversal (credit-note seam — now wired, inc-06A C1, ITEM1):</strong>
+     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
+     * SAME transaction with the legacy reference label {@value #REF_CANCEL_RADIOLOGY}: soft-cancel
+     * the bill (→ CANCELED), and ONLY when a RECEIVED payment existed, refund it and raise a
+     * PENDING credit-note for the full bill amount (CR-10 fix applied — parent invoice deleted
+     * only when empty; the legacy hard-delete of bill/payment is NOT reproduced). The clinical
+     * ORDER row is still hard-deleted. Legacy: PatientResource.java:3418-3471.
      */
     @Override
     @Transactional
@@ -383,11 +501,11 @@ class RadiologyService implements RadiologyPort {
 
         if (r.getStatus() != RadiologyStatus.PENDING) {
             throw new InvalidPatientOperationException(
-                    "Only a pending radiology order can be deleted");
+                    "Could not delete, only a PENDING radiology can be deleted");
         }
 
-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
-        // not yet published in billing.api; mirrors LabTestService deferral).
+        // Reverse the bill BEFORE deleting the order row (ITEM1; legacy 3431-3467).
+        billingCommands.cancelCharge(r.getPatientBillUid(), REF_CANCEL_RADIOLOGY, ctx);
 
         radiologyRepository.delete(r);
         auditRecorder.record(AUDIT_ENTITY, radiologyUid, AuditAction.DELETE, ctx.actorUsername());
@@ -398,15 +516,13 @@ class RadiologyService implements RadiologyPort {
     // =========================================================================
 
     /**
-     * Add a named file attachment to a radiology order.
+     * Add a named file attachment (JSON path — original endpoint; keeps existing tests green).
      *
      * <p>Guards (PatientServiceImpl.java:2928-2933):
      * <ol>
      *   <li>Radiology order must exist (404).</li>
-     *   <li>Status must be ACCEPTED (422 "Radiology order must be accepted before adding
-     *       attachments"). NOTE: ACCEPTED gate — different from lab COLLECTED gate.</li>
-     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed
-     *       per radiology order").</li>
+     *   <li>Status must be ACCEPTED (422 "Can only attach for accepted tests").</li>
+     *   <li>Attachment count must be less than 5 (422 "Can not add more than 5 attachments").</li>
      * </ol>
      */
     @Override
@@ -420,10 +536,10 @@ class RadiologyService implements RadiologyPort {
         if (!r.canAttach(count)) {
             if (r.getStatus() != RadiologyStatus.ACCEPTED) {
                 throw new InvalidPatientOperationException(
-                        "Radiology order must be accepted before adding attachments");
+                        "Can only attach for accepted tests");
             }
             throw new InvalidPatientOperationException(
-                    "Maximum of 5 attachments allowed per radiology order");
+                    "Can not add more than 5 attachments");
         }
 
         RadiologyAttachment attachment = RadiologyAttachment.create(r, request.name(),
@@ -432,6 +548,85 @@ class RadiologyService implements RadiologyPort {
         auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
                 ctx.actorUsername());
         return radiologyMapper.toAttachmentDto(saved);
+    }
+
+    /**
+     * Upload a file attachment via multipart (inc-06A C7 / ITEM5).
+     *
+     * <p><strong>Guard order (legacy-parity):</strong>
+     * <ol>
+     *   <li>Size cap: {@code bytes.length > maxFileSizeBytes} → 422 verbatim
+     *       "File exceeds maximum file size allowed"
+     *       (PatientServiceImpl.java:2940-2942).</li>
+     *   <li>Status/count gate via {@code canAttach} — same messages as {@link #addAttachment}.
+     *       ACCEPTED gate for radiology (PatientServiceImpl.java:2931-2933).</li>
+     * </ol>
+     *
+     * <p><strong>On success:</strong> stores bytes via {@link FileStoragePort} (prefix "RAD"),
+     * persists the row with the generated opaque storage filename, audits CREATE, returns DTO.
+     *
+     * <p>Legacy citations: PatientServiceImpl.java:2922-2996 (upload), 2940-2942 (cap),
+     * 2928-2933 (status/count gate).
+     */
+    @Override
+    @Transactional
+    public RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
+                                                    String originalFilename, String name,
+                                                    TxAuditContext ctx) {
+        // Guard order = legacy sequence (PatientServiceImpl.java:2926-2942; review F2):
+        // (1) existence (404) → (2) count==5 → (3) status (ACCEPTED) → (4) size cap. Count
+        // precedes status so the legacy message wins on overlapping-error inputs.
+        Radiology r = requireRadiology(radiologyUid);                         // (1) 404
+        long count = attachmentRepository.countByRadiology(r);
+
+        if (count >= Radiology.MAX_ATTACHMENTS) {                            // (2) count
+            throw new InvalidPatientOperationException(
+                    "Can not add more than 5 attachments");
+        }
+        if (r.getStatus() != RadiologyStatus.ACCEPTED) {                    // (3) status
+            throw new InvalidPatientOperationException(
+                    "Can only attach for accepted tests");
+        }
+        if (bytes.length > storageProperties.maxFileSizeBytes()) {          // (4) size cap
+            throw new InvalidPatientOperationException(
+                    "File exceeds maximum file size allowed");
+        }
+
+        // Store bytes — generates opaque storage filename.
+        String storageName = fileStoragePort.store(bytes, originalFilename,
+                STORAGE_PREFIX, r.getUid());
+
+        RadiologyAttachment attachment = RadiologyAttachment.create(r, name, storageName);
+        RadiologyAttachment saved = attachmentRepository.save(attachment);
+        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+        return radiologyMapper.toAttachmentDto(saved);
+    }
+
+    /**
+     * Download the bytes of a radiology attachment (inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent radiology order must be VERIFIED (PatientResource.java:6154) —
+     * else 422 "Could not download. Radiology is not verified".
+     *
+     * <p>Reads bytes via {@link FileStoragePort#read}; a missing file throws
+     * {@link com.otapp.hmis.shared.error.NotFoundException} (→ 404) from the storage layer.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public FileDownload downloadAttachment(String attachmentUid) {
+        RadiologyAttachment attachment = attachmentRepository.findByUid(attachmentUid)
+                .orElseThrow(() -> new NotFoundException(
+                        "Radiology attachment not found: " + attachmentUid));
+
+        Radiology r = attachment.getRadiology();
+        if (r.getStatus() != RadiologyStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not download. Radiology is not verified");
+        }
+
+        byte[] bytes = fileStoragePort.read(attachment.getFileName());
+        return new FileDownload(attachment.getFileName(), bytes);
     }
 
     /**
@@ -452,7 +647,13 @@ class RadiologyService implements RadiologyPort {
      * Delete a named attachment.
      *
      * <p>Guard: blocked when parent radiology order status == VERIFIED (order is finalized).
-     * Message: "Cannot delete attachment from a verified radiology order".
+     * Verbatim legacy message: "Could not delete. Radiology already verified"
+     * (PatientResource.java:6154-6156).
+     *
+     * <p><strong>Approved deviation:</strong> after the row is deleted, the backing file is
+     * also removed from disk via {@link FileStoragePort#delete} (best-effort — a missing file
+     * is ignored). The legacy does NOT unlink the disk file. Deviation is
+     * security-architect-approved; see {@link FileStoragePort#delete}.
      */
     @Override
     @Transactional
@@ -463,13 +664,18 @@ class RadiologyService implements RadiologyPort {
 
         Radiology r = attachment.getRadiology();
         if (!r.canDeleteAttachment()) {
+            // Verbatim legacy message (PatientResource.java:6154-6156).
             throw new InvalidPatientOperationException(
-                    "Cannot delete attachment from a verified radiology order");
+                    "Could not delete. Radiology already verified");
         }
 
+        String fileName = attachment.getFileName();
         attachmentRepository.delete(attachment);
         auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
                 ctx.actorUsername());
+
+        // Best-effort disk unlink (approved deviation — prevents orphaned files).
+        fileStoragePort.delete(fileName);
     }
 
     // =========================================================================

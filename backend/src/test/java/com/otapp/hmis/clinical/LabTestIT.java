@@ -5,11 +5,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.otapp.hmis.billing.domain.BillStatus;
+import com.otapp.hmis.billing.domain.PatientBillRepository;
+import com.otapp.hmis.billing.domain.PatientCreditNoteRepository;
+import com.otapp.hmis.billing.domain.PatientPaymentDetailRepository;
+import com.otapp.hmis.billing.domain.PaymentDetailStatus;
 import com.otapp.hmis.billing.domain.PaymentMode;
 import com.otapp.hmis.clinical.domain.Consultation;
 import com.otapp.hmis.clinical.domain.ConsultationRepository;
@@ -69,6 +76,9 @@ class LabTestIT extends AbstractIntegrationTest {
     @Autowired ConsultationRepository   consultationRepository;
     @Autowired NonConsultationRepository nonConsultationRepository;
     @Autowired LabTestRepository        labTestRepository;
+    @Autowired PatientBillRepository    billRepository;
+    @Autowired PatientPaymentDetailRepository paymentDetailRepository;
+    @Autowired PatientCreditNoteRepository    creditNoteRepository;
     @Autowired BusinessDayService       businessDayService;
     @Autowired DataSource               dataSource;
 
@@ -257,6 +267,62 @@ class LabTestIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C3 (ITEM3): save_reason_for_rejection — re-callable rejectComment edit on a
+    // REJECTED order; edit on a non-REJECTED order → 422 verbatim.
+    // =========================================================================
+
+    @Test
+    void saveRejectComment_onRejected_editsComment_reCallable() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null, "LAB_TEST", labTypeUid, "5500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Reject first.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Initial reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        // Edit the reject comment (status stays REJECTED).
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Corrected reason\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectComment").value("Corrected reason"));
+
+        // Re-callable: edit again.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Second correction\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rejectComment").value("Second correction"));
+    }
+
+    @Test
+    void saveRejectComment_onNonRejected_422_verbatim() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null, "LAB_TEST", labTypeUid, "5500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING (not REJECTED)
+
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/reject-comment")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectComment\":\"Should fail\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not save. Only allowed for rejected tests"));
+    }
+
+    // =========================================================================
     // Hold: ACCEPTED → PENDING
     // =========================================================================
 
@@ -373,7 +439,70 @@ class LabTestIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Only a pending lab test can be deleted"));
+                        .value("Could not delete, only a PENDING lab test can be deleted"));
+    }
+
+    // =========================================================================
+    // C1 (ITEM1): deleting a PENDING lab test whose bill was already PAID raises the
+    // credit-note reversal via billing.api.cancelCharge — bill→CANCELED, payment→REFUNDED,
+    // a PENDING PatientCreditNote (ref "Canceled lab test") for the full amount.
+    // (Legacy PatientResource.java:2922-2961; soft-flag + CR-10 fix per the ratified standard.)
+    // =========================================================================
+
+    @Test
+    void delete_paidPendingLabTest_reversesBill_refunds_raisesCreditNote() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        // CASH order so a real billable PatientBill exists and can be paid at the cashier.
+        seedPrice(null, "LAB_TEST", labTypeUid, "2500.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+
+        // Order → PENDING; capture the order's real bill uid from the DTO.
+        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
+        String labUid  = orderNode.get("uid").asText();
+        String billUid = orderNode.get("patientBillUid").asText();
+        assertThat(billUid).isNotBlank();
+
+        // Pay the bill at the cashier → PatientPaymentDetail RECEIVED, bill PAID.
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billUids\":[\"" + billUid + "\"],"
+                                + "\"tenderedTotal\":{\"amount\":2500.00,\"currency\":\"TZS\"},"
+                                + "\"paymentMode\":\"CASH\"}"))
+                .andExpect(status().isCreated());
+        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
+                .isEqualTo(PaymentDetailStatus.RECEIVED);
+
+        // Delete the still-PENDING lab test → seam fires.
+        mockMvc.perform(delete(LAB_BASE + "/uid/" + labUid)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNoContent());
+
+        // Order row gone.
+        assertThat(labTestRepository.findByUid(labUid)).isEmpty();
+
+        // Bill soft-canceled (NOT hard-deleted — ratified deviation).
+        assertThat(billRepository.findByUid(billUid).orElseThrow().getStatus())
+                .as("deleted lab test's bill must be CANCELED").isEqualTo(BillStatus.CANCELED);
+
+        // Payment refunded (soft, kept).
+        assertThat(paymentDetailRepository.findByBillUid(billUid).orElseThrow().getStatus())
+                .as("RECEIVED payment must flip to REFUNDED").isEqualTo(PaymentDetailStatus.REFUNDED);
+
+        // A PENDING credit-note for this bill, full amount, legacy reference label.
+        boolean creditNoteRaised = creditNoteRepository.findAll().stream()
+                .anyMatch(cn -> billUid.equals(cn.getPatientBillUid())
+                        && "Canceled lab test".equals(cn.getReference()));
+        assertThat(creditNoteRaised)
+                .as("a PENDING credit-note (ref 'Canceled lab test') must be raised for the paid bill")
+                .isTrue();
     }
 
     // =========================================================================
@@ -583,12 +712,130 @@ class LabTestIT extends AbstractIntegrationTest {
                         .content(verifyBody("14.0", "NORMAL", "12-16", "g/dL")))
                 .andExpect(status().isOk());
 
-        // Try to delete attachment when VERIFIED → 422
+        // Try to delete attachment when VERIFIED → 422 (corrected verbatim legacy message, C7).
         mockMvc.perform(delete(LAB_BASE + "/attachments/uid/" + attUid)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail")
-                        .value("Cannot delete attachment from a verified lab test"));
+                        .value("Could not delete. Lab Test already verified"));
+    }
+
+    // =========================================================================
+    // C7 (ITEM5): multipart upload + inline download (local-disk storage).
+    // Upload (COLLECTED, settled) → 201; download before VERIFIED → 422; download after
+    // VERIFIED → 200 inline bytes.
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_thenDownload_afterVerified() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Accept → Collect (lab attach-gate is COLLECTED).
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        // Upload a small file (multipart) → 201 with a fileName.
+        byte[] content = ("PDF-BYTES-" + tag).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "scan.pdf", "application/pdf", content);
+        MvcResult upload = mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .param("name", "Scan")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty())
+                .andExpect(jsonPath("$.fileName").isNotEmpty())
+                .andReturn();
+        String attUid = objectMapper.readTree(upload.getResponse().getContentAsString())
+                .get("uid").asText();
+
+        // Download BEFORE VERIFIED → 422 (download gate).
+        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not download. Lab test is not verified"));
+
+        // Verify the order.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("12.5", "NORMAL", "10-15", "g/dL")))
+                .andExpect(status().isOk());
+
+        // Download AFTER VERIFIED → 200 inline bytes.
+        mockMvc.perform(get(LAB_BASE + "/attachments/uid/" + attUid + "/download")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("inline")))
+                .andExpect(result -> org.assertj.core.api.Assertions
+                        .assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content));
+    }
+
+    // =========================================================================
+    // C7 review F1: a 2 MiB upload (above Spring's 1 MB default, below the 10 MiB app cap)
+    // must SUCCEED — proves spring.servlet.multipart.max-file-size is raised so the in-code
+    // cap is the binding limit (not the resolver default).
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_aboveOneMiB_belowCap_succeeds() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        byte[] twoMiB = new byte[2 * 1024 * 1024];  // 2 MiB > Spring's 1 MB default, < 10 MiB cap
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "big.pdf", "application/pdf", twoMiB);
+        mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty());
+    }
+
+    // =========================================================================
+    // C7 review F2: upload guard order = existence -> count -> status -> size.
+    // On an order that is NOT COLLECTED, an oversize-and-wrong-status input must yield the
+    // STATUS message (not the size message), because status is checked before size. (We can't
+    // exceed the 10 MiB cap cheaply here, so we assert the status guard fires on a PENDING order
+    // for a normal-size file — confirming status precedes the store/size path.)
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_onNonCollected_422_statusMessage() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null, "LAB_TEST", labTypeUid, "5000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING (not COLLECTED)
+
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "x.pdf", "application/pdf", "small".getBytes());
+        mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Can only attach for collected tests"));
     }
 
     // =========================================================================
@@ -668,12 +915,22 @@ class LabTestIT extends AbstractIntegrationTest {
     // =========================================================================
 
     @Test
-    void saveResult_andAddReport_whenCollected() throws Exception {
+    void saveResult_andAddReport_billGated() throws Exception {
         String tag = uniq();
         String labTypeUid = createLabTestType(tag);
         seedPrice(null, "LAB_TEST", labTypeUid, "4200.00", true);
         String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
-        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Order via raw endpoint to capture the bill uid (CASH → bill UNPAID).
+        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/lab-tests")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labTestTypeUid\":\"" + labTypeUid + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode orderNode = objectMapper.readTree(orderResult.getResponse().getContentAsString());
+        String labUid  = orderNode.get("uid").asText();
+        String billUid = orderNode.get("patientBillUid").asText();
 
         // Accept → Collect
         mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
@@ -683,7 +940,7 @@ class LabTestIT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk());
 
-        // saveResult
+        // saveResult (COLLECTED gate, unchanged)
         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/result")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -692,7 +949,24 @@ class LabTestIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.result").value("Positive"))
                 .andExpect(jsonPath("$.status").value("COLLECTED"));
 
-        // addReport
+        // addReport BEFORE payment → 422 bill-gate (legacy parity, C5).
+        mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Should be blocked\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not add report. Payment not verified"));
+
+        // Pay the bill at the cashier → bill PAID.
+        mockMvc.perform(post("/api/v1/billing/payments")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"billUids\":[\"" + billUid + "\"],"
+                                + "\"tenderedTotal\":{\"amount\":4200.00,\"currency\":\"TZS\"},"
+                                + "\"paymentMode\":\"CASH\"}"))
+                .andExpect(status().isCreated());
+
+        // addReport AFTER payment → 200 (bill PAID; order still COLLECTED, not VERIFIED).
         mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -700,6 +974,83 @@ class LabTestIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.report").value("Detailed report text here"))
                 .andExpect(jsonPath("$.status").value("COLLECTED"));
+    }
+
+    // =========================================================================
+    // C6 (ITEM4): post-VERIFIED report is immutable via add-report (-> 422) and amendable only via
+    // the audited amend-report path, which retains the prior narrative + stamps the amend triplet.
+    // =========================================================================
+
+    @Test
+    void verifiedReport_blockedViaAddReport_amendableViaAmendPath_retainsPrior() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        // INSURANCE → bill COVERED → bill-gate passes without a cashier payment.
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+
+        // Drive to VERIFIED, writing the original report at verify.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/verify")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("12.5", "NORMAL", "10-15", "g/dL")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+
+        // Set an original report via amend (first amend; prior was null/empty from verify body).
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Original verified narrative\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Original verified narrative"));
+
+        // add-report on a VERIFIED order must be BLOCKED (routes to amend).
+        mockMvc.perform(put(LAB_BASE + "/uid/" + labUid + "/report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Sneaky overwrite\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail")
+                        .value("Could not add report. A verified report can only be amended via the amend path"));
+
+        // Amend again → new report written, PRIOR narrative retained, amend triplet stamped.
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Corrected narrative\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.report").value("Corrected narrative"))
+                .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
+                .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
+                .andExpect(jsonPath("$.reportAmendedOnDayUid").isNotEmpty())
+                .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
+                .andExpect(jsonPath("$.status").value("VERIFIED"));
+    }
+
+    @Test
+    void amendReport_onNonVerified_422() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING, bill COVERED
+
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/amend-report")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"report\":\"Too early\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Could not amend report. Lab test is not verified"));
     }
 
     // =========================================================================

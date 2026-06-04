@@ -1,6 +1,7 @@
 package com.otapp.hmis.clinical.application;
 
 import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.billing.api.BillingQueries;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.api.SettlementPolicy;
@@ -30,6 +31,8 @@ import com.otapp.hmis.shared.audit.AuditRecorder;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.NotFoundException;
+import com.otapp.hmis.shared.storage.AttachmentStorageProperties;
+import com.otapp.hmis.shared.storage.FileStoragePort;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -64,13 +67,10 @@ import org.springframework.transaction.annotation.Transactional;
  * The clinical module NEVER reads billing bill status post-hoc (ADR-0008 §6, CR-INC05-01).
  * The cash-PAID→settled=true propagation is DEFERRED (same pattern as Consultation).
  *
- * <p><strong>DEFERRED — delete credit-note seam:</strong>
- * When a PENDING lab test is deleted, if the patient already PAID the bill (bill status == PAID),
- * a credit-note must be raised in the billing module. The billing module does not yet publish a
- * cancel/credit-note command via {@code billing.api}. Until that seam is published:
- * the lab test IS hard-deleted when PENDING (correct parity for the common case — unpaid);
- * the credit-note for already-PAID bills is NOT raised. A TODO marks this gap. The operational
- * risk is low: CASH labs are rarely paid before the specimen is even collected.
+ * <p><strong>Delete credit-note seam (wired, inc-06A C1):</strong>
+ * When a PENDING lab test is deleted, {@link BillingCommands#cancelCharge} reverses its bill in
+ * the same transaction — soft-cancel the bill and, only when a RECEIVED payment existed, refund
+ * it and raise a PENDING credit-note (reference "Canceled lab test"). See {@link #delete}.
  *
  * <p><strong>DEFERRED — admission lab path:</strong>
  * The {@code admissionUid} path is not implemented. Deferred to the Inpatient/Nursing increment.
@@ -102,11 +102,20 @@ class LabTestService implements LabTestPort {
     private final NonConsultationRepository   nonConsultationRepository;
     private final LabTestTypeLookup           labTestTypeLookup;
     private final BillingCommands             billingCommands;
+    private final BillingQueries              billingQueries;
     private final AuditRecorder               auditRecorder;
     private final LabTestMapper               labTestMapper;
+    /** Local-disk file storage (inc-06A C7 / ITEM5). */
+    private final FileStoragePort             fileStoragePort;
+    /** Max file size + base path config (inc-06A C7 / ITEM5). */
+    private final AttachmentStorageProperties storageProperties;
 
     private static final String AUDIT_ENTITY      = "clinical.LabTest";
+    /** Legacy credit-note reference for a deleted lab test (PatientResource.java:2936). */
+    private static final String REF_CANCEL_LAB_TEST = "Canceled lab test";
     private static final String AUDIT_ATTACHMENT  = "clinical.LabTestAttachment";
+    /** Storage prefix for lab test attachments (inc-06A C7; approved deviation from legacy "LT"+id+patientNo). */
+    private static final String STORAGE_PREFIX    = "LT";
 
     // =========================================================================
     // Order creation — consultation path
@@ -303,6 +312,32 @@ class LabTestService implements LabTestPort {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3).
+     *
+     * <p>Reproduces legacy {@code save_reason_for_rejection} (PatientResource.java:2034-2048):
+     * re-callable post-rejection edit that sets ONLY {@code rejectComment}, with no status change.
+     *
+     * <p>Guard: status must be REJECTED, else 422 with verbatim
+     * "Could not save. Only allowed for rejected tests". No null/blank validation on the
+     * incoming comment (legacy persists null/empty as-is).
+     */
+    @Override
+    @Transactional
+    public LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request,
+                                        TxAuditContext ctx) {
+        LabTest lt = requireLabTest(labTestUid);
+
+        if (lt.getStatus() != LabTestStatus.REJECTED) {
+            throw new InvalidPatientOperationException(
+                    "Could not save. Only allowed for rejected tests");
+        }
+
+        lt.updateRejectComment(request.rejectComment());
+        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return labTestMapper.toDto(lt);
+    }
+
+    /**
      * Collect: ACCEPTED → COLLECTED.
      *
      * <p>Guard: status must be ACCEPTED.
@@ -394,8 +429,18 @@ class LabTestService implements LabTestPort {
     }
 
     /**
-     * Add/update report text without status change. Allowed only when status == COLLECTED.
-     * Message: "Please collect the lab test first" (status guard parity).
+     * Add/update the report text without status change (inc-06A C5 / ITEM2 lab correction).
+     *
+     * <p>Reproduces legacy {@code lab_tests/add_report} (PatientResource.java:3381-3395): the gate
+     * is on the BILL status ({@code PAID|COVERED|VERIFIED}), NOT the order status — verbatim 422
+     * "Could not add report. Payment not verified" otherwise. This replaces the as-built
+     * COLLECTED order-status gate ("Please collect the lab test first"), which was not legacy parity.
+     *
+     * <p><strong>Post-VERIFIED amendment:</strong> the legacy gate allows overwriting the report
+     * even after the order is VERIFIED. Per the ratified ITEM4 policy (audited-amend, C6), a
+     * post-VERIFIED change must go through the dedicated {@code amendReport} path (added in C6);
+     * this endpoint blocks a VERIFIED-order overwrite so the verified report cannot be silently
+     * mutated. Until C6 lands, a VERIFIED order's report is immutable via this path.
      */
     @Override
     @Transactional
@@ -403,12 +448,60 @@ class LabTestService implements LabTestPort {
                                 TxAuditContext ctx) {
         LabTest lt = requireLabTest(labTestUid);
 
-        if (lt.getStatus() != LabTestStatus.COLLECTED) {
+        // Bill-gate (legacy parity): report write requires a settled bill, read live (C4 seam).
+        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
+
+        // Post-VERIFIED writes are routed to the audited amend path (C6 / ITEM4 ratified policy).
+        if (lt.getStatus() == LabTestStatus.VERIFIED) {
             throw new InvalidPatientOperationException(
-                    "Please collect the lab test first");
+                    "Could not add report. A verified report can only be amended via the amend path");
         }
 
         lt.addReport(request.report());
+        auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
+        return labTestMapper.toDto(lt);
+    }
+
+    /**
+     * Bill-gate for report writes (inc-06A C5, ADR-0008 §6 scoped relaxation): the bill must be
+     * {@code PAID}, {@code COVERED}, or {@code VERIFIED} (legacy add_report gate). Reads the LIVE
+     * bill status via {@link BillingQueries} — the order-time local {@code settled} flag is
+     * insufficient because a bill paid after order creation still shows {@code settled=false}.
+     *
+     * @throws InvalidPatientOperationException (422) verbatim "Could not add report. Payment not verified"
+     */
+    private void requireBillPaidCoveredOrVerified(String billUid) {
+        BillStatus status = billingQueries.getBillStatus(billUid);
+        if (status != BillStatus.PAID && status != BillStatus.COVERED
+                && status != BillStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not add report. Payment not verified");
+        }
+    }
+
+    /**
+     * Amend the report of a VERIFIED lab test via the audited-amend path (inc-06A C6 / ITEM4).
+     *
+     * <p>Ratified policy (vs the legacy silent post-VERIFIED overwrite): a verified report may be
+     * changed ONLY here, which retains the prior narrative ({@code priorReport}) and stamps the
+     * amend audit triplet. Same bill-gate as {@link #addReport} ({@code PAID|COVERED|VERIFIED},
+     * read live via {@link BillingQueries}). Guard: status must be VERIFIED, else 422
+     * "Could not amend report. Lab test is not verified".
+     */
+    @Override
+    @Transactional
+    public LabTestDto amendReport(String labTestUid, LabTestReportRequest request,
+                                  TxAuditContext ctx) {
+        LabTest lt = requireLabTest(labTestUid);
+
+        requireBillPaidCoveredOrVerified(lt.getPatientBillUid());
+
+        if (lt.getStatus() != LabTestStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not amend report. Lab test is not verified");
+        }
+
+        lt.amendReport(request.report(), ctx.actorUsername(), ctx.dayUid(), Instant.now());
         auditRecorder.record(AUDIT_ENTITY, lt.getUid(), AuditAction.UPDATE, ctx.actorUsername());
         return labTestMapper.toDto(lt);
     }
@@ -418,20 +511,23 @@ class LabTestService implements LabTestPort {
     // =========================================================================
 
     /**
-     * Hard-delete a PENDING lab test order.
+     * Hard-delete a PENDING lab test order, reversing its bill (inc-06A C1, ITEM1).
      *
-     * <p>Guard: status must be PENDING (else 422 "Only a pending lab test can be deleted").
+     * <p>Guard: status must be PENDING (else 422, legacy verbatim
+     * "Could not delete, only a PENDING lab test can be deleted",
+     * PatientResource.java:2917-2919).
      *
-     * <p><strong>DEFERRED — credit-note seam:</strong>
-     * If the bill has already been PAID (CASH-OPD paid at cashier before specimen collected),
-     * a credit-note should be raised in billing. The billing module does not yet publish a
-     * cancel/credit-note command via {@code billing.api}. This is the same deferral as C2's
-     * cancel-consultation credit-note gap. Until the seam lands:
-     * <ul>
-     *   <li>The lab test IS deleted (correct for the common unpaid case).</li>
-     *   <li>No credit-note is raised for already-PAID bills.</li>
-     * </ul>
-     * TODO: Wire billing cancel seam when billing.api publishes CancelBillCommand.
+     * <p><strong>Bill reversal (credit-note seam — now wired):</strong>
+     * Before the order row is removed, {@link BillingCommands#cancelCharge} is invoked in the
+     * SAME transaction (propagation REQUIRED) with the legacy reference label
+     * {@value #REF_CANCEL_LAB_TEST}. The published {@code billing.api} command reproduces the
+     * legacy reversal: soft-cancel the bill (→ CANCELED), and ONLY when a RECEIVED payment
+     * existed, refund it (RECEIVED → REFUNDED) and raise a PENDING {@code PatientCreditNote}
+     * for the full bill amount; the invoice detail is detached and the parent invoice deleted
+     * only when empty (the CR-10 fix — the legacy {@code j=j++} always-delete bug is NOT
+     * reproduced). The legacy hard-delete of the bill/payment rows is NOT reproduced (the
+     * ratified soft-flag standard supersedes it). The clinical ORDER row is still hard-deleted
+     * (matches legacy for the order entity). Legacy: PatientResource.java:2912-2965.
      *
      * @param labTestUid the ULID of the lab test to delete
      * @param ctx        transaction audit context
@@ -443,11 +539,12 @@ class LabTestService implements LabTestPort {
 
         if (lt.getStatus() != LabTestStatus.PENDING) {
             throw new InvalidPatientOperationException(
-                    "Only a pending lab test can be deleted");
+                    "Could not delete, only a PENDING lab test can be deleted");
         }
 
-        // TODO: If billing bill is PAID, raise a credit-note (deferred — billing cancel seam
-        // not yet published in billing.api; see LabTestService javadoc).
+        // Reverse the bill (soft-cancel + RECEIVED→credit-note) BEFORE deleting the order row,
+        // inside this transaction (ITEM1; legacy PatientResource.java:2922-2961).
+        billingCommands.cancelCharge(lt.getPatientBillUid(), REF_CANCEL_LAB_TEST, ctx);
 
         labTestRepository.delete(lt);
         auditRecorder.record(AUDIT_ENTITY, labTestUid, AuditAction.DELETE, ctx.actorUsername());
@@ -458,13 +555,13 @@ class LabTestService implements LabTestPort {
     // =========================================================================
 
     /**
-     * Add an attachment to a lab test.
+     * Add an attachment (JSON path — the original endpoint; keeps existing tests green).
      *
      * <p>Guards (PatientServiceImpl.java:2828-2834):
      * <ol>
      *   <li>Lab test must exist (404).</li>
-     *   <li>Status must be COLLECTED (422 "Lab test must be collected before adding attachments").</li>
-     *   <li>Attachment count must be less than 5 (422 "Maximum of 5 attachments allowed per lab test").</li>
+     *   <li>Status must be COLLECTED (422 "Can only attach for collected tests").</li>
+     *   <li>Attachment count must be less than 5 (422 "Can not add more than 5 attachments").</li>
      * </ol>
      */
     @Override
@@ -494,6 +591,86 @@ class LabTestService implements LabTestPort {
     }
 
     /**
+     * Upload a file attachment via multipart (inc-06A C7 / ITEM5).
+     *
+     * <p><strong>Guard order (legacy-parity):</strong>
+     * <ol>
+     *   <li>Size cap: {@code bytes.length > maxFileSizeBytes} → 422 verbatim
+     *       "File exceeds maximum file size allowed"
+     *       (PatientServiceImpl.java:2842-2844).</li>
+     *   <li>Status/count gate via {@code canAttach} — same messages as {@link #addAttachment}.
+     *       The legacy gate checks status first then count; the same order is preserved here.</li>
+     * </ol>
+     *
+     * <p><strong>On success:</strong> stores bytes via {@link FileStoragePort} (prefix "LT"),
+     * persists the row with the generated opaque storage filename, audits CREATE, returns DTO.
+     *
+     * <p>Legacy citations: PatientServiceImpl.java:2823-2906 (upload), 2842-2844 (cap),
+     * 2828-2834 (status/count gate).
+     */
+    @Override
+    @Transactional
+    public LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes,
+                                                  String originalFilename, String name,
+                                                  TxAuditContext ctx) {
+        // Guard order = legacy sequence (PatientServiceImpl.java:2828-2844; review F2):
+        // (1) existence (404) → (2) count==5 → (3) status → (4) size cap. The count check
+        // precedes the status check so the legacy message wins on overlapping-error inputs.
+        LabTest lt = requireLabTest(labTestUid);                              // (1) 404
+        long count = attachmentRepository.countByLabTest(lt);
+
+        if (count >= LabTest.MAX_ATTACHMENTS) {                               // (2) count
+            throw new InvalidPatientOperationException(
+                    "Can not add more than 5 attachments");
+        }
+        if (lt.getStatus() != LabTestStatus.COLLECTED) {                     // (3) status
+            throw new InvalidPatientOperationException(
+                    "Can only attach for collected tests");
+        }
+        if (bytes.length > storageProperties.maxFileSizeBytes()) {           // (4) size cap
+            throw new InvalidPatientOperationException(
+                    "File exceeds maximum file size allowed");
+        }
+
+        // Store bytes — generates opaque storage filename.
+        String storageName = fileStoragePort.store(bytes, originalFilename,
+                STORAGE_PREFIX, lt.getUid());
+
+        LabTestAttachment attachment = LabTestAttachment.create(lt, name, storageName);
+        LabTestAttachment saved = attachmentRepository.save(attachment);
+        auditRecorder.record(AUDIT_ATTACHMENT, saved.getUid(), AuditAction.CREATE,
+                ctx.actorUsername());
+
+        return labTestMapper.toAttachmentDto(saved);
+    }
+
+    /**
+     * Download the bytes of a lab test attachment (inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent lab test must be VERIFIED (PatientResource.java:6021) —
+     * else 422 "Could not download. Lab test is not verified".
+     *
+     * <p>Reads bytes via {@link FileStoragePort#read}; a missing file throws
+     * {@link com.otapp.hmis.shared.error.NotFoundException} (→ 404) from the storage layer.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public FileDownload downloadAttachment(String attachmentUid) {
+        LabTestAttachment attachment = attachmentRepository.findByUid(attachmentUid)
+                .orElseThrow(() -> new NotFoundException(
+                        "Lab test attachment not found: " + attachmentUid));
+
+        LabTest lt = attachment.getLabTest();
+        if (lt.getStatus() != LabTestStatus.VERIFIED) {
+            throw new InvalidPatientOperationException(
+                    "Could not download. Lab test is not verified");
+        }
+
+        byte[] bytes = fileStoragePort.read(attachment.getFileName());
+        return new FileDownload(attachment.getFileName(), bytes);
+    }
+
+    /**
      * List all attachments for a lab test.
      *
      * <p>Note: the download-gated-on-VERIFIED rule (PatientResource.java:6021) is enforced
@@ -512,8 +689,14 @@ class LabTestService implements LabTestPort {
      * Delete an attachment.
      *
      * <p>Guard: blocked when parent lab test status == VERIFIED (order is finalized).
-     * Message: "Cannot delete attachment from a verified lab test"
-     * (PatientResource.java:6021 parity — VERIFIED gate).
+     * Verbatim legacy message: "Could not delete. Lab Test already verified"
+     * (PatientResource.java:6021-6022).
+     *
+     * <p><strong>Approved deviation:</strong> after the row is deleted, the backing file is
+     * also removed from disk via {@link FileStoragePort#delete} (best-effort — a missing file
+     * is ignored). The legacy does NOT unlink the disk file (PatientResource.java:6021-6022).
+     * Unlinking here prevents orphaned files on the storage volume; deviation is
+     * security-architect-approved and documented in {@link FileStoragePort#delete}.
      */
     @Override
     @Transactional
@@ -524,13 +707,18 @@ class LabTestService implements LabTestPort {
 
         LabTest lt = attachment.getLabTest();
         if (!lt.canDeleteAttachment()) {
+            // Verbatim legacy message (PatientResource.java:6021-6022).
             throw new InvalidPatientOperationException(
-                    "Cannot delete attachment from a verified lab test");
+                    "Could not delete. Lab Test already verified");
         }
 
+        String fileName = attachment.getFileName();
         attachmentRepository.delete(attachment);
         auditRecorder.record(AUDIT_ATTACHMENT, attachmentUid, AuditAction.DELETE,
                 ctx.actorUsername());
+
+        // Best-effort disk unlink (approved deviation — prevents orphaned files).
+        fileStoragePort.delete(fileName);
     }
 
     // =========================================================================

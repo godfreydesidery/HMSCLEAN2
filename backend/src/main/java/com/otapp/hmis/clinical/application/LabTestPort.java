@@ -69,6 +69,18 @@ public interface LabTestPort {
     /** Reject: PENDING|ACCEPTED → REJECTED. Guard enforced in service. */
     LabTestDto reject(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
 
+    /**
+     * Amend a VERIFIED report (inc-06A C6 / ITEM4 audited-amend). Retains the prior narrative and
+     * stamps the amend audit triplet. Guard: status==VERIFIED + bill-gate, enforced in service.
+     */
+    LabTestDto amendReport(String labTestUid, LabTestReportRequest request, TxAuditContext ctx);
+
+    /**
+     * Edit the rejection comment on an already-REJECTED order (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Guard: status must be REJECTED, enforced in service.
+     */
+    LabTestDto saveRejectComment(String labTestUid, LabTestRejectRequest request, TxAuditContext ctx);
+
     /** Collect: ACCEPTED → COLLECTED. Guard enforced in service. */
     LabTestDto collect(String labTestUid, TxAuditContext ctx);
 
@@ -110,6 +122,37 @@ public interface LabTestPort {
     /** Add an attachment (status must be COLLECTED; max 5 per test). */
     LabTestAttachmentDto addAttachment(String labTestUid, LabTestAttachmentRequest request,
                                        TxAuditContext ctx);
+
+    /**
+     * Upload a file attachment to a lab test (multipart path, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard order (legacy-parity): (1) size cap → 422 "File exceeds maximum file size allowed";
+     * (2) status/count gate via {@code canAttach} → 422 verbatim messages. On success: stores
+     * bytes via {@link com.otapp.hmis.shared.storage.FileStoragePort}, persists the row with
+     * the generated storage filename, audit CREATE, returns 201 DTO.
+     *
+     * <p>Legacy citations: PatientServiceImpl.java:2823-2906 (upload), 2842-2844 (cap).
+     *
+     * @param labTestUid       owning lab test ULID
+     * @param bytes            raw file bytes extracted at the controller layer
+     * @param originalFilename client-supplied filename (used to derive extension only)
+     * @param name             optional display name for the attachment
+     * @param ctx              transaction audit context
+     * @return the created LabTestAttachmentDto (fileName is the opaque storage key)
+     */
+    LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes, String originalFilename,
+                                          String name, TxAuditContext ctx);
+
+    /**
+     * Download the bytes of an attachment (VERIFIED-gate, inc-06A C7 / ITEM5).
+     *
+     * <p>Guard: parent lab test must be VERIFIED (PatientResource.java:6021) —
+     * else 422 "Could not download. Lab test is not verified".
+     *
+     * @param attachmentUid the ULID of the attachment to download
+     * @return a {@link FileDownload} record with the storage filename and bytes
+     */
+    FileDownload downloadAttachment(String attachmentUid);
 
     /** List attachments for a lab test. */
     List<LabTestAttachmentDto> listAttachments(String labTestUid);

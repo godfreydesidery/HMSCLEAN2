@@ -13,10 +13,13 @@ import com.otapp.hmis.clinical.domain.LabTestStatus;
 import com.otapp.hmis.shared.domain.BusinessDayService;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -27,8 +30,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * REST controller for the LabTest aggregate (inc-05 C7).
@@ -195,6 +200,21 @@ public class LabTestController {
     }
 
     /**
+     * Edit the rejection comment on an already-REJECTED lab test (inc-06A C3 / ITEM3,
+     * legacy save_reason_for_rejection). Re-callable; sets only rejectComment.
+     * Guard: status must be REJECTED (else 422 "Could not save. Only allowed for rejected tests").
+     * Authenticated-only.
+     */
+    @PostMapping("/lab-tests/uid/{uid}/reject-comment")
+    public LabTestDto saveRejectComment(
+            @PathVariable("uid") String labTestUid,
+            @RequestBody(required = false) LabTestRejectRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        LabTestRejectRequest req = request != null ? request : new LabTestRejectRequest(null);
+        return labTestService.saveRejectComment(labTestUid, req, ctxFrom(jwt));
+    }
+
+    /**
      * Collect specimen: ACCEPTED → COLLECTED.
      * Guard: status must be ACCEPTED (else 422 "Please accept the lab test first").
      * Authenticated-only.
@@ -252,8 +272,10 @@ public class LabTestController {
     }
 
     /**
-     * Add/update report text without status change. Status must be COLLECTED.
-     * Authenticated-only.
+     * Add/update report text without status change (inc-06A C5 / ITEM2). Gated on the BILL status
+     * ({@code PAID|COVERED|VERIFIED}), independent of order status — 422
+     * "Could not add report. Payment not verified" otherwise. A VERIFIED order's report is
+     * immutable via this path; use {@code /amend-report}. Authenticated-only.
      */
     @PutMapping("/lab-tests/uid/{uid}/report")
     public LabTestDto addReport(
@@ -261,6 +283,19 @@ public class LabTestController {
             @RequestBody LabTestReportRequest request,
             @AuthenticationPrincipal Jwt jwt) {
         return labTestService.addReport(labTestUid, request, ctxFrom(jwt));
+    }
+
+    /**
+     * Amend a VERIFIED lab test's report via the audited-amend path (inc-06A C6 / ITEM4).
+     * Retains the prior narrative + stamps the amend audit triplet. Same bill-gate as add-report;
+     * guard: status must be VERIFIED. Authenticated-only.
+     */
+    @PostMapping("/lab-tests/uid/{uid}/amend-report")
+    public LabTestDto amendReport(
+            @PathVariable("uid") String labTestUid,
+            @RequestBody LabTestReportRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return labTestService.amendReport(labTestUid, request, ctxFrom(jwt));
     }
 
     // =========================================================================
@@ -326,6 +361,45 @@ public class LabTestController {
             @PathVariable("attachmentUid") String attachmentUid,
             @AuthenticationPrincipal Jwt jwt) {
         labTestService.deleteAttachment(attachmentUid, ctxFrom(jwt));
+    }
+
+    // =========================================================================
+    // Attachment file storage (inc-06A C7 / ITEM5) — multipart upload + inline download
+    // POST /api/v1/clinical/lab-tests/uid/{uid}/attachments/upload
+    // GET  /api/v1/clinical/lab-tests/attachments/uid/{attachmentUid}/download
+    // =========================================================================
+
+    /**
+     * Upload a file attachment (multipart). Guards: size cap (10 MiB → 422
+     * "File exceeds maximum file size allowed"), then the COLLECTED status + max-5 gate.
+     * The bytes are stored on local disk; the row holds the opaque storage filename.
+     * Authenticated-only.
+     */
+    @PostMapping(path = "/lab-tests/uid/{uid}/attachments/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public LabTestAttachmentDto uploadAttachment(
+            @PathVariable("uid") String labTestUid,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "name", required = false) String name,
+            @AuthenticationPrincipal Jwt jwt) throws IOException {
+        return labTestService.uploadAttachment(
+                labTestUid, file.getBytes(), file.getOriginalFilename(), name, ctxFrom(jwt));
+    }
+
+    /**
+     * Download an attachment's bytes. Guard: parent lab test must be VERIFIED
+     * (else 422 "Could not download. Lab test is not verified"). Authenticated-only.
+     *
+     * <p>The response is built via {@link AttachmentDownloadSupport} (SEC-01 stored-XSS
+     * hardening): only PDF/raster-image types render inline; everything else downloads as
+     * octet-stream, and {@code X-Content-Type-Options: nosniff} is always set.
+     */
+    @GetMapping("/lab-tests/attachments/uid/{attachmentUid}/download")
+    public ResponseEntity<byte[]> downloadAttachment(
+            @PathVariable("attachmentUid") String attachmentUid,
+            @AuthenticationPrincipal Jwt jwt) {
+        return AttachmentDownloadSupport.build(labTestService.downloadAttachment(attachmentUid));
     }
 
     // =========================================================================
