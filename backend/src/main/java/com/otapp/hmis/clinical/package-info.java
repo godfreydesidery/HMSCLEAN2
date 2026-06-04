@@ -25,9 +25,9 @@
  *   <li>{@code shared} — {@code AuditableEntity}, {@code TxAuditContext},
  *       {@code BusinessDayService}, common exceptions.</li>
  *   <li>{@code billing :: api} — {@code SettlementPolicy}, {@code PayBeforeServiceException},
- *       {@code PaymentMode} (settlement seam — clinical reads local flag, never calls back;
- *       inc-05 §5). {@code BillingCommands} is used by registration only, not by clinical
- *       lifecycle (lifecycle never charges).</li>
+ *       {@code PaymentMode}, {@code BillingCommands}, {@code ChargeRequest}, {@code ChargeResult}
+ *       (C7: lab/radiology/procedure order creation calls {@code recordClinicalCharge};
+ *       settlement seam — clinical reads local flag, never calls back post-charge; inc-05 §5).</li>
  *   <li>{@code iam :: lookup} — clinician affiliation gate (inc-05 C3+).</li>
  *   <li>{@code masterdata :: lookup} — clinic existence / ServiceKind (inc-05 C3+).</li>
  * </ul>
