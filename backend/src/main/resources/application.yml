@@ -32,6 +32,16 @@ spring:
     virtual:
       enabled: true
 
+  servlet:
+    multipart:
+      # Set ABOVE the in-code 10 MiB attachment cap (hmis.attachments.max-file-size-bytes) so the
+      # application-layer gate is the binding limit and returns the verbatim 422 "File exceeds
+      # maximum file size allowed" (inc-06A C7 review F1). Spring's defaults (1 MB/file, 10 MB/req)
+      # would otherwise reject 1–10 MiB uploads with MaxUploadSizeExceededException before the
+      # controller runs — a parity regression vs the legacy 10 MiB cap.
+      max-file-size: 11MB
+      max-request-size: 12MB
+
 # JWT signing — secret consumed ONLY via ${JWT_SECRET}; no literal anywhere (ADR-0013).
 hmis:
   jwt:

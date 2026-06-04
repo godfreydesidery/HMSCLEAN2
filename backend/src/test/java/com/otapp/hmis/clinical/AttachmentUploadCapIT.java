@@ -41,8 +41,10 @@ class AttachmentUploadCapIT extends AbstractIntegrationTest {
     private static final String BASE         = "/api/v1/clinical";
     private static final String CONSULT_BASE = BASE + "/consultations/uid/";
     private static final String LAB_BASE     = BASE + "/lab-tests";
+    private static final String RAD_BASE     = BASE + "/radiologies";
     private static final String PRICES_URL   = "/api/v1/masterdata/service-prices";
     private static final String LAB_TYPES    = "/api/v1/masterdata/lab-test-types";
+    private static final String RAD_TYPES    = "/api/v1/masterdata/radiology-types";
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
@@ -108,6 +110,46 @@ class AttachmentUploadCapIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("File exceeds maximum file size allowed"));
     }
 
+    @Test
+    void uploadRadiologyAttachment_overCap_422() throws Exception {
+        String tag = uniq();
+        String radTypeUid = createRadiologyType(tag);
+        seedPrice(radTypeUid, "RADIOLOGY");
+
+        String consultUid = seedConsultation(tag);
+        MvcResult orderResult = mockMvc.perform(post(CONSULT_BASE + consultUid + "/radiologies")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"radiologyTypeUid\":\"" + radTypeUid + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String radUid = objectMapper.readTree(orderResult.getResponse().getContentAsString())
+                .get("uid").asText();
+        // Radiology attach-gate is ACCEPTED.
+        mockMvc.perform(post(RAD_BASE + "/uid/" + radUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        byte[] tooBig = "12345678901".getBytes(StandardCharsets.UTF_8); // 11 bytes > 10-byte cap
+        MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", tooBig);
+        mockMvc.perform(multipart(RAD_BASE + "/uid/" + radUid + "/attachments/upload")
+                        .file(file)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("File exceeds maximum file size allowed"));
+    }
+
+    private String createRadiologyType(String tag) throws Exception {
+        String body = """
+                {"code":"RT-%s","name":"RadType %s","description":null,"price":8000.00,"active":true}
+                """.formatted(tag, tag);
+        MvcResult r = mockMvc.perform(post(RAD_TYPES)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
+    }
+
     private String createLabTestType(String tag) throws Exception {
         String body = """
                 {"code":"LTT-%s","name":"Lab Type %s","description":null,"range":null,
@@ -121,11 +163,15 @@ class AttachmentUploadCapIT extends AbstractIntegrationTest {
         return objectMapper.readTree(r.getResponse().getContentAsString()).get("uid").asText();
     }
 
-    private void seedPrice(String labTypeUid) throws Exception {
+    private void seedPrice(String serviceUid) throws Exception {
+        seedPrice(serviceUid, "LAB_TEST");
+    }
+
+    private void seedPrice(String serviceUid, String kind) throws Exception {
         String body = """
-                {"planUid":null,"kind":"LAB_TEST","serviceUid":"%s","currency":"TZS",
+                {"planUid":null,"kind":"%s","serviceUid":"%s","currency":"TZS",
                  "amount":1000.00,"covered":true,"minAmount":null,"maxAmount":null,"active":true}
-                """.formatted(labTypeUid);
+                """.formatted(kind, serviceUid);
         mockMvc.perform(post(PRICES_URL)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))

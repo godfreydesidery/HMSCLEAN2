@@ -456,6 +456,7 @@ class RadiologyIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.report").value("Corrected narrative"))
                 .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
                 .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
+                .andExpect(jsonPath("$.reportAmendedOnDayUid").isNotEmpty())
                 .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
                 .andExpect(jsonPath("$.status").value("VERIFIED"));
     }

@@ -1,6 +1,5 @@
 package com.otapp.hmis.clinical.web;
 
-import com.otapp.hmis.clinical.application.FileDownload;
 import com.otapp.hmis.clinical.application.RadiologyPort;
 import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentDto;
 import com.otapp.hmis.clinical.application.dto.RadiologyAttachmentRequest;
@@ -18,11 +17,8 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -394,22 +390,18 @@ public class RadiologyController {
     }
 
     /**
-     * Download an attachment's bytes inline. Guard: parent radiology must be VERIFIED
+     * Download an attachment's bytes. Guard: parent radiology must be VERIFIED
      * (else 422 "Could not download. Radiology is not verified"). Authenticated-only.
+     *
+     * <p>The response is built via {@link AttachmentDownloadSupport} (SEC-01 stored-XSS
+     * hardening): only PDF/raster-image types render inline; everything else downloads as
+     * octet-stream, and {@code X-Content-Type-Options: nosniff} is always set.
      */
     @GetMapping("/radiologies/attachments/uid/{attachmentUid}/download")
     public ResponseEntity<byte[]> downloadAttachment(
             @PathVariable("attachmentUid") String attachmentUid,
             @AuthenticationPrincipal Jwt jwt) {
-        FileDownload dl = radiologyService.downloadAttachment(attachmentUid);
-        MediaType contentType = MediaTypeFactory.getMediaType(dl.fileName())
-                .orElse(MediaType.APPLICATION_OCTET_STREAM);
-        ContentDisposition disposition = ContentDisposition.inline()
-                .filename(dl.fileName()).build();
-        return ResponseEntity.ok()
-                .contentType(contentType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
-                .body(dl.bytes());
+        return AttachmentDownloadSupport.build(radiologyService.downloadAttachment(attachmentUid));
     }
 
     // =========================================================================

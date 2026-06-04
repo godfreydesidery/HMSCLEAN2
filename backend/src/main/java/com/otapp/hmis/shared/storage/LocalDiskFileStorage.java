@@ -225,8 +225,9 @@ public class LocalDiskFileStorage implements FileStoragePort {
             throw new InvalidPatientOperationException("Attachment filename must not be blank");
         }
         if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            // SEC-03: do NOT reflect the raw attacker-controlled filename in the response.
             throw new InvalidPatientOperationException(
-                    "Invalid attachment filename (path traversal rejected): " + filename);
+                    "Invalid attachment filename (path traversal rejected)");
         }
     }
 

@@ -573,26 +573,26 @@ class RadiologyService implements RadiologyPort {
     public RadiologyAttachmentDto uploadAttachment(String radiologyUid, byte[] bytes,
                                                     String originalFilename, String name,
                                                     TxAuditContext ctx) {
-        // (1) Size cap — legacy-parity (PatientServiceImpl.java:2940-2942).
-        if (bytes.length > storageProperties.maxFileSizeBytes()) {
+        // Guard order = legacy sequence (PatientServiceImpl.java:2926-2942; review F2):
+        // (1) existence (404) → (2) count==5 → (3) status (ACCEPTED) → (4) size cap. Count
+        // precedes status so the legacy message wins on overlapping-error inputs.
+        Radiology r = requireRadiology(radiologyUid);                         // (1) 404
+        long count = attachmentRepository.countByRadiology(r);
+
+        if (count >= Radiology.MAX_ATTACHMENTS) {                            // (2) count
+            throw new InvalidPatientOperationException(
+                    "Can not add more than 5 attachments");
+        }
+        if (r.getStatus() != RadiologyStatus.ACCEPTED) {                    // (3) status
+            throw new InvalidPatientOperationException(
+                    "Can only attach for accepted tests");
+        }
+        if (bytes.length > storageProperties.maxFileSizeBytes()) {          // (4) size cap
             throw new InvalidPatientOperationException(
                     "File exceeds maximum file size allowed");
         }
 
-        // (2) Status / count gate — ACCEPTED gate for radiology.
-        Radiology r = requireRadiology(radiologyUid);
-        long count = attachmentRepository.countByRadiology(r);
-
-        if (!r.canAttach(count)) {
-            if (r.getStatus() != RadiologyStatus.ACCEPTED) {
-                throw new InvalidPatientOperationException(
-                        "Can only attach for accepted tests");
-            }
-            throw new InvalidPatientOperationException(
-                    "Can not add more than 5 attachments");
-        }
-
-        // (3) Store bytes — generates opaque storage filename.
+        // Store bytes — generates opaque storage filename.
         String storageName = fileStoragePort.store(bytes, originalFilename,
                 STORAGE_PREFIX, r.getUid());
 

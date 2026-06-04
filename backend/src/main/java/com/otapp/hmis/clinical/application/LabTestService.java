@@ -613,26 +613,26 @@ class LabTestService implements LabTestPort {
     public LabTestAttachmentDto uploadAttachment(String labTestUid, byte[] bytes,
                                                   String originalFilename, String name,
                                                   TxAuditContext ctx) {
-        // (1) Size cap — legacy-parity (PatientServiceImpl.java:2842-2844).
-        if (bytes.length > storageProperties.maxFileSizeBytes()) {
+        // Guard order = legacy sequence (PatientServiceImpl.java:2828-2844; review F2):
+        // (1) existence (404) → (2) count==5 → (3) status → (4) size cap. The count check
+        // precedes the status check so the legacy message wins on overlapping-error inputs.
+        LabTest lt = requireLabTest(labTestUid);                              // (1) 404
+        long count = attachmentRepository.countByLabTest(lt);
+
+        if (count >= LabTest.MAX_ATTACHMENTS) {                               // (2) count
+            throw new InvalidPatientOperationException(
+                    "Can not add more than 5 attachments");
+        }
+        if (lt.getStatus() != LabTestStatus.COLLECTED) {                     // (3) status
+            throw new InvalidPatientOperationException(
+                    "Can only attach for collected tests");
+        }
+        if (bytes.length > storageProperties.maxFileSizeBytes()) {           // (4) size cap
             throw new InvalidPatientOperationException(
                     "File exceeds maximum file size allowed");
         }
 
-        // (2) Status / count gate — same as addAttachment.
-        LabTest lt = requireLabTest(labTestUid);
-        long count = attachmentRepository.countByLabTest(lt);
-
-        if (!lt.canAttach(count)) {
-            if (lt.getStatus() != LabTestStatus.COLLECTED) {
-                throw new InvalidPatientOperationException(
-                        "Can only attach for collected tests");
-            }
-            throw new InvalidPatientOperationException(
-                    "Can not add more than 5 attachments");
-        }
-
-        // (3) Store bytes — generates opaque storage filename.
+        // Store bytes — generates opaque storage filename.
         String storageName = fileStoragePort.store(bytes, originalFilename,
                 STORAGE_PREFIX, lt.getUid());
 

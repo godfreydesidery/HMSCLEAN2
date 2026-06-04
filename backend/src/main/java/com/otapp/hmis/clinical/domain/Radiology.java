@@ -685,7 +685,11 @@ public class Radiology extends AuditableEntity {
 
     /**
      * Returns true if named attachments can be downloaded/viewed (gated on VERIFIED).
-     * (PatientResource.java:6154.)
+     *
+     * <p><strong>NET-NEW PHI-safety control (inc-06A C7 review F3/SEC-05 — ratified deviation):</strong>
+     * the legacy download (PatientResource.java:6093-6140 radiology) is UNGATED. This VERIFIED
+     * download-gate is a deliberate tightening, NOT legacy parity. (PatientResource.java:6154 is the
+     * legacy attachment-DELETE VERIFIED gate, a different operation.)
      *
      * @return true if download is allowed
      */

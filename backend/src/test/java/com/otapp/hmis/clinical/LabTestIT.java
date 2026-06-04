@@ -782,6 +782,63 @@ class LabTestIT extends AbstractIntegrationTest {
     }
 
     // =========================================================================
+    // C7 review F1: a 2 MiB upload (above Spring's 1 MB default, below the 10 MiB app cap)
+    // must SUCCEED — proves spring.servlet.multipart.max-file-size is raised so the in-code
+    // cap is the binding limit (not the resolver default).
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_aboveOneMiB_belowCap_succeeds() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null,    "LAB_TEST", labTypeUid, "5000.00", true);
+        String planUid    = createPlan(tag);
+        seedPrice(planUid, "LAB_TEST", labTypeUid, "3000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.INSURANCE, planUid, true);
+        String labUid = orderLabTest(consultUid, labTypeUid);
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/accept")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+        mockMvc.perform(post(LAB_BASE + "/uid/" + labUid + "/collect")
+                        .header("Authorization", "Bearer " + adminToken)).andExpect(status().isOk());
+
+        byte[] twoMiB = new byte[2 * 1024 * 1024];  // 2 MiB > Spring's 1 MB default, < 10 MiB cap
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "big.pdf", "application/pdf", twoMiB);
+        mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.uid").isNotEmpty());
+    }
+
+    // =========================================================================
+    // C7 review F2: upload guard order = existence -> count -> status -> size.
+    // On an order that is NOT COLLECTED, an oversize-and-wrong-status input must yield the
+    // STATUS message (not the size message), because status is checked before size. (We can't
+    // exceed the 10 MiB cap cheaply here, so we assert the status guard fires on a PENDING order
+    // for a normal-size file — confirming status precedes the store/size path.)
+    // =========================================================================
+
+    @Test
+    void uploadAttachment_onNonCollected_422_statusMessage() throws Exception {
+        String tag = uniq();
+        String labTypeUid = createLabTestType(tag);
+        seedPrice(null, "LAB_TEST", labTypeUid, "5000.00", true);
+        String consultUid = seedConsultation(tag, PaymentMode.CASH, null, false);
+        String labUid = orderLabTest(consultUid, labTypeUid);  // PENDING (not COLLECTED)
+
+        org.springframework.mock.web.MockMultipartFile file =
+                new org.springframework.mock.web.MockMultipartFile(
+                        "file", "x.pdf", "application/pdf", "small".getBytes());
+        mockMvc.perform(multipart(LAB_BASE + "/uid/" + labUid + "/attachments/upload")
+                        .file(file)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Can only attach for collected tests"));
+    }
+
+    // =========================================================================
     // List attachments
     // =========================================================================
 
@@ -973,6 +1030,7 @@ class LabTestIT extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.report").value("Corrected narrative"))
                 .andExpect(jsonPath("$.priorReport").value("Original verified narrative"))
                 .andExpect(jsonPath("$.reportAmendedByUserUid").value("admin"))
+                .andExpect(jsonPath("$.reportAmendedOnDayUid").isNotEmpty())
                 .andExpect(jsonPath("$.reportAmendedAt").isNotEmpty())
                 .andExpect(jsonPath("$.status").value("VERIFIED"));
     }

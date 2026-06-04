@@ -673,7 +673,12 @@ public class LabTest extends AuditableEntity {
 
     /**
      * Returns true if attachments can be downloaded/viewed (gated on VERIFIED).
-     * (PatientResource.java:6021.)
+     *
+     * <p><strong>NET-NEW PHI-safety control (inc-06A C7 review F3/SEC-05 — ratified deviation):</strong>
+     * the legacy download (PatientResource.java:5960-6007 lab) is UNGATED — it streams at any order
+     * status. This VERIFIED download-gate is a deliberate tightening so unverified result images are
+     * not exposed; it is NOT legacy parity. (PatientResource.java:6021 is the legacy attachment-DELETE
+     * VERIFIED gate, a different operation — do not read it as the download source.)
      *
      * @return true if download is allowed
      */

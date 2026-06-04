@@ -250,12 +250,16 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
         // Legacy PatientResource.java:644 reference label: "Canceled consultation".
         billingCommands.cancelCharge(c.getPatientBillUid(), REF_CANCEL_CONSULTATION, ctx);
 
-        // C2 (ITEM6): also cascade to any unsettled child-order bills (lab/radiology/procedure/
-        // prescription). Legacy cancel (PatientResource.java:434-494) removes PENDING child
-        // orders with UNPAID/null bills together with their bills; we soft-cancel each unsettled
-        // child bill via cancelCharge with the same "Canceled consultation" reference. (A PENDING
-        // consultation usually has no child orders yet, but reproducing the cascade is correct
-        // and harmless, and covers any edge case where orders exist.)
+        // C2 (ITEM6 — NET-NEW, spec-mandated, review F4): also cascade to any unsettled child-order
+        // bills (lab/radiology/procedure/prescription). NOTE: legacy cancel_consultation
+        // (PatientResource.java:605-678) cancels ONLY the consultation's own bill — it does NOT
+        // iterate child orders; the only legacy child-bill cascade is on the FREE path (701-754,
+        // which flips child bills UNPAID→CANCELED with no credit note). The build spec ITEM6
+        // explicitly directs wiring this cascade onto cancel for consistency with free. We
+        // soft-cancel each unsettled child bill via cancelCharge ("Canceled consultation"); since
+        // unsettled child bills carry no RECEIVED payment, no spurious credit note is raised
+        // (matching the legacy free-path effect). A PENDING consultation usually has no child
+        // orders yet; the cascade covers the edge case where they exist.
         cancelUnsettledChildOrders(c, REF_CANCEL_CONSULTATION, ctx);
 
         auditRecorder.record(AUDIT_ENTITY_CONSULTATION, c.getUid(), AuditAction.UPDATE, ctx.actorUsername());
@@ -419,13 +423,15 @@ class ConsultationLifecycleService implements ConsultationLifecyclePort {
     /**
      * Cancel all unsettled child-order bills for the consultation (inc-06A C2 / ITEM6).
      *
-     * <p>Legacy cancels UNPAID/null lab/radiology/procedure/prescription bills both when the
-     * doctor FREES a patient (PatientResource.java:701-754, reference "Freed consultation") and
-     * when a PENDING consultation is CANCELED (PatientResource.java:434-494, where PENDING
-     * child orders with UNPAID/null bills are removed together with their bills). Our local
-     * {@code settled=false} flag is the UNPAID projection (CR-INC05-01); the soft-cancel +
-     * RECEIVED→credit-note reversal is delegated to {@code billing.api.cancelCharge} (the
-     * ratified soft-flag standard supersedes the legacy hard-delete).
+     * <p>The legacy FREE path (PatientResource.java:701-754) flips UNPAID/null lab/radiology/
+     * procedure/prescription child bills to CANCELED (no credit note). The legacy CANCEL path
+     * (cancel_consultation, 605-678) cancels ONLY the consultation's own bill and does NOT iterate
+     * child orders — so wiring this cascade onto cancel is a NET-NEW, spec-mandated change (ITEM6),
+     * not legacy parity (review F4 corrected the earlier 434-494 mis-citation; 434-494 is the
+     * change_type endpoint, unrelated). Our local {@code settled=false} flag is the UNPAID
+     * projection (CR-INC05-01); the soft-cancel (+ RECEIVED→credit-note when a payment exists) is
+     * delegated to {@code billing.api.cancelCharge} — for the normal unsettled child there is no
+     * RECEIVED payment, so no credit note is raised, matching the legacy free-path effect.
      *
      * <p>Ordered: lab → radiology → procedure → prescription (legacy order). The
      * {@code reference} label is stamped on every credit note ("Freed consultation" for the
