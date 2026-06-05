@@ -5,7 +5,9 @@ import com.otapp.hmis.registration.domain.PatientType;
 import com.otapp.hmis.registration.domain.PaymentType;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
+import com.otapp.hmis.shared.event.PatientAdmittedEvent;
 import com.otapp.hmis.shared.event.PatientDeceasedEvent;
+import com.otapp.hmis.shared.event.PatientDischargedEvent;
 import com.otapp.hmis.shared.event.PatientInsuranceClearedEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -64,6 +66,9 @@ public class PatientClosureListener {
 
     private static final Logger log = LoggerFactory.getLogger(PatientClosureListener.class);
 
+    private static final String ENTITY_TYPE  = "registration.Patient";
+    private static final String TYPE_NOT_UPDATED = "type not updated";
+
     private final PatientRepository patientRepository;
     private final AuditRecorder auditRecorder;
 
@@ -92,12 +97,79 @@ public class PatientClosureListener {
                     // No explicit save() needed — the Patient is a managed JPA entity
                     // within the outer transaction; dirty-checking will flush the change.
                     // SEC-01: audit the Patient identity mutation with the REAL approving actor.
-                    auditRecorder.record("registration.Patient", patient.getUid(),
+                    auditRecorder.record(ENTITY_TYPE, patient.getUid(),
                             AuditAction.UPDATE, event.actorUsername());
                     log.debug("PatientClosureListener: Patient {} marked DECEASED", event.patientUid());
                 },
                 () -> log.warn("PatientClosureListener: patient uid={} not found for deceased event; "
-                        + "type not updated", event.patientUid())
+                        + TYPE_NOT_UPDATED, event.patientUid())
+        );
+    }
+
+    /**
+     * Handle the {@link PatientAdmittedEvent}: set {@code Patient.type = INPATIENT}.
+     *
+     * <p>Runs BEFORE_COMMIT in the inpatient module's doAdmission transaction, so the Patient
+     * type change is atomic with the Admission/AdmissionBed creation.
+     *
+     * <p>Same failure-mode policy as {@link #onPatientDeceased}: WARN-and-return if patient
+     * not found — never roll back a completed admission.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1785 — {@code p.setType("INPATIENT")} was
+     * inline in doAdmission. Extracted to this event handler to eliminate the
+     * inpatient→registration compile cycle (inc-07 07a SEAM-A).
+     *
+     * @param event the admitted event carrying the patient uid and actor
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onPatientAdmitted(PatientAdmittedEvent event) {
+        log.debug("PatientClosureListener: handling PatientAdmittedEvent for patient uid={}",
+                event.patientUid());
+
+        patientRepository.findByUid(event.patientUid()).ifPresentOrElse(
+                patient -> {
+                    patient.changeType(PatientType.INPATIENT);
+                    auditRecorder.record(ENTITY_TYPE, patient.getUid(),
+                            AuditAction.UPDATE, event.actorUsername());
+                    log.debug("PatientClosureListener: Patient {} marked INPATIENT", event.patientUid());
+                },
+                () -> log.warn("PatientClosureListener: patient uid={} not found for admitted event; "
+                        + TYPE_NOT_UPDATED, event.patientUid())
+        );
+    }
+
+    /**
+     * Handle the {@link PatientDischargedEvent}: set {@code Patient.type = OUTPATIENT} and
+     * clear insurance ({@code paymentType = CASH, insurancePlan = null, membershipNo = ""}).
+     *
+     * <p>Runs BEFORE_COMMIT in the inpatient module's discharge transaction, so the Patient
+     * type reset is atomic with the Admission sign-out.
+     *
+     * <p>Same failure-mode policy as {@link #onPatientDeceased}: WARN-and-return if patient
+     * not found — never roll back a completed discharge.
+     *
+     * <p>Legacy citation: discharge/referral/deceased summary completion resets Patient.type
+     * to OUTPATIENT and clears insurance (inc-07 07a-3 — handler built now, publisher wired
+     * in 07a-3).
+     *
+     * @param event the discharged event carrying the patient uid and actor
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onPatientDischarged(PatientDischargedEvent event) {
+        log.debug("PatientClosureListener: handling PatientDischargedEvent for patient uid={}",
+                event.patientUid());
+
+        patientRepository.findByUid(event.patientUid()).ifPresentOrElse(
+                patient -> {
+                    patient.changeType(PatientType.OUTPATIENT);
+                    patient.changePaymentType(PaymentType.CASH, null, "");
+                    auditRecorder.record(ENTITY_TYPE, patient.getUid(),
+                            AuditAction.UPDATE, event.actorUsername());
+                    log.debug("PatientClosureListener: Patient {} discharged → OUTPATIENT/CASH",
+                            event.patientUid());
+                },
+                () -> log.warn("PatientClosureListener: patient uid={} not found for discharged event; "
+                        + TYPE_NOT_UPDATED, event.patientUid())
         );
     }
 
@@ -122,7 +194,7 @@ public class PatientClosureListener {
                 patient -> {
                     patient.changePaymentType(PaymentType.CASH, null, "");
                     // SEC-01: audit the Patient insurance-clear mutation with the REAL approving actor.
-                    auditRecorder.record("registration.Patient", patient.getUid(),
+                    auditRecorder.record(ENTITY_TYPE, patient.getUid(),
                             AuditAction.UPDATE, event.actorUsername());
                     log.debug("PatientClosureListener: Patient {} insurance cleared (→ CASH)",
                             event.patientUid());

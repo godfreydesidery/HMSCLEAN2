@@ -33,6 +33,13 @@ import java.math.BigDecimal;
  * @param description  optional override for the human-readable description on the bill
  *                     (inc-07 CR-07-Q13-billing-display). When {@code null}, the existing
  *                     default (currently mirrors {@code billItem}) is used. Never PHI.
+ * @param admissionUid optional loose uid of the owning inpatient admission (inc-07 07a).
+ *                     Non-null only for ward-bed and consumable charges created during
+ *                     {@code doAdmission}; null for all outpatient / OTC / registration
+ *                     charges. Stored on the created {@link com.otapp.hmis.billing.domain.PatientBill}
+ *                     to enable the discharge bills-cleared gate
+ *                     ({@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills}).
+ *                     Never PHI (ULID only).
  */
 public record ChargeRequest(
         String patientUid,
@@ -45,6 +52,7 @@ public record ChargeRequest(
         boolean inpatient,
         boolean followUp,
         String billItem,
-        String description
+        String description,
+        String admissionUid
 ) {
 }

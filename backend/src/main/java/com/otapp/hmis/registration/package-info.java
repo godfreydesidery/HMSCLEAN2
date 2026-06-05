@@ -27,8 +27,10 @@
  *       ({@code ClinicianAffiliationService}).</li>
  * </ul>
  *
- * <p>A {@code registration :: api} named interface (PENDING-consultation reads for inc-05
- * {@code clinical}, per CR-21/ADR-0008-R1) is DEFERRED to inc-05 when that consumer lands.
+ * <p>A {@code registration :: lookup} named interface is published in inc-07 07a (SEAM-B):
+ * {@link com.otapp.hmis.registration.lookup.PatientStatusLookup} exposes the deceased guard
+ * query for the inpatient module. The implementation is package-private in
+ * {@code registration.application}.
  *
  * <p>Legacy citations:
  * <ul>

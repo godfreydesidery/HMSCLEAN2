@@ -24,4 +24,19 @@ public interface PatientBillRepository extends JpaRepository<PatientBill, Long> 
      * Find all bills for a patient (all statuses — for invoice/receipt listing).
      */
     List<PatientBill> findByPatientUid(String patientUid);
+
+    /**
+     * Test whether any bill linked to the given admission is in one of the supplied statuses.
+     *
+     * <p>Used by {@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills}
+     * to implement the discharge bills-cleared gate
+     * (PatientResource.java:5342-5357, :5593-5603, :5851-5882). Populated once chunk 07a adds
+     * {@code PatientBill.admissionUid} and {@code BillingCommandsImpl} sets it at ward-charge
+     * creation time (inc-07 07a).
+     *
+     * @param admissionUid the loose uid of the admission to check
+     * @param statuses     the set of bill statuses to match (typically UNPAID + VERIFIED)
+     * @return {@code true} if at least one matching bill exists
+     */
+    boolean existsByAdmissionUidAndStatusIn(String admissionUid, List<BillStatus> statuses);
 }

@@ -147,6 +147,21 @@ public class PatientBill extends AuditableEntity {
     @JoinColumn(name = "supplementary_bill_id")
     private PatientBill supplementaryBill;
 
+    /**
+     * Loose cross-module ref to the admission that generated this charge (nullable).
+     *
+     * <p>Populated only for ward-bed and consumable charges created during an inpatient
+     * admission (inc-07 07a). Null for all outpatient / OTC / registration charges.
+     * Used by {@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills}
+     * to scan all bills linked to an admission for the discharge gate
+     * (PatientResource.java:5342-5357).
+     *
+     * <p>Column added by V45 migration (nullable VARCHAR(26) — no physical FK; the admission
+     * lives in the inpatient module, a different bounded context, ADR-0008 §1).
+     */
+    @Column(name = "admission_uid", length = 26)
+    private String admissionUid;
+
     /** Loose cross-module ref to the business day. */
     @NotBlank
     @Column(name = "business_day_uid", length = 26, nullable = false)
@@ -301,6 +316,23 @@ public class PatientBill extends AuditableEntity {
         if (description != null) {
             this.description = description;
         }
+    }
+
+    /**
+     * Link this bill to an inpatient admission (inc-07 07a).
+     *
+     * <p>Set at ward-bed charge creation time so that
+     * {@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills} can scan
+     * outstanding bills by admission uid (discharge gate — PatientResource.java:5342-5357).
+     * Null for all non-admission charges (outpatient, OTC, registration).
+     *
+     * <p>Called by {@code BillingCommandsImpl.recordClinicalCharge} when
+     * {@link com.otapp.hmis.billing.api.ChargeRequest#admissionUid()} is non-null.
+     *
+     * @param admissionUid loose uid of the owning admission (no FK — ADR-0008 §1)
+     */
+    public void linkAdmission(String admissionUid) {
+        this.admissionUid = admissionUid;
     }
 
     /**

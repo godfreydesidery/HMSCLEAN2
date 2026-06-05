@@ -36,5 +36,6 @@
                 "clinical :: api",
                 "billing :: api",
                 "masterdata :: lookup",
-                "iam :: lookup"})
+                "iam :: lookup",
+                "registration :: lookup"})  // inc-07 07a SEAM-B: PatientStatusLookup deceased guard
 package com.otapp.hmis.inpatient;

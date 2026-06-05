@@ -82,6 +82,12 @@ class BillingCommandsImpl implements BillingCommands {
             bill.overrideBillLabels(req.billItem(), req.description());
         }
 
+        // inc-07 07a: link the bill to the admission uid when supplied (ward-bed / consumable
+        // charges only). All existing callers pass null (trailing component — no behavioural change).
+        if (req.admissionUid() != null) {
+            bill.linkAdmission(req.admissionUid());
+        }
+
         // Derive coverage status from bill status for the result record
         CoverageStatus coverage = switch (bill.getStatus()) {
             case COVERED  -> CoverageStatus.COVERED;

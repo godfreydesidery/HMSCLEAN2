@@ -156,7 +156,8 @@ class RadiologyService implements RadiologyPort {
                 false,
                 false,
                 null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
-                null   // description override — none
+                null,  // description override — none
+                null   // admissionUid — null for outpatient radiology charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 
@@ -231,7 +232,8 @@ class RadiologyService implements RadiologyPort {
                 false,
                 false,
                 null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
-                null   // description override — none
+                null,  // description override — none
+                null   // admissionUid — null for outpatient radiology charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 

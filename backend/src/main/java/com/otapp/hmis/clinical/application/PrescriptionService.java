@@ -153,7 +153,8 @@ class PrescriptionService implements PrescriptionPort {
                 false,  // outpatient
                 false,  // not a follow-up
                 null,   // billItem override — none (CR-07-Q13; inpatient consumable path only)
-                null    // description override — none
+                null,   // description override — none
+                null    // admissionUid — null for outpatient prescription charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
         boolean settled = isSettledFromCharge(chargeResult, paymentMode, false);
@@ -241,7 +242,8 @@ class PrescriptionService implements PrescriptionPort {
                 false,  // outsider = not inpatient
                 false,
                 null,   // billItem override — none (CR-07-Q13; inpatient consumable path only)
-                null    // description override — none
+                null,   // description override — none
+                null    // admissionUid — null for outpatient prescription charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
         boolean settled = isSettledFromCharge(chargeResult, paymentMode, false);

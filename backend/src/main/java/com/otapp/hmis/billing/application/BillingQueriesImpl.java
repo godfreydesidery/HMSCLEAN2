@@ -36,20 +36,19 @@ class BillingQueriesImpl implements BillingQueries {
     /**
      * {@inheritDoc}
      *
-     * <p>TODO(07a/07c): {@code PatientBill} carries no {@code admissionUid} column in the
-     * current schema. Once chunk 07a/07c adds that column and populates it at ward/consumable
-     * charge time, replace this stub with a real query such as:
-     * {@code patientBillRepository.existsByAdmissionUidAndStatusIn(admissionUid,
-     *     List.of(BillStatus.UNPAID, BillStatus.VERIFIED))}.
-     * Until then this method safely returns {@code false} — the discharge gate in the inpatient
-     * module will not fire prematurely (PatientResource.java:5342-5357, :5593-5603, :5851-5882).
+     * <p>Implemented in inc-07 07a: scans {@code patient_bills.admission_uid} for any row with
+     * status {@code UNPAID} or {@code VERIFIED} linked to the given admission.
+     * Reproduces the legacy bills-cleared discharge gate
+     * (PatientResource.java:5342-5357, :5593-5603, :5851-5882).
+     *
+     * <p>COVERED bills (insurance) carry neither status, so insurance patients auto-pass.
      */
     @Override
     @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
     public boolean admissionHasOutstandingBills(String admissionUid) {
-        // TODO(07a/07c): no admission_uid linkage on PatientBill yet — returns false until
-        // chunk 07a/07c adds the column and the real query (see BillingQueries javadoc).
-        return false;
+        return patientBillRepository.existsByAdmissionUidAndStatusIn(
+                admissionUid,
+                java.util.List.of(BillStatus.UNPAID, BillStatus.VERIFIED));
     }
 
     @Override
