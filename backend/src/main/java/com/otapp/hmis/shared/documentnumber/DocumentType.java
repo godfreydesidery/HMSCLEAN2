@@ -27,7 +27,27 @@ public enum DocumentType {
      * Patient Credit Note (billing, increment 04). Format {@code PCN{yyyyMMdd}-{nextval(seq_pcn_no)}}.
      * Counter: {@code seq_pcn_no} (V13).
      */
-    PCN("PCN", "seq_pcn_no");
+    PCN("PCN", "seq_pcn_no"),
+
+    // ---- inc-08 procurement + transfer document types (V13-seeded sequences) ----
+
+    /** Goods Received Note (inventory). {@code GRN{yyyyMMdd}-{seq}}, {@code seq_grn_no} (V13). */
+    GRN("GRN", "seq_grn_no"),
+
+    /** Local Purchase Order (inventory). {@code LPO{yyyyMMdd}-{seq}}, {@code seq_lpo_no} (V13). */
+    LPO("LPO", "seq_lpo_no"),
+
+    /** Store→Pharmacy Transfer Order. {@code SPTO{yyyyMMdd}-{seq}}, {@code seq_spto_no} (V13; CR-10). */
+    SPTO("SPTO", "seq_spto_no"),
+
+    /** Pharmacy→Pharmacy Transfer Order. {@code PPTO{yyyyMMdd}-{seq}}, {@code seq_ppto_no} (V13; CR-10). */
+    PPTO("PPTO", "seq_ppto_no"),
+
+    /** Pharmacy→Pharmacy Received Note. {@code PPRN{yyyyMMdd}-{seq}}, {@code seq_pprn_no} (V13). */
+    PPRN("PPRN", "seq_pprn_no"),
+
+    /** Store→Pharmacy Received Note (the pharmacy's own GRN). {@code PGRN{yyyyMMdd}-{seq}}, {@code seq_pgrn_no} (V13). */
+    PGRN("PGRN", "seq_pgrn_no");
 
     private final String prefix;
     private final String sequenceName;
