@@ -50,6 +50,13 @@ export const routes: Routes = [
     loadChildren: () =>
       import('./features/billing/billing.routes').then((m) => m.BILLING_ROUTES),
   },
+  {
+    path: 'inpatient',
+    canActivate: [privilegeGuard],
+    data: { privilege: 'PATIENT-ALL' },
+    loadChildren: () =>
+      import('./features/inpatient/inpatient.routes').then((m) => m.INPATIENT_ROUTES),
+  },
   { path: '', pathMatch: 'full', redirectTo: 'home' },
   { path: '**', redirectTo: 'home' },
 ];
