@@ -62,10 +62,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<ClinicalNoteDto>;
-    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ClinicalNoteDto>>;
-    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ClinicalNoteDto>>;
-    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<ClinicalNoteDto>;
+    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ClinicalNoteDto>>;
+    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ClinicalNoteDto>>;
+    public loadOrCreateClinicalNote(requestParameters: LoadOrCreateClinicalNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling loadOrCreateClinicalNote.');
@@ -74,7 +74,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -116,10 +116,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
-    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
-    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
-    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
+    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
+    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
+    public loadOrCreateGeneralExaminationByConsultation(requestParameters: LoadOrCreateGeneralExaminationByConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling loadOrCreateGeneralExaminationByConsultation.');
@@ -128,7 +128,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -170,10 +170,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
-    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
-    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
-    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
+    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
+    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
+    public loadOrCreateGeneralExaminationByNonConsultation(requestParameters: LoadOrCreateGeneralExaminationByNonConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling loadOrCreateGeneralExaminationByNonConsultation.');
@@ -182,7 +182,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -224,10 +224,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<PatientVitalDto>;
-    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientVitalDto>>;
-    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientVitalDto>>;
-    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<PatientVitalDto>;
+    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientVitalDto>>;
+    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientVitalDto>>;
+    public loadOrCreateVital(requestParameters: LoadOrCreateVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling loadOrCreateVital.');
@@ -236,7 +236,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -278,10 +278,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
-    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
-    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
-    public requestVital(requestParameters: RequestVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
+    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
+    public requestVital(requestParameters: RequestVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
+    public requestVital(requestParameters: RequestVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling requestVital.');
@@ -290,7 +290,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -332,10 +332,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<ClinicalNoteDto>;
-    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ClinicalNoteDto>>;
-    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ClinicalNoteDto>>;
-    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<ClinicalNoteDto>;
+    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ClinicalNoteDto>>;
+    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ClinicalNoteDto>>;
+    public saveClinicalNote(requestParameters: SaveClinicalNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling saveClinicalNote.');
@@ -348,7 +348,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -400,10 +400,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
-    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
-    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
-    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
+    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
+    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
+    public saveGeneralExamination(requestParameters: SaveGeneralExaminationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling saveGeneralExamination.');
@@ -416,7 +416,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -468,10 +468,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
-    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
-    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
-    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<GeneralExaminationDto>;
+    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<GeneralExaminationDto>>;
+    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<GeneralExaminationDto>>;
+    public saveGeneralExaminationForNonConsultation(requestParameters: SaveGeneralExaminationForNonConsultationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling saveGeneralExaminationForNonConsultation.');
@@ -484,7 +484,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -536,10 +536,10 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<PatientVitalDto>;
-    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientVitalDto>>;
-    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientVitalDto>>;
-    public submitVital(requestParameters: SubmitVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<PatientVitalDto>;
+    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientVitalDto>>;
+    public submitVital(requestParameters: SubmitVitalRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientVitalDto>>;
+    public submitVital(requestParameters: SubmitVitalRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling submitVital.');
@@ -552,7 +552,7 @@ export class ClinicalDocumentationControllerService extends BaseService implemen
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

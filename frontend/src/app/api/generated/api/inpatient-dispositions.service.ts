@@ -63,10 +63,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<DeceasedNoteView>;
-    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DeceasedNoteView>>;
-    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DeceasedNoteView>>;
-    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<DeceasedNoteView>;
+    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DeceasedNoteView>>;
+    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DeceasedNoteView>>;
+    public approveDeceasedNote(requestParameters: ApproveDeceasedNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling approveDeceasedNote.');
@@ -79,7 +79,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -133,10 +133,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<DischargePlanDto>;
-    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DischargePlanDto>>;
-    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DischargePlanDto>>;
-    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<DischargePlanDto>;
+    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DischargePlanDto>>;
+    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DischargePlanDto>>;
+    public approveDischargePlan(requestParameters: ApproveDischargePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling approveDischargePlan.');
@@ -149,7 +149,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -203,10 +203,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<ReferralPlanView>;
-    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ReferralPlanView>>;
-    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ReferralPlanView>>;
-    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<ReferralPlanView>;
+    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ReferralPlanView>>;
+    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ReferralPlanView>>;
+    public approveReferralPlan(requestParameters: ApproveReferralPlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling approveReferralPlan.');
@@ -219,7 +219,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -273,10 +273,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<DeceasedNoteView>;
-    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DeceasedNoteView>>;
-    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DeceasedNoteView>>;
-    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<DeceasedNoteView>;
+    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DeceasedNoteView>>;
+    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DeceasedNoteView>>;
+    public saveDeceasedNote(requestParameters: SaveDeceasedNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveDeceasedNote.');
@@ -289,7 +289,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -343,10 +343,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<DischargePlanDto>;
-    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DischargePlanDto>>;
-    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DischargePlanDto>>;
-    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<DischargePlanDto>;
+    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DischargePlanDto>>;
+    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DischargePlanDto>>;
+    public saveDischargePlan(requestParameters: SaveDischargePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveDischargePlan.');
@@ -359,7 +359,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -413,10 +413,10 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<ReferralPlanView>;
-    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ReferralPlanView>>;
-    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ReferralPlanView>>;
-    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<ReferralPlanView>;
+    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ReferralPlanView>>;
+    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ReferralPlanView>>;
+    public saveReferralPlan(requestParameters: SaveReferralPlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveReferralPlan.');
@@ -429,7 +429,7 @@ export class InpatientDispositionsService extends BaseService implements Inpatie
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

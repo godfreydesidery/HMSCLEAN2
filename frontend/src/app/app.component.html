@@ -1,26 +1,80 @@
-<mat-toolbar color="primary" class="app-toolbar">
-  <a routerLink="/home" class="app-title">Zana HMIS</a>
-  <a
-    *appCan="'BILL-A'"
-    mat-button
-    routerLink="/billing/cashier"
-    routerLinkActive="active-nav-link"
-    aria-label="Billing and cashiering workspace"
-  >Billing</a>
-  <span class="toolbar-spacer"></span>
-  <app-health-indicator />
-  @if (authStore.isAuthenticated()) {
+@if (authStore.isAuthenticated()) {
+  <!-- ───────────── Top navbar ───────────── -->
+  <nav class="navbar navbar-dark bg-primary shadow-sm app-navbar px-3">
     <button
-      mat-icon-button
-      class="logout-btn"
-      aria-label="Sign out"
-      (click)="logout()"
+      type="button"
+      class="btn btn-link text-white p-0 me-3 sidebar-toggle"
+      (click)="toggleSidebar()"
+      aria-label="Toggle navigation sidebar"
     >
-      <mat-icon>logout</mat-icon>
+      <i class="bi bi-list fs-4"></i>
     </button>
-  }
-</mat-toolbar>
 
-<main class="app-content">
-  <router-outlet />
-</main>
+    <a routerLink="/home" class="navbar-brand fw-semibold mb-0">Zana HMIS</a>
+
+    <div class="ms-auto d-flex align-items-center gap-3">
+      <app-health-indicator />
+      <button
+        type="button"
+        class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-1"
+        (click)="logout()"
+        aria-label="Sign out"
+      >
+        <i class="bi bi-box-arrow-right"></i>
+        <span class="d-none d-sm-inline">Sign out</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="app-body">
+    <!-- ───────────── Sidebar ───────────── -->
+    <aside class="app-sidebar bg-white border-end" [class.collapsed]="!sidebarOpen()">
+      <ul class="nav flex-column py-2">
+        <li class="nav-item">
+          <a
+            routerLink="/home"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: true }"
+            class="nav-link d-flex align-items-center gap-2"
+          >
+            <i class="bi bi-house-door"></i><span class="nav-label">Home</span>
+          </a>
+        </li>
+
+        @for (item of navItems; track item.route) {
+          <li class="nav-item" *appCan="item.privilege">
+            @if (item.enabled) {
+              <a
+                [routerLink]="item.route"
+                routerLinkActive="active"
+                class="nav-link d-flex align-items-center gap-2"
+              >
+                <i class="bi" [class]="item.icon"></i>
+                <span class="nav-label">{{ item.label }}</span>
+              </a>
+            } @else {
+              <span
+                class="nav-link disabled d-flex align-items-center gap-2 text-muted"
+                title="Coming soon"
+              >
+                <i class="bi" [class]="item.icon"></i>
+                <span class="nav-label">{{ item.label }}</span>
+                <span class="badge text-bg-light ms-auto soon-badge">soon</span>
+              </span>
+            }
+          </li>
+        }
+      </ul>
+    </aside>
+
+    <!-- ───────────── Routed content ───────────── -->
+    <main class="app-content flex-grow-1">
+      <router-outlet />
+    </main>
+  </div>
+} @else {
+  <!-- Unauthenticated (login) — no chrome -->
+  <main class="app-content-bare">
+    <router-outlet />
+  </main>
+}

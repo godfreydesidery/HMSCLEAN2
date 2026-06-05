@@ -6,11 +6,7 @@ import {
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { DefaultService } from '../../api/generated';
+import { AuthControllerService } from '../../api/generated';
 import { AuthStore } from '../../core/auth/auth.store';
 import { extractProblem } from '../../core/error/problem-detail';
 
@@ -18,71 +14,63 @@ import { extractProblem } from '../../core/error/problem-detail';
   selector: 'app-login',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    ReactiveFormsModule,
-    MatCardModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatButtonModule,
-  ],
+  imports: [ReactiveFormsModule],
   template: `
     <div class="login-wrapper">
-      <mat-card class="login-card">
-        <mat-card-header>
-          <mat-card-title>Zana HMIS — Sign In</mat-card-title>
-        </mat-card-header>
+      <div class="card shadow-sm login-card">
+        <div class="card-body p-4">
+          <h1 class="h4 text-center mb-4">Zana HMIS — Sign In</h1>
 
-        <mat-card-content>
           <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
-
-            <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Username</mat-label>
+            <div class="mb-3">
+              <label for="username" class="form-label">Username</label>
               <input
-                matInput
+                id="username"
+                type="text"
+                class="form-control"
                 formControlName="username"
                 autocomplete="username"
-                aria-required="true"
+                [class.is-invalid]="form.controls.username.invalid && form.controls.username.touched"
               />
               @if (form.controls.username.invalid && form.controls.username.touched) {
-                <mat-error>Username is required.</mat-error>
+                <div class="invalid-feedback">Username is required.</div>
               }
-            </mat-form-field>
+            </div>
 
-            <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Password</mat-label>
+            <div class="mb-3">
+              <label for="password" class="form-label">Password</label>
               <input
-                matInput
+                id="password"
                 type="password"
+                class="form-control"
                 formControlName="password"
                 autocomplete="current-password"
-                aria-required="true"
+                [class.is-invalid]="form.controls.password.invalid && form.controls.password.touched"
               />
               @if (form.controls.password.invalid && form.controls.password.touched) {
-                <mat-error>Password is required.</mat-error>
+                <div class="invalid-feedback">Password is required.</div>
               }
-            </mat-form-field>
+            </div>
 
             @if (errorMsg()) {
-              <p class="error-msg" role="alert">{{ errorMsg() }}</p>
+              <div class="alert alert-danger py-2" role="alert">{{ errorMsg() }}</div>
             }
 
             <button
-              mat-raised-button
-              color="primary"
               type="submit"
-              class="full-width"
+              class="btn btn-primary w-100"
               [disabled]="submitting() || form.invalid"
             >
               @if (submitting()) {
+                <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
                 Signing in…
               } @else {
                 Sign In
               }
             </button>
-
           </form>
-        </mat-card-content>
-      </mat-card>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -90,19 +78,17 @@ import { extractProblem } from '../../core/error/problem-detail';
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: calc(100vh - 64px);
+      min-height: 100vh;
       padding: 1rem;
     }
     .login-card { width: 100%; max-width: 420px; }
-    .full-width  { width: 100%; margin-bottom: 0.75rem; display: block; }
-    .error-msg   { color: #c62828; margin: 0 0 0.75rem; font-size: 0.875rem; }
   `],
 })
 export class LoginComponent {
-  private readonly fb             = inject(NonNullableFormBuilder);
-  private readonly defaultService = inject(DefaultService);
-  private readonly authStore      = inject(AuthStore);
-  private readonly router         = inject(Router);
+  private readonly fb          = inject(NonNullableFormBuilder);
+  private readonly authService = inject(AuthControllerService);
+  private readonly authStore   = inject(AuthStore);
+  private readonly router      = inject(Router);
 
   readonly form = this.fb.group({
     username: ['', Validators.required],
@@ -121,8 +107,8 @@ export class LoginComponent {
     this.submitting.set(true);
     this.errorMsg.set(null);
 
-    this.defaultService
-      .issueToken({ tokenRequest: this.form.getRawValue() })
+    this.authService
+      .token({ tokenRequest: this.form.getRawValue() })
       .subscribe({
         next: (resp) => {
           this.authStore.setTokens(resp);

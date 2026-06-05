@@ -48,10 +48,10 @@ export class InpatientService extends BaseService implements InpatientServiceInt
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<AdmissionDto>;
-    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<AdmissionDto>>;
-    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<AdmissionDto>>;
-    public doAdmission(requestParameters: DoAdmissionRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<AdmissionDto>;
+    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<AdmissionDto>>;
+    public doAdmission(requestParameters: DoAdmissionRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<AdmissionDto>>;
+    public doAdmission(requestParameters: DoAdmissionRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionRequest = requestParameters?.admissionRequest;
         if (admissionRequest === null || admissionRequest === undefined) {
             throw new Error('Required parameter admissionRequest was null or undefined when calling doAdmission.');
@@ -60,7 +60,7 @@ export class InpatientService extends BaseService implements InpatientServiceInt
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

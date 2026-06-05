@@ -19,8 +19,9 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import {
   CancellationResultDto,
+  CreditNoteControllerService,
   CreditNoteDto,
-  DefaultService,
+  PatientBillControllerService,
   PatientBillDto,
   PatientPaymentDto,
 } from '../../../api/generated';
@@ -413,7 +414,8 @@ const BILL_COLUMNS = ['select', 'description', 'qty', 'amount', 'status', 'actio
   `],
 })
 export class CashierWorkspaceComponent {
-  private readonly defaultService = inject(DefaultService);
+  private readonly billService       = inject(PatientBillControllerService);
+  private readonly creditNoteService = inject(CreditNoteControllerService);
   private readonly dialog         = inject(MatDialog);
   private readonly snackBar       = inject(MatSnackBar);
   private readonly router         = inject(Router);
@@ -492,7 +494,7 @@ export class CashierWorkspaceComponent {
     this.selectedUids.set(new Set());
     this.hasLoaded.set(false);
 
-    this.defaultService.listBills({ patientUid: uid }).subscribe({
+    this.billService.listBills({ patientUid: uid }).subscribe({
       next: (data) => {
         this.bills.set(data);
         this.loading.set(false);
@@ -518,7 +520,7 @@ export class CashierWorkspaceComponent {
     this.creditNotesError.set(null);
     this.creditNotes.set([]);
 
-    this.defaultService.listCreditNotes({ patientUid: uid }).subscribe({
+    this.creditNoteService.listCreditNotes({ patientUid: uid }).subscribe({
       next: (data) => {
         this.creditNotes.set(data);
         this.creditNotesLoading.set(false);

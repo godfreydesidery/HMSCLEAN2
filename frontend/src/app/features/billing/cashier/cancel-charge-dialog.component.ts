@@ -16,7 +16,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
 import {
   CancellationResultDto,
-  DefaultService,
+  CreditNoteControllerService,
 } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
@@ -177,7 +177,7 @@ export interface CancelChargeDialogData {
 export class CancelChargeDialogComponent {
   private readonly fb             = inject(NonNullableFormBuilder);
   private readonly dialogRef      = inject(MatDialogRef<CancelChargeDialogComponent>);
-  private readonly defaultService = inject(DefaultService);
+  private readonly creditNoteService = inject(CreditNoteControllerService);
   readonly dialogData             = inject<CancelChargeDialogData>(MAT_DIALOG_DATA);
 
   readonly formatMoney = formatMoney;
@@ -216,7 +216,7 @@ export class CancelChargeDialogComponent {
     this.submitting.set(true);
     this.apiError.set(null);
 
-    this.defaultService
+    this.creditNoteService
       .cancelCharge({
         billUid: this.dialogData.billUid,
         cancelChargeRequest: { reference: this.form.controls.reference.value },

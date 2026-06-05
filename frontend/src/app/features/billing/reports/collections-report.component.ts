@@ -24,7 +24,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
-import { CollectionReportRow, DefaultService } from '../../../api/generated';
+import { BillingReportControllerService, CollectionReportRow } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 
@@ -328,8 +328,8 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
   `],
 })
 export class CollectionsReportComponent {
-  private readonly fb             = inject(NonNullableFormBuilder);
-  private readonly defaultService = inject(DefaultService);
+  private readonly fb                   = inject(NonNullableFormBuilder);
+  private readonly billingReportService = inject(BillingReportControllerService);
 
   readonly formatMoney     = formatMoney;
   readonly displayedColumns = REPORT_COLUMNS;
@@ -381,8 +381,8 @@ export class CollectionsReportComponent {
     this.reportRows.set([]);
     this.hasRun.set(false);
 
-    this.defaultService
-      .getCollectionsReport({
+    this.billingReportService
+      .collectionsReport({
         from: fromIso,
         to:   toIso,
         cashier: cashier.trim() || undefined,

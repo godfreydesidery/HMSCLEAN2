@@ -1,4 +1,28 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global styles — Zana HMIS. Bootstrap 5 is the UI framework (ng-bootstrap for components). */
 
-html, body { height: 100%; }
-body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+/* Bootstrap full SCSS. Override Bootstrap variables ABOVE this import when theming. */
+@import "bootstrap/scss/bootstrap";
+
+/* Bootstrap Icons (bi-* classes used in the nav shell). */
+@import "bootstrap-icons/font/bootstrap-icons.css";
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #f5f6f8;
+}
+
+/* Density helper for high-information clinical/billing tables. */
+.table-dense > :not(caption) > * > * {
+  padding: 0.35rem 0.5rem;
+}
+
+/* Active nav link emphasis in the app shell. */
+.nav-link.active,
+.nav-link.active-nav-link {
+  font-weight: 600;
+}

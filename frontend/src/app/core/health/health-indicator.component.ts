@@ -9,7 +9,6 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of, switchMap, timer } from 'rxjs';
-import { MatChipsModule } from '@angular/material/chips';
 import { environment } from '../../../environments/environment';
 
 type HealthStatus = 'UP' | 'DOWN' | 'UNKNOWN';
@@ -17,21 +16,29 @@ type HealthStatus = 'UP' | 'DOWN' | 'UNKNOWN';
 @Component({
   selector: 'app-health-indicator',
   standalone: true,
-  imports: [MatChipsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <mat-chip
-      [class]="'health-chip health-chip--' + status().toLowerCase()"
-      disableRipple
+    <span
+      class="badge rounded-pill"
+      [class.text-bg-success]="status() === 'UP'"
+      [class.text-bg-danger]="status() === 'DOWN'"
+      [class.text-bg-secondary]="status() === 'UNKNOWN'"
       [attr.aria-label]="'API status: ' + status()"
     >
-      {{ status() }}
-    </mat-chip>
+      <span class="status-dot"></span>{{ status() }}
+    </span>
   `,
   styles: [`
-    .health-chip--up      { background-color: #2e7d32; color: #fff; }
-    .health-chip--down    { background-color: #c62828; color: #fff; }
-    .health-chip--unknown { background-color: #757575; color: #fff; }
+    .status-dot {
+      display: inline-block;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: currentColor;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+      opacity: 0.85;
+    }
   `],
 })
 export class HealthIndicatorComponent implements OnInit {

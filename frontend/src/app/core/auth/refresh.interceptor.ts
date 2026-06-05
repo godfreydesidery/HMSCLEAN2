@@ -7,7 +7,7 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject, filter, switchMap, take, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { DefaultService } from '../../api/generated';
+import { AuthControllerService } from '../../api/generated';
 import type { TokenResponse } from '../../api/generated';
 import { extractProblem } from '../error/problem-detail';
 import { AuthStore } from './auth.store';
@@ -40,9 +40,9 @@ let refreshInFlight = false;
 const refreshSubject = new BehaviorSubject<TokenResponse | null>(null);
 
 export const refreshTokenInterceptor: HttpInterceptorFn = (req, next) => {
-  const authStore      = inject(AuthStore);
-  const defaultService = inject(DefaultService);
-  const router         = inject(Router);
+  const authStore   = inject(AuthStore);
+  const authService = inject(AuthControllerService);
+  const router      = inject(Router);
 
   // Both auth endpoints are excluded: prevents the refresh call itself from
   // triggering a retry loop and leaves login 401s (bad credentials) unretried.
@@ -101,8 +101,8 @@ export const refreshTokenInterceptor: HttpInterceptorFn = (req, next) => {
       refreshInFlight = true;
       refreshSubject.next(null); // Signal "refresh in progress" to queued requests.
 
-      return defaultService
-        .refreshToken({ refreshRequest: { refreshToken } })
+      return authService
+        .refresh({ refreshRequest: { refreshToken } })
         .pipe(
           switchMap((tokenResponse) => {
             authStore.setTokens(tokenResponse);

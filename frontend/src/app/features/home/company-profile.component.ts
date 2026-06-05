@@ -5,66 +5,63 @@ import {
   OnInit,
   signal,
 } from '@angular/core';
-import { MatCardModule } from '@angular/material/card';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { CompanyProfile, DefaultService } from '../../api/generated';
+import { CompanyProfileControllerService, CompanyProfileDto } from '../../api/generated';
 import { extractProblem } from '../../core/error/problem-detail';
 
 @Component({
   selector: 'app-company-profile',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatCardModule, MatProgressSpinnerModule],
   template: `
-    <div class="profile-wrapper">
-
-      @if (loading()) {
-        <mat-spinner diameter="48" aria-label="Loading company profile"></mat-spinner>
-      } @else if (error()) {
-        <p class="error-msg" role="alert">{{ error() }}</p>
-      } @else {
-        <mat-card class="profile-card">
-          <mat-card-header>
-            <mat-card-title>{{ profile()?.name ?? '—' }}</mat-card-title>
-            @if (profile()?.uid) {
-              <mat-card-subtitle>UID: {{ profile()?.uid }}</mat-card-subtitle>
-            }
-          </mat-card-header>
-
-          <mat-card-content>
-            @if (profile()?.address) {
-              <p><strong>Address:</strong> {{ profile()?.address }}</p>
-            }
-            @if (profile()?.phone) {
-              <p><strong>Phone:</strong> {{ profile()?.phone }}</p>
-            }
-          </mat-card-content>
-        </mat-card>
-      }
-
+    <div class="container py-2">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+          @if (loading()) {
+            <div class="d-flex justify-content-center py-5">
+              <div class="spinner-border text-primary" role="status"
+                   aria-label="Loading company profile">
+                <span class="visually-hidden">Loading…</span>
+              </div>
+            </div>
+          } @else if (error()) {
+            <div class="alert alert-danger" role="alert">{{ error() }}</div>
+          } @else {
+            <div class="card shadow-sm">
+              <div class="card-header bg-white">
+                <h1 class="h4 mb-0">{{ profile()?.name ?? '—' }}</h1>
+              </div>
+              <div class="card-body">
+                <dl class="row mb-0">
+                  @if (profile()?.address) {
+                    <dt class="col-sm-3">Address</dt>
+                    <dd class="col-sm-9">{{ profile()?.address }}</dd>
+                  }
+                  @if (profile()?.phone) {
+                    <dt class="col-sm-3">Phone</dt>
+                    <dd class="col-sm-9">{{ profile()?.phone }}</dd>
+                  }
+                  @if (profile()?.email) {
+                    <dt class="col-sm-3">Email</dt>
+                    <dd class="col-sm-9">{{ profile()?.email }}</dd>
+                  }
+                </dl>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
     </div>
   `,
-  styles: [`
-    .profile-wrapper {
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 2rem 1rem;
-    }
-    .profile-card { width: 100%; max-width: 600px; }
-    .error-msg    { color: #c62828; font-size: 0.875rem; }
-    mat-card-content p { margin: 0.5rem 0; }
-  `],
 })
 export class CompanyProfileComponent implements OnInit {
-  private readonly defaultService = inject(DefaultService);
+  private readonly companyProfileService = inject(CompanyProfileControllerService);
 
-  readonly profile = signal<CompanyProfile | null>(null);
+  readonly profile = signal<CompanyProfileDto | null>(null);
   readonly loading = signal(true);
   readonly error   = signal<string | null>(null);
 
   ngOnInit(): void {
-    this.defaultService.getCompanyProfile().subscribe({
+    this.companyProfileService.current1().subscribe({
       next: (data) => {
         this.profile.set(data);
         this.loading.set(false);

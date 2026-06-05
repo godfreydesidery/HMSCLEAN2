@@ -11,7 +11,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDividerModule } from '@angular/material/divider';
-import { DefaultService, ReceiptDto } from '../../../api/generated';
+import { BillingReportControllerService, ReceiptDto } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.component';
@@ -226,8 +226,8 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
   `],
 })
 export class ReceiptComponent implements OnInit {
-  private readonly route          = inject(ActivatedRoute);
-  private readonly defaultService = inject(DefaultService);
+  private readonly route                = inject(ActivatedRoute);
+  private readonly billingReportService = inject(BillingReportControllerService);
 
   readonly formatMoney = formatMoney;
 
@@ -239,7 +239,7 @@ export class ReceiptComponent implements OnInit {
     const uid = this.route.snapshot.paramMap.get('uid') ?? '';
     this.loading.set(true);
 
-    this.defaultService.getReceipt({ uid }).subscribe({
+    this.billingReportService.receipt({ uid }).subscribe({
       next: (data) => {
         this.receipt.set(data);
         this.loading.set(false);

@@ -12,7 +12,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
-import { DefaultService, PatientPaymentDto, RecordPaymentRequest } from '../../../api/generated';
+import { PatientPaymentDto, PaymentControllerService, RecordPaymentRequest } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 
@@ -131,7 +131,7 @@ export interface RecordPaymentDialogData {
 export class RecordPaymentDialogComponent {
   private readonly fb             = inject(NonNullableFormBuilder);
   private readonly dialogRef      = inject(MatDialogRef<RecordPaymentDialogComponent>);
-  private readonly defaultService = inject(DefaultService);
+  private readonly paymentService = inject(PaymentControllerService);
   readonly dialogData             = inject<RecordPaymentDialogData>(MAT_DIALOG_DATA);
 
   readonly formatMoney = formatMoney;
@@ -165,8 +165,8 @@ export class RecordPaymentDialogComponent {
 
     const { tenderedAmount, paymentMode } = this.form.getRawValue();
 
-    this.defaultService
-      .recordBillsPayment({
+    this.paymentService
+      .recordPayment({
         recordPaymentRequest: {
           billUids: this.dialogData.billUids,
           tenderedTotal: {

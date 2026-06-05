@@ -373,10 +373,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingCarePlanView>>;
-    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingCarePlanView>>>;
-    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingCarePlanView>>>;
-    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingCarePlanView>>;
+    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingCarePlanView>>>;
+    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingCarePlanView>>>;
+    public listCarePlans(requestParameters: ListCarePlansRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listCarePlans.');
@@ -385,7 +385,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -428,10 +428,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<PrescriptionChartView>>;
-    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<PrescriptionChartView>>>;
-    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<PrescriptionChartView>>>;
-    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<PrescriptionChartView>>;
+    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<PrescriptionChartView>>>;
+    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<PrescriptionChartView>>>;
+    public listDosingNotes(requestParameters: ListDosingNotesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listDosingNotes.');
@@ -440,7 +440,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -483,10 +483,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<DressingChartView>>;
-    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<DressingChartView>>>;
-    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<DressingChartView>>>;
-    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<DressingChartView>>;
+    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<DressingChartView>>>;
+    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<DressingChartView>>>;
+    public listDressingCharts(requestParameters: ListDressingChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listDressingCharts.');
@@ -495,7 +495,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -538,10 +538,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<MedicationAdministrationView>>;
-    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<MedicationAdministrationView>>>;
-    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<MedicationAdministrationView>>>;
-    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<MedicationAdministrationView>>;
+    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<MedicationAdministrationView>>>;
+    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<MedicationAdministrationView>>>;
+    public listMedicationAdministrations(requestParameters: ListMedicationAdministrationsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listMedicationAdministrations.');
@@ -550,7 +550,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -593,10 +593,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingChartView>>;
-    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingChartView>>>;
-    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingChartView>>>;
-    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingChartView>>;
+    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingChartView>>>;
+    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingChartView>>>;
+    public listNursingCharts(requestParameters: ListNursingChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listNursingCharts.');
@@ -605,7 +605,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -648,10 +648,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingProgressNoteView>>;
-    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingProgressNoteView>>>;
-    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingProgressNoteView>>>;
-    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<NursingProgressNoteView>>;
+    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<NursingProgressNoteView>>>;
+    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<NursingProgressNoteView>>>;
+    public listProgressNotes(requestParameters: ListProgressNotesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listProgressNotes.');
@@ -660,7 +660,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -703,10 +703,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<NursingCarePlanView>;
-    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingCarePlanView>>;
-    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingCarePlanView>>;
-    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<NursingCarePlanView>;
+    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingCarePlanView>>;
+    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingCarePlanView>>;
+    public saveCarePlan(requestParameters: SaveCarePlanRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveCarePlan.');
@@ -719,7 +719,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -772,10 +772,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<PrescriptionChartView>;
-    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PrescriptionChartView>>;
-    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PrescriptionChartView>>;
-    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<PrescriptionChartView>;
+    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PrescriptionChartView>>;
+    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PrescriptionChartView>>;
+    public saveDosingNote(requestParameters: SaveDosingNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveDosingNote.');
@@ -788,7 +788,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -841,10 +841,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<DressingChartView>;
-    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DressingChartView>>;
-    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DressingChartView>>;
-    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<DressingChartView>;
+    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<DressingChartView>>;
+    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<DressingChartView>>;
+    public saveDressingChart(requestParameters: SaveDressingChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveDressingChart.');
@@ -857,7 +857,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -910,10 +910,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<MedicationAdministrationView>;
-    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<MedicationAdministrationView>>;
-    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<MedicationAdministrationView>>;
-    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<MedicationAdministrationView>;
+    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<MedicationAdministrationView>>;
+    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<MedicationAdministrationView>>;
+    public saveMedicationAdministration(requestParameters: SaveMedicationAdministrationRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveMedicationAdministration.');
@@ -926,7 +926,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -979,10 +979,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<NursingChartView>;
-    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingChartView>>;
-    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingChartView>>;
-    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<NursingChartView>;
+    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingChartView>>;
+    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingChartView>>;
+    public saveNursingChart(requestParameters: SaveNursingChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveNursingChart.');
@@ -995,7 +995,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -1048,10 +1048,10 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<NursingProgressNoteView>;
-    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingProgressNoteView>>;
-    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingProgressNoteView>>;
-    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<NursingProgressNoteView>;
+    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<NursingProgressNoteView>>;
+    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<NursingProgressNoteView>>;
+    public saveProgressNote(requestParameters: SaveProgressNoteRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveProgressNote.');
@@ -1064,7 +1064,7 @@ export class InpatientNursingChartsService extends BaseService implements Inpati
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

@@ -53,10 +53,10 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<FinalDiagnosisDto>;
-    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<FinalDiagnosisDto>>;
-    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<FinalDiagnosisDto>>;
-    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<FinalDiagnosisDto>;
+    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<FinalDiagnosisDto>>;
+    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<FinalDiagnosisDto>>;
+    public addFinalDiagnosis(requestParameters: AddFinalDiagnosisRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling addFinalDiagnosis.');
@@ -69,7 +69,7 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -121,10 +121,10 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<WorkingDiagnosisDto>;
-    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<WorkingDiagnosisDto>>;
-    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<WorkingDiagnosisDto>>;
-    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<WorkingDiagnosisDto>;
+    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<WorkingDiagnosisDto>>;
+    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<WorkingDiagnosisDto>>;
+    public addWorkingDiagnosis(requestParameters: AddWorkingDiagnosisRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling addWorkingDiagnosis.');
@@ -137,7 +137,7 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -295,10 +295,10 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<FinalDiagnosisDto>>;
-    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<FinalDiagnosisDto>>>;
-    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<FinalDiagnosisDto>>>;
-    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<FinalDiagnosisDto>>;
+    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<FinalDiagnosisDto>>>;
+    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<FinalDiagnosisDto>>>;
+    public listFinalDiagnoses(requestParameters: ListFinalDiagnosesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling listFinalDiagnoses.');
@@ -307,7 +307,7 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -349,10 +349,10 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<WorkingDiagnosisDto>>;
-    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<WorkingDiagnosisDto>>>;
-    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<WorkingDiagnosisDto>>>;
-    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<WorkingDiagnosisDto>>;
+    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<WorkingDiagnosisDto>>>;
+    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<WorkingDiagnosisDto>>>;
+    public listWorkingDiagnoses(requestParameters: ListWorkingDiagnosesRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const uid = requestParameters?.uid;
         if (uid === null || uid === undefined) {
             throw new Error('Required parameter uid was null or undefined when calling listWorkingDiagnoses.');
@@ -361,7 +361,7 @@ export class DiagnosisControllerService extends BaseService implements Diagnosis
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

@@ -46,10 +46,10 @@ export class PaymentControllerService extends BaseService implements PaymentCont
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<PatientPaymentDto>;
-    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientPaymentDto>>;
-    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientPaymentDto>>;
-    public recordPayment(requestParameters: RecordPaymentRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<PatientPaymentDto>;
+    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<PatientPaymentDto>>;
+    public recordPayment(requestParameters: RecordPaymentRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<PatientPaymentDto>>;
+    public recordPayment(requestParameters: RecordPaymentRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const recordPaymentRequest = requestParameters?.recordPaymentRequest;
         if (recordPaymentRequest === null || recordPaymentRequest === undefined) {
             throw new Error('Required parameter recordPaymentRequest was null or undefined when calling recordPayment.');
@@ -58,7 +58,7 @@ export class PaymentControllerService extends BaseService implements PaymentCont
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);

@@ -107,10 +107,10 @@ export class InpatientConsumableChartsService extends BaseService implements Inp
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<Array<ConsumableChartView>>;
-    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<ConsumableChartView>>>;
-    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<ConsumableChartView>>>;
-    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<Array<ConsumableChartView>>;
+    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<Array<ConsumableChartView>>>;
+    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<Array<ConsumableChartView>>>;
+    public listConsumableCharts(requestParameters: ListConsumableChartsRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling listConsumableCharts.');
@@ -119,7 +119,7 @@ export class InpatientConsumableChartsService extends BaseService implements Inp
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
@@ -162,10 +162,10 @@ export class InpatientConsumableChartsService extends BaseService implements Inp
      * @param observe set whether or not to return the data Observable as the body, response or events. defaults to returning the body.
      * @param reportProgress flag to report request and response progress.
      */
-    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<ConsumableChartView>;
-    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ConsumableChartView>>;
-    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ConsumableChartView>>;
-    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: '*/*', context?: HttpContext, transferCache?: boolean}): Observable<any> {
+    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'body', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<ConsumableChartView>;
+    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'response', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpResponse<ConsumableChartView>>;
+    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe?: 'events', reportProgress?: boolean, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<HttpEvent<ConsumableChartView>>;
+    public saveConsumableChart(requestParameters: SaveConsumableChartRequestParams, observe: any = 'body', reportProgress: boolean = false, options?: {httpHeaderAccept?: 'application/json', context?: HttpContext, transferCache?: boolean}): Observable<any> {
         const admissionUid = requestParameters?.admissionUid;
         if (admissionUid === null || admissionUid === undefined) {
             throw new Error('Required parameter admissionUid was null or undefined when calling saveConsumableChart.');
@@ -178,7 +178,7 @@ export class InpatientConsumableChartsService extends BaseService implements Inp
         let localVarHeaders = this.defaultHeaders;
 
         const localVarHttpHeaderAcceptSelected: string | undefined = options?.httpHeaderAccept ?? this.configuration.selectHeaderAccept([
-            '*/*'
+            'application/json'
         ]);
         if (localVarHttpHeaderAcceptSelected !== undefined) {
             localVarHeaders = localVarHeaders.set('Accept', localVarHttpHeaderAcceptSelected);
