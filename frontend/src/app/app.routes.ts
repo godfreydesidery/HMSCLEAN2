@@ -44,6 +44,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'registration',
+    canActivate: [privilegeGuard],
+    data: { privilege: 'PATIENT-ALL' },
+    loadChildren: () =>
+      import('./features/registration/registration.routes').then((m) => m.REGISTRATION_ROUTES),
+  },
+  {
     path: 'billing',
     canActivate: [privilegeGuard],
     data: { privilege: 'BILL-A' },
