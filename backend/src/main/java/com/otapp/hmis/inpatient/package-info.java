@@ -23,9 +23,11 @@
  *   <li>{@code iam :: lookup} — nurse / attending-doctor personnel existence checks.</li>
  * </ul>
  *
- * <p><strong>Excluded dependencies (added in later chunks):</strong>
- * {@code pharmacy :: api} and {@code inventory :: api} are NOT listed here — the
- * consumable-stock seam is added in chunk 07c. Do not add those edges until 07c is built.
+ * <p><strong>Added in chunk 07c-i (CR-07-consumable-stock):</strong>
+ * {@code pharmacy :: api} is added here for the consumable-stock seam
+ * ({@link com.otapp.hmis.pharmacy.api.PharmacyStockDebit}). The dependency edge is
+ * one-directional: {@code inpatient → pharmacy :: api}. No reverse edge exists (pharmacy
+ * never imports inpatient), so no cycle is introduced. ModularityTest verifies this.
  *
  * <p>Legacy citation: PatientServiceImpl.java (admission lifecycle); PatientResource.java
  * (REST endpoints). inc-07 / ADR-0008 §6 / ADR-0017 ratified.
@@ -37,5 +39,6 @@
                 "billing :: api",
                 "masterdata :: lookup",
                 "iam :: lookup",
-                "registration :: lookup"})  // inc-07 07a SEAM-B: PatientStatusLookup deceased guard
+                "registration :: lookup",
+                "pharmacy :: api"})  // inc-07 07c-i CR-07-consumable-stock: consumable issue debit seam
 package com.otapp.hmis.inpatient;
