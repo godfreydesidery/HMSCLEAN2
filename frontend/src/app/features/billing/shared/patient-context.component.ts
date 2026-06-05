@@ -7,39 +7,30 @@ import {
   Output,
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-
-/** ULID alphabet — 26 chars: digits + Crockford base32 excluding i, l, o, u */
-const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+import { EntityPickerComponent } from '../../../shared/entity-picker/entity-picker.component';
+import { PatientSearch } from '../../../shared/entity-picker/patient-search';
 
 @Component({
   selector: 'app-patient-context',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, EntityPickerComponent],
   template: `
     <form [formGroup]="form" (ngSubmit)="submit()" novalidate class="patient-context-form">
-      <div class="uid-field">
-        <label class="form-label" for="patient-uid-input">Patient UID</label>
-        <input
-          id="patient-uid-input"
-          class="form-control"
+      <div class="picker-field">
+        <label class="form-label" for="patient-picker">Patient</label>
+        <app-entity-picker
+          id="patient-picker"
           formControlName="patientUid"
-          autocomplete="off"
-          aria-required="true"
-          aria-label="Patient UID (26-character identifier)"
-          [attr.aria-describedby]="'patient-uid-error'"
-          maxlength="26"
-          placeholder="01ARYZ6S41TPTWGIKMJ4VWBZWK"
-          [class.is-invalid]="form.controls.patientUid.invalid && form.controls.patientUid.touched"
-        />
+          placeholder="Search by name, registration no, or phone…"
+          ariaLabel="Search for a patient"
+          [searchFn]="patientSearch.searchFn"
+          [invalid]="form.controls.patientUid.invalid && form.controls.patientUid.touched"
+        ></app-entity-picker>
         @if (form.controls.patientUid.invalid && form.controls.patientUid.touched) {
-          @if (form.controls.patientUid.hasError('required')) {
-            <div id="patient-uid-error" class="invalid-feedback">Patient UID is required.</div>
-          } @else {
-            <div id="patient-uid-error" class="invalid-feedback">Enter the 26-character patient UID.</div>
-          }
+          <div class="invalid-feedback d-block">Select a patient from the list.</div>
         } @else {
-          <div class="form-text">26-character ULID (e.g. 01ARYZ6S41TPTWGIKMJ4VWBZWK)</div>
+          <div class="form-text">Type to search; pick a patient to load their bills.</div>
         }
       </div>
 
@@ -65,9 +56,9 @@ const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
       gap: 1rem;
       flex-wrap: wrap;
     }
-    .uid-field {
+    .picker-field {
       flex: 1;
-      min-width: 280px;
+      min-width: 320px;
     }
     .load-btn {
       margin-top: 1.9rem;
@@ -84,21 +75,16 @@ const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 })
 export class PatientContextComponent {
   private readonly fb = inject(NonNullableFormBuilder);
+  protected readonly patientSearch = inject(PatientSearch);
 
   @Input() loading = false;
 
+  /** Emits the SELECTED patient's uid (captured by the picker — never typed by the user). */
   @Output() readonly patientUidConfirmed = new EventEmitter<string>();
 
   readonly form = this.fb.group({
-    patientUid: [
-      '',
-      [
-        Validators.required,
-        Validators.minLength(26),
-        Validators.maxLength(26),
-        Validators.pattern(ULID_PATTERN),
-      ],
-    ],
+    // The value is the uid captured by the entity-picker on selection; required = a patient was picked.
+    patientUid: ['', [Validators.required]],
   });
 
   submit(): void {

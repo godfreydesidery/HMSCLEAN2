@@ -108,7 +108,7 @@ const BILL_COLUMNS = ['select', 'description', 'qty', 'amount', 'status', 'actio
       <div class="card patient-context-card">
         <div class="card-header">
           <h2 class="h5 mb-0">Patient Bills</h2>
-          <small class="text-muted">Enter a patient UID to load their bills</small>
+          <small class="text-muted">Search for a patient to load their bills</small>
         </div>
         <div class="card-body">
           <app-patient-context
