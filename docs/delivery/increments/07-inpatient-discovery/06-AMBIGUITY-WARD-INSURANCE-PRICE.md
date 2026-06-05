@@ -1,7 +1,19 @@
-# Inc-07 Ambiguity Register — Ward-bed insurance price selection (BLOCKS 07a-2)
+# Inc-07 Ambiguity Register — Ward-bed insurance price selection (RESOLVED → Option B)
 
 **Raised:** 2026-06-05 (during the 07a-2 ward-billing build) · **By:** legacy-analyst deep extraction (agent `aaeb2953d0963b83f`)
-**Status:** OPEN — needs engagement-lead + healthcare-domain-expert decision. **Blocks the insurance-ward-price path of Chunk 07a-2.** The cash ward path (already built in 07a-1) is unaffected.
+**RESOLVED:** 2026-06-05 by the product owner → **Option B (corrected, ward-type-keyed)**. Tracked as **CR-07-WARD-INS-PRICE** (a deviation from verbatim legacy; golden-master baselined to corrected money). The 07a-2 insurance ward path builds on Option B. **Parallel non-blocking action:** HDE to confirm the corrected ward-insurance amount is the intended NHIF/insurance behaviour (does not block the build; flagged below).
+
+---
+
+## OWNER DECISION (2026-06-05): Option B — corrected, ward-type-keyed
+
+Build the insurance ward price via `PriceLookup.resolve(planUid, WARD, wardTypeUid)` keyed on the **admitted bed's ward type** (NOT the legacy first-row, ward-type-agnostic selection). The top-up split becomes **genuinely load-bearing**: when the cash `WardType.price` exceeds the covered `eligiblePlan.price`, create the UNPAID "Ward Bed / Room (Top up)" supplementary bill for the difference, with bidirectional principal↔supplementary linkage; activate IN-PROCESS/OCCUPIED at admit only when there is no top-up (covered == cash, the no-top-up case), else stay PENDING/WAITING until the top-up is paid (then the AdmissionSettlementListener from 07a-1 activates it).
+
+This **supersedes the ratified Q9 "reproduce verbatim"** for the ward-insurance-price selection specifically: Q9 was written believing the loop selected by max-price/own-plan and that the top-up was load-bearing — the legacy reality is dead-loop + unreachable-top-up + ward-type-agnostic-defect. Option B implements the designer's evident intent (the unused `findByInsurancePlanAndWardType` repo method + the top-up math both point at it) on the modern `service_prices` schema with no new structure. The active-flag-honoured handling from CR-07-Q9 still applies (exclude inactive-but-covered rows) — `PriceLookup` resolution is keyed and active-aware per its existing contract.
+
+Applies to BOTH `doAdmission` (07a-2) and the `UpdatePatient` accrual clone (07c inherits it).
+
+---
 
 > **Why this is here and not silently resolved:** this is a newly-discovered **latent legacy defect** with **direct financial impact** (it changes the insurance-covered ward amount), and it **contradicts the ratified Q9 decision + the frozen build spec**. The implementing agent must not pick the money. Per the charter, a deviation-vs-verbatim choice with golden-master consequences is an owner/HDE call.
 

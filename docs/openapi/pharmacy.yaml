@@ -2345,6 +2345,46 @@ components:
           format: "date"
         qty:
           type: "number"
+    AdmissionRequest:
+      required:
+      - "patientUid"
+      - "paymentType"
+      - "wardBedUid"
+      type: "object"
+      properties:
+        patientUid:
+          type: "string"
+        wardBedUid:
+          type: "string"
+        paymentType:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+    AdmissionDto:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        patientUid:
+          type: "string"
+        wardBedUid:
+          type: "string"
+        paymentType:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+        status:
+          type: "string"
+        admittedAt:
+          type: "string"
+          format: "date-time"
+        dischargedAt:
+          type: "string"
+          format: "date-time"
     CreateUserRequest:
       required:
       - "firstName"

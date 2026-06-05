@@ -3,6 +3,7 @@ package com.otapp.hmis.inpatient.application;
 import com.otapp.hmis.billing.api.BillingCommands;
 import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.domain.PaymentMode;
+import com.otapp.hmis.clinical.api.ConsultationSignOut;
 import com.otapp.hmis.inpatient.application.dto.AdmissionDto;
 import com.otapp.hmis.inpatient.application.dto.AdmissionRequest;
 import com.otapp.hmis.inpatient.domain.Admission;
@@ -13,6 +14,7 @@ import com.otapp.hmis.inpatient.domain.AdmissionStatus;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.masterdata.lookup.WardBedClaim;
 import com.otapp.hmis.masterdata.lookup.WardLookup;
+import com.otapp.hmis.masterdata.lookup.WardTypeView;
 import com.otapp.hmis.registration.lookup.PatientStatusLookup;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
@@ -20,6 +22,7 @@ import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.NotFoundException;
 import com.otapp.hmis.shared.event.PatientAdmittedEvent;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -40,9 +43,17 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li><strong>CR-07-Q3 / ADR-0017</strong>: PESSIMISTIC_WRITE bed-claim locking via
  *       {@link WardBedClaim#claimBed} (net-new concurrency hardening). Legacy had a simple
  *       in-place status check with no lock.</li>
- *   <li><strong>TODO(07a-2)</strong>: Insurance/top-up ward pricing is deferred to chunk 07a-2.
- *       For now the CASH price path only — the ward bill is always created at
- *       {@code WardType.price} as a plain CASH UNPAID bill.</li>
+ *   <li><strong>CR-07-WARD-INS-PRICE / Option B</strong> (07a-2): Insurance ward price is
+ *       resolved via {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)} — keyed on the
+ *       admitted bed's ward type. The top-up split is genuinely load-bearing: when
+ *       {@code cashPrice > coveredPrice}, an UNPAID "Ward Bed / Room (Top up)" supplementary
+ *       bill is created for the difference; the admission stays PENDING until the top-up is
+ *       paid. When {@code coveredPrice >= cashPrice} (diff &le; 0, no top-up), the admission
+ *       activates IN-PROCESS at admit and the bed moves to OCCUPIED immediately.
+ *       The legacy first-row/ward-type-agnostic defect (dead max-price loop + unreachable
+ *       top-up guard) is NOT reproduced — see Option B rationale in
+ *       docs/delivery/increments/07-inpatient-discovery/06-AMBIGUITY-WARD-INSURANCE-PRICE.md.
+ *       </li>
  * </ul>
  *
  * <p><strong>Guard order (verbatim from legacy PatientResource.java:5186-5210):</strong>
@@ -58,25 +69,59 @@ import org.springframework.transaction.annotation.Transactional;
  *       on race — caller retries with a fresh bed selection).</li>
  * </ol>
  *
- * <p><strong>Admission steps (PatientServiceImpl.java:1701-2021, CASH path):</strong>
+ * <p><strong>Admission steps (PatientServiceImpl.java:1701-2021):</strong>
  * <ol>
  *   <li>Claim the bed WAITING (WardBedClaim.claimBed — done in guard step 4).</li>
  *   <li>Create Admission entity (PENDING).</li>
- *   <li>Create UNPAID ward-bed PatientBill via billing::api at WardType.price
- *       (billItem="Bed", description="Ward Bed / Room" — PatientServiceImpl.java:1758-1759).
- *       // TODO(07a-2): insurance/top-up path deferred.</li>
+ *   <li>Create ward-bed PatientBill(s) via billing::api:
+ *       <ul>
+ *         <li>CASH path: one UNPAID bill via {@code recordClinicalCharge} at WardType.price
+ *             (billItem="Bed", description="Ward Bed / Room" — :1758-1759). Stays PENDING until
+ *             bill paid; {@link AdmissionSettlementListener} activates.</li>
+ *         <li>INSURANCE path (CR-07-WARD-INS-PRICE / Option B):
+ *             <ul>
+ *               <li>COVERED principal at covered plan price via {@code recordClinicalCharge}
+ *                   (kind=WARD, paymentType=INSURANCE, planUid, membershipNo, wardTypeUid).
+ *                   The billing engine runs PriceLookup.resolve(planUid, WARD, wardTypeUid) →
+ *                   COVERED bill at the plan price.</li>
+ *               <li>If {@code cashPrice > coveredPrice} (diff &gt; 0): UNPAID supplementary
+ *                   "Ward Bed / Room (Top up)" bill for the diff via
+ *                   {@link BillingCommands#recordWardTopUp}. Admission stays PENDING; bed
+ *                   stays WAITING until the top-up is paid (settlement listener fires on
+ *                   the top-up bill uid). AdmissionBed.patientBillUid = top-up bill uid.</li>
+ *               <li>If {@code diff &le; 0} (no top-up): activate IN-PROCESS at admit, call
+ *                   {@code WardBedClaim.occupyBed}. AdmissionBed.patientBillUid = principal
+ *                   bill uid (the COVERED bill — the settlement listener will not re-fire
+ *                   for a COVERED bill, but that is correct: no top-up, no cashier action).</li>
+ *             </ul>
+ *         </li>
+ *       </ul>
+ *   </li>
  *   <li>Create AdmissionBed (OPENED).</li>
  *   <li>Publish PatientAdmittedEvent → PatientClosureListener flips Patient.type=INPATIENT
  *       (PatientServiceImpl.java:1785 — event replaces inline set to avoid inpatient→registration
  *       compile cycle, inc-07 07a SEAM-A).</li>
  * </ol>
  *
+ * <p><strong>Activate-at-admit (no-top-up insurance branch, PatientServiceImpl.java:1950-1963):</strong>
+ * <ul>
+ *   <li>Open OPD consultations (PENDING + IN_PROCESS) signed out first via
+ *       {@link com.otapp.hmis.clinical.api.ConsultationSignOut#signOutOpenConsultations}
+ *       (inc-07 07a-2 — legacy PatientServiceImpl.java:1951-1958).</li>
+ *   <li>Admission activated IN-PROCESS via {@link Admission#activate()} (line :1959).</li>
+ *   <li>Bed occupied via {@link WardBedClaim#occupyBed(String)} (line :1961).</li>
+ * </ul>
+ *
  * <p><strong>Activation (CASH path — PatientBillResource.java:352-365):</strong>
  * Handled by {@link AdmissionSettlementListener} consuming
  * {@link com.otapp.hmis.shared.event.BillSettledEvent} BEFORE_COMMIT.
+ * The cash path also signs out IN_PROCESS consultations (PatientBillResource.java:353-364)
+ * via {@link com.otapp.hmis.clinical.api.ConsultationSignOut#signOutInProcessConsultations}
+ * (note: cash path signs out only IN_PROCESS, not PENDING — narrower than the insurance path).
  * The admission stays PENDING until the ward-bed bill is paid.
  *
  * <p>Legacy citations: PatientServiceImpl.java:1701-2021; PatientResource.java:5183-5210.
+ * CR-07-WARD-INS-PRICE / Option B (see 06-AMBIGUITY-WARD-INSURANCE-PRICE.md).
  */
 @Service
 @RequiredArgsConstructor
@@ -93,6 +138,7 @@ public class AdmissionService {
     private final WardLookup wardLookup;
     private final WardBedClaim wardBedClaim;
     private final BillingCommands billingCommands;
+    private final ConsultationSignOut consultationSignOut;
     private final AuditRecorder auditRecorder;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -103,9 +149,13 @@ public class AdmissionService {
      * Publishes {@link PatientAdmittedEvent} BEFORE_COMMIT so Patient.type is flipped to
      * INPATIENT atomically with the admission creation (inc-07 07a SEAM-A).
      *
+     * <p>INSURANCE path implements Option B / CR-07-WARD-INS-PRICE: covered price keyed on the
+     * admitted bed's ward type via {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)};
+     * top-up split genuinely load-bearing when {@code cashPrice > coveredPrice}.
+     *
      * @param request the admission request (patientUid, wardBedUid, paymentType, ...)
      * @param ctx     the transaction audit context (dayUid, actor, timestamp)
-     * @return an {@link AdmissionDto} describing the newly created PENDING admission
+     * @return an {@link AdmissionDto} describing the newly created admission (PENDING or IN_PROCESS)
      * @throws PatientDeceasedException         (422) if the patient is DECEASED
      * @throws PatientAlreadyAdmittedException  (422) if the patient is already admitted
      * @throws NotFoundException                (404) if the wardBed or wardType is not found
@@ -144,19 +194,19 @@ public class AdmissionService {
         wardBedClaim.claimBed(wardBedUid);
 
         // -----------------------------------------------------------------
-        // Step 1: resolve ward-type price for the bed (CASH path)
+        // Step 1a: resolve ward bed → ward type uid + cash price
         // PatientServiceImpl.java:1754 — wb.getWard().getWardType().getPrice()
-        // TODO(07a-2): insurance/top-up pricing deferred
+        // The cash price is the WardType.price (the "sticker" per-stay cost).
         // -----------------------------------------------------------------
         var bedView = wardLookup.findBedByUid(wardBedUid)
                 .orElseThrow(() -> new NotFoundException("Ward bed not found: " + wardBedUid));
-        // Ward type resolved here to confirm it exists and to carry wardTypeUid into
-        // the ChargeRequest.serviceUid. The actual cash price is resolved inside the
-        // billing engine via PriceLookup (ServiceKind.WARD, serviceUid=wardTypeUid).
-        // TODO(07a-2): pass wardTypeView.price() directly for the insurance-top-up delta calc.
-        wardLookup.findWardTypeByUid(bedView.wardTypeUid())
+
+        WardTypeView wardTypeView = wardLookup.findWardTypeByUid(bedView.wardTypeUid())
                 .orElseThrow(() -> new NotFoundException(
                         "Ward type not found for bed: " + wardBedUid));
+
+        // Cash price for the ward type — used in the top-up diff calculation (07a-2).
+        BigDecimal cashWardPrice = wardTypeView.price().setScale(2, RoundingMode.HALF_UP);
 
         // -----------------------------------------------------------------
         // Step 2: create Admission (PENDING)
@@ -175,38 +225,39 @@ public class AdmissionService {
                 ctx.actorUsername());
 
         // -----------------------------------------------------------------
-        // Step 3: create UNPAID ward-bed bill via billing::api (CASH path)
-        // PatientServiceImpl.java:1753-1774
-        // billItem="Bed", description="Ward Bed / Room" (verbatim legacy)
-        // TODO(07a-2): insurance/top-up path — full insurance-cover branch sets status=COVERED
-        //              and activates the admission immediately; deferred to 07a-2.
+        // Step 3: create ward-bed bill(s) and decide activation
+        // PatientServiceImpl.java:1753-1774 (CASH) / :1795-1965 (INSURANCE, Option B)
         // -----------------------------------------------------------------
-        ChargeRequest chargeRequest = new ChargeRequest(
-                patientUid,
-                null,                   // planUid — null for CASH (TODO(07a-2): pass plan)
-                null,                   // membershipNo — null for CASH
-                ServiceKind.WARD,
-                bedView.wardTypeUid(),  // serviceUid = wardTypeUid (the "service" being priced)
-                BigDecimal.ONE,
-                PaymentMode.CASH,       // TODO(07a-2): use paymentMode when insurance path lands
-                true,                   // inpatient = true
-                false,                  // followUp not applicable for ward charges
-                "Bed",                  // billItem — verbatim legacy (PatientServiceImpl.java:1758)
-                "Ward Bed / Room",      // description — verbatim legacy (:1759)
-                admission.getUid()      // admissionUid — links bill to this admission (inc-07 07a)
-        );
-        var chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
-        String billUid = chargeResult.billUid();
+        final String billUidForSettlement;  // the UNPAID bill uid that triggers activation
+
+        if (paymentMode == PaymentMode.INSURANCE) {
+            billUidForSettlement = handleInsurancePath(
+                    admission, patientUid, wardBedUid, bedView.wardTypeUid(),
+                    cashWardPrice, request.insurancePlanUid(), request.membershipNo(),
+                    ctx);
+        } else {
+            // CASH path — unchanged from 07a-1
+            billUidForSettlement = handleCashPath(
+                    admission, patientUid, bedView.wardTypeUid(), ctx);
+        }
 
         // -----------------------------------------------------------------
         // Step 4: create AdmissionBed (OPENED)
         // PatientServiceImpl.java:1776-1783
+        // patientBillUid is either:
+        //   - CASH: the UNPAID ward bill uid (activated by settlement listener on payment)
+        //   - INSURANCE with top-up (diff > 0): the UNPAID top-up bill uid (activated on
+        //     top-up payment via settlement listener)
+        //   - INSURANCE no-top-up (diff <= 0): the COVERED principal bill uid (stored for
+        //     traceability — admission is already IN-PROCESS; the listener will not re-fire
+        //     for a COVERED bill, which is correct)
+        // See class javadoc for AdmissionBed.patientBillUid decision.
         // -----------------------------------------------------------------
         AdmissionBed admissionBed = new AdmissionBed(
                 admission.getUid(),
                 wardBedUid,
                 patientUid,
-                billUid,
+                billUidForSettlement,
                 ctx.timestamp());
         admissionBedRepository.save(admissionBed);
         auditRecorder.record(AUDIT_ADMISSION_BED, admissionBed.getUid(), AuditAction.CREATE,
@@ -217,10 +268,166 @@ public class AdmissionService {
         // PatientServiceImpl.java:1785 — extracted to event seam (inc-07 07a SEAM-A)
         // -----------------------------------------------------------------
         eventPublisher.publishEvent(new PatientAdmittedEvent(patientUid, ctx.actorUsername()));
-        log.debug("AdmissionService: doAdmission complete; admissionUid={} patientUid={} status=PENDING",
-                admission.getUid(), patientUid);
+        log.debug("AdmissionService: doAdmission complete; admissionUid={} patientUid={} status={}",
+                admission.getUid(), patientUid, admission.getStatus());
 
         return toDto(admission);
+    }
+
+    // -------------------------------------------------------------------------
+    // CASH path (PatientServiceImpl.java:1753-1774, PARITY from 07a-1)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handle the CASH path: one UNPAID ward bill. Returns the bill uid (the settlement key).
+     * PatientServiceImpl.java:1753-1774.
+     */
+    private String handleCashPath(Admission admission, String patientUid,
+                                  String wardTypeUid, TxAuditContext ctx) {
+        ChargeRequest chargeRequest = new ChargeRequest(
+                patientUid,
+                null,                   // planUid — null for CASH
+                null,                   // membershipNo — null for CASH
+                ServiceKind.WARD,
+                wardTypeUid,            // serviceUid = wardTypeUid
+                BigDecimal.ONE,
+                PaymentMode.CASH,
+                true,                   // inpatient = true
+                false,                  // followUp not applicable for ward charges
+                "Bed",                  // billItem — verbatim legacy :1758
+                "Ward Bed / Room",      // description — verbatim legacy :1759
+                admission.getUid()      // admissionUid — links bill to this admission
+        );
+        var result = billingCommands.recordClinicalCharge(chargeRequest, ctx);
+        log.debug("AdmissionService: CASH ward bill created; billUid={} status={}",
+                result.billUid(), result.status());
+        return result.billUid();
+    }
+
+    // -------------------------------------------------------------------------
+    // INSURANCE path (PatientServiceImpl.java:1795-1965, Option B / CR-07-WARD-INS-PRICE)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handle the INSURANCE path (Option B / CR-07-WARD-INS-PRICE):
+     * <ol>
+     *   <li>Create COVERED principal bill via {@code recordClinicalCharge} — the billing engine
+     *       runs PriceLookup.resolve(planUid, WARD, wardTypeUid) which returns the covered
+     *       price keyed on the admitted bed's ward type (ChargeResult.amount is the covered price).
+     *       The bill is COVERED, status set by the pricing engine.</li>
+     *   <li>Compute diff = cashWardPrice - coveredPrice (HALF_UP 2dp).</li>
+     *   <li>If diff &gt; 0: create UNPAID top-up supplementary bill via
+     *       {@link BillingCommands#recordWardTopUp}; admission stays PENDING; return top-up
+     *       bill uid as the settlement key.</li>
+     *   <li>If diff &le; 0 (no top-up): activate admission IN-PROCESS at admit + occupyBed;
+     *       return principal bill uid (the COVERED bill).</li>
+     * </ol>
+     *
+     * <p>Option B deviation from legacy: legacy's ward-type-agnostic first-row selection +
+     * always-false top-up guard are NOT reproduced. See
+     * docs/delivery/increments/07-inpatient-discovery/06-AMBIGUITY-WARD-INSURANCE-PRICE.md.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1795-1965 (INSURANCE branch of doAdmission).
+     *
+     * @return the settlement-key bill uid (top-up uid if diff &gt; 0; principal uid if diff &le; 0)
+     */
+    private String handleInsurancePath(Admission admission, String patientUid, String wardBedUid,
+                                       String wardTypeUid, BigDecimal cashWardPrice,
+                                       String insurancePlanUid, String membershipNo,
+                                       TxAuditContext ctx) {
+
+        // -----------------------------------------------------------------
+        // Step 3a: create COVERED principal ward bill via billing engine
+        // recordClinicalCharge → PriceLookup.resolve(planUid, WARD, wardTypeUid) →
+        // COVERED bill at the ward-type-keyed covered price (Option B).
+        // PatientServiceImpl.java:1795-1845 (insurance bill creation).
+        // -----------------------------------------------------------------
+        ChargeRequest principalRequest = new ChargeRequest(
+                patientUid,
+                insurancePlanUid,       // planUid — triggers insurance override in billing engine
+                membershipNo,
+                ServiceKind.WARD,
+                wardTypeUid,            // serviceUid = wardTypeUid (Option B key)
+                BigDecimal.ONE,
+                PaymentMode.INSURANCE,
+                true,                   // inpatient = true
+                false,                  // followUp not applicable
+                "Bed",                  // billItem — verbatim legacy
+                "Ward Bed / Room",      // description — verbatim legacy
+                admission.getUid()      // admissionUid
+        );
+        var principalResult = billingCommands.recordClinicalCharge(principalRequest, ctx);
+        String principalBillUid = principalResult.billUid();
+
+        // The covered price as returned by the billing engine (ChargeResult.amount).
+        // For a COVERED bill: amount == planPrice (the insurance plan's ward-type rate).
+        BigDecimal coveredPrice = principalResult.amount().amount().setScale(2, RoundingMode.HALF_UP);
+
+        log.debug("AdmissionService: INSURANCE principal ward bill; billUid={} status={} "
+                + "coveredPrice={} cashPrice={}",
+                principalBillUid, principalResult.status(), coveredPrice, cashWardPrice);
+
+        // -----------------------------------------------------------------
+        // Step 3b: top-up decision (Option B — genuinely load-bearing)
+        // diff = cashWardPrice - coveredPrice (HALF_UP 2dp)
+        // PatientServiceImpl.java:1880-1897 (top-up creation, Option B makes this reachable)
+        // -----------------------------------------------------------------
+        BigDecimal diff = cashWardPrice.subtract(coveredPrice).setScale(2, RoundingMode.HALF_UP);
+
+        if (diff.compareTo(BigDecimal.ZERO) > 0) {
+            // -----------------------------------------------------------------
+            // TOP-UP CASE (diff > 0): patient owes the difference at the cashier
+            // Create UNPAID supplementary "Ward Bed / Room (Top up)" bill.
+            // AdmissionBed.patientBillUid = top-up bill uid (the settlement key).
+            // Admission stays PENDING; bed stays WAITING until the top-up is paid.
+            // When the cashier pays the top-up, BillSettledEvent fires for the top-up uid →
+            // AdmissionSettlementListener activates admission IN-PROCESS + occupies bed.
+            // Option B / CR-07-WARD-INS-PRICE — PatientServiceImpl.java:1880-1897.
+            // -----------------------------------------------------------------
+            String topUpBillUid = billingCommands.recordWardTopUp(
+                    principalBillUid, patientUid, admission.getUid(), diff, ctx);
+
+            log.debug("AdmissionService: INSURANCE top-up bill created; topUpUid={} diff={} "
+                    + "admissionUid={} — admission stays PENDING",
+                    topUpBillUid, diff, admission.getUid());
+
+            // Settlement key = top-up bill uid (UNPAID — will trigger the settlement listener)
+            return topUpBillUid;
+
+        } else {
+            // -----------------------------------------------------------------
+            // NO-TOP-UP CASE (diff <= 0): covered price covers the full cash ward price.
+            // ACTIVATE AT ADMIT (PatientServiceImpl.java:1950-1963 legacy 'else' branch).
+            //
+            // Legacy order (PatientServiceImpl.java:1955-1962):
+            //   1. Sign out PENDING + IN_PROCESS consultations (lines :1955-1958)
+            //   2. Admission → IN-PROCESS (line :1959)
+            //   3. WardBedClaim.occupyBed → bed OCCUPIED (line :1961)
+            //
+            // Reproduced verbatim via the clinical::api ConsultationSignOut write seam
+            // (clinical.api.ConsultationSignOut — inc-07 07a-2, PatientServiceImpl.java:1950-1963).
+            // -----------------------------------------------------------------
+
+            // Step 1: sign out PENDING + IN_PROCESS consultations (PatientServiceImpl.java:1951-1958)
+            consultationSignOut.signOutOpenConsultations(patientUid, ctx);
+
+            // Step 2: activate admission IN-PROCESS (PatientServiceImpl.java:1959)
+            admission.activate();
+            auditRecorder.record(AUDIT_ADMISSION, admission.getUid(), AuditAction.UPDATE,
+                    ctx.actorUsername());
+
+            // Step 3: occupy the bed (PatientServiceImpl.java:1961)
+            wardBedClaim.occupyBed(wardBedUid);
+
+            log.debug("AdmissionService: INSURANCE no-top-up (diff={}) — signed out open "
+                    + "consultations, admission {} activated IN-PROCESS + bed {} occupied at admit",
+                    diff, admission.getUid(), wardBedUid);
+
+            // Settlement key = principal bill uid (COVERED — stored for traceability;
+            // the settlement listener will not re-fire for COVERED bills, which is correct
+            // since no top-up exists).
+            return principalBillUid;
+        }
     }
 
     // -------------------------------------------------------------------------

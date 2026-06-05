@@ -50,6 +50,21 @@ public interface ConsultationRepository extends JpaRepository<Consultation, Long
      */
     boolean existsByPatientUidAndStatusIn(String patientUid, Collection<ConsultationStatus> statuses);
 
+    /**
+     * Fetch all consultations for a patient whose status is one of the supplied values.
+     *
+     * <p>Used by {@link com.otapp.hmis.clinical.application.ConsultationSignOutImpl} to load
+     * the PENDING and IN_PROCESS consultations that must be signed out on inpatient admission
+     * (legacy PatientServiceImpl.java:1951-1958 — the no-top-up insurance admit-activation
+     * branch and the cash-payment-driven activation via PatientBillResource.java:353-364).
+     *
+     * @param patientUid the ULID of the patient
+     * @param statuses   the status set to restrict results to
+     * @return all matching consultations (may be empty)
+     */
+    List<Consultation> findAllByPatientUidAndStatusIn(String patientUid,
+                                                      Collection<ConsultationStatus> statuses);
+
     // ---------------------------------------------------------------------------------
     // Settlement seam finder (inc-05 §5 — BillSettledEvent consumer)
     // ---------------------------------------------------------------------------------

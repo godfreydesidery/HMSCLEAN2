@@ -142,6 +142,68 @@ class BillingCommandsImpl implements BillingCommands {
     /**
      * {@inheritDoc}
      *
+     * <p>Creates an UNPAID supplementary "Ward Bed / Room (Top up)" {@link PatientBill} at
+     * {@code amount} (HALF_UP 2dp), wires the bidirectional principal&harr;supplementary
+     * self-link, and returns the new bill's uid.
+     *
+     * <p>Propagation REQUIRED — runs inside the caller's (inpatient doAdmission) transaction.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1880-1897 (supplementary top-up bill).
+     * Option B / CR-07-WARD-INS-PRICE makes this branch genuinely load-bearing.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String recordWardTopUp(String principalBillUid, String patientUid,
+                                  String admissionUid, BigDecimal amount,
+                                  com.otapp.hmis.shared.domain.TxAuditContext ctx) {
+        // Validate amount precondition (caller ensures diff > 0; defensive check)
+        BigDecimal scaled = amount.setScale(2, RoundingMode.HALF_UP);
+        if (scaled.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException(
+                    "recordWardTopUp: amount must be > 0 but was " + scaled);
+        }
+
+        // Load the principal (COVERED) bill for bidirectional linkage
+        PatientBill principal = patientBillRepository.findByUid(principalBillUid)
+                .orElseThrow(() -> new com.otapp.hmis.shared.error.NotFoundException(
+                        "Principal ward bill not found: " + principalBillUid));
+
+        // Create the UNPAID supplementary top-up bill.
+        // billItem="Bed" and description="Ward Bed / Room (Top up)" — verbatim legacy
+        // PatientServiceImpl.java:1889-1890.
+        PatientBill topUp = new PatientBill(
+                patientUid,
+                com.otapp.hmis.masterdata.lookup.ServiceKind.WARD,
+                "Bed",                          // billItem — verbatim :1889
+                "Ward Bed / Room (Top up)",     // description — verbatim :1890
+                BigDecimal.ONE,
+                com.otapp.hmis.shared.domain.Money.of(scaled),
+                ctx.dayUid());
+
+        // Link admission uid so discharge-gate (admissionHasOutstandingBills) covers the top-up
+        topUp.linkAdmission(admissionUid);
+
+        // Bidirectional self-link (PatientBill.java:65-73, CR-07-WARD-INS-PRICE):
+        //   topUp.principalBill = principal
+        //   principal.supplementaryBill = topUp
+        topUp.linkPrincipalBill(principal);
+
+        // Persist top-up first so the FK on principal.supplementaryBill is valid
+        patientBillRepository.save(topUp);
+
+        // Wire principal → topUp
+        principal.linkSupplementaryBill(topUp);
+        patientBillRepository.save(principal);
+
+        auditRecorder.record("billing.PatientBill", topUp.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+
+        return topUp.getUid();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
      * <p>For each bill uid, locates the parent {@link PatientInvoice} via the invoice-detail
      * join and calls {@link PatientInvoice#approve()} on any that are still PENDING.
      * Deduplicates across bill uids so a multi-line invoice is only approved once.

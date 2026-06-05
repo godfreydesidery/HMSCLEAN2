@@ -92,6 +92,55 @@ public interface BillingCommands {
                               BigDecimal qty, BigDecimal unitPrice, TxAuditContext ctx);
 
     /**
+     * Record an UNPAID supplementary "Ward Bed / Room (Top up)" bill for the insurance top-up
+     * delta (cash ward price minus covered plan price) and wire the bidirectional
+     * principal&harr;supplementary self-link on {@code PatientBill}.
+     *
+     * <p><strong>Option B / CR-07-WARD-INS-PRICE — genuinely load-bearing top-up:</strong>
+     * When {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)} returns a covered price
+     * that is <em>less than</em> the WardType cash price, the patient owes the difference at the
+     * cashier. This method creates the UNPAID top-up bill for that difference:
+     * <ul>
+     *   <li>billItem = {@code "Bed"} (verbatim legacy PatientServiceImpl.java:1889)</li>
+     *   <li>description = {@code "Ward Bed / Room (Top up)"} (verbatim legacy :1890)</li>
+     *   <li>paymentType = {@code CASH} (the top-up is collected from the patient at the cashier)</li>
+     *   <li>amount = {@code diff} (NUMERIC 19,2 HALF_UP; {@code diff = cashPrice - coveredPrice > 0})</li>
+     *   <li>status = {@code UNPAID}</li>
+     *   <li>{@code admission_uid} linked so the discharge-gate includes this bill
+     *       ({@link BillingQueries#admissionHasOutstandingBills})</li>
+     *   <li>Bidirectional link: {@code supplementaryBill.principalBill = principalBill} (the COVERED
+     *       bill) AND {@code principalBill.supplementaryBill = supplementaryBill} (the new top-up)
+     *       using the existing self-ref columns on {@link com.otapp.hmis.billing.domain.PatientBill}
+     *       (PatientBill.java:65-73).</li>
+     * </ul>
+     *
+     * <p>Runs inside the caller's (inpatient) transaction (Propagation.REQUIRED). The returned uid
+     * is stored on {@code AdmissionBed.patientBillUid} so the
+     * {@link com.otapp.hmis.inpatient.application.AdmissionSettlementListener} fires when the top-up
+     * is paid — activating the admission to IN-PROCESS and occupying the bed.
+     *
+     * <p><strong>Parameters are Strings/BigDecimal only — no billing domain type crosses the module
+     * boundary (ADR-0008 §1).</strong>
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1880-1897 (supplementary bill creation, top-up
+     * branch). Option B / CR-07-WARD-INS-PRICE makes this branch genuinely load-bearing (the legacy
+     * top-up guard was always-false dead code — see docs/delivery/increments/07-inpatient-discovery/
+     * 06-AMBIGUITY-WARD-INSURANCE-PRICE.md).
+     *
+     * @param principalBillUid  uid of the COVERED principal ward bill (created by
+     *                          {@link #recordClinicalCharge} for the insurance hit)
+     * @param patientUid        loose uid of the patient
+     * @param admissionUid      loose uid of the owning admission (linked for discharge gate)
+     * @param amount            the top-up amount ({@code cashPrice - coveredPrice}, must be &gt; 0;
+     *                          caller ensures this precondition)
+     * @param ctx               transaction audit context (dayUid, actor, timestamp)
+     * @return the uid of the newly created UNPAID supplementary top-up {@code PatientBill}
+     */
+    String recordWardTopUp(String principalBillUid, String patientUid,
+                           String admissionUid, java.math.BigDecimal amount,
+                           com.otapp.hmis.shared.domain.TxAuditContext ctx);
+
+    /**
      * Approve all PENDING invoices whose details contain any of the supplied bill uids.
      *
      * <p>Used by {@code ClosureService.approveDeceased} to reproduce the legacy
