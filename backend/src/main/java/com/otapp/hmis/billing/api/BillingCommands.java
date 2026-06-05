@@ -1,6 +1,8 @@
 package com.otapp.hmis.billing.api;
 
+import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import java.math.BigDecimal;
 import java.util.Collection;
 
 /**
@@ -59,6 +61,35 @@ public interface BillingCommands {
      * @param ctx       transaction audit context (dayUid, actor)
      */
     void cancelCharge(String billUid, String reference, TxAuditContext ctx);
+
+    /**
+     * Record a flat-cash sale charge for one OTC medicine line (Q9 / build-spec §4).
+     *
+     * <p><strong>Flat-cash path — NOT the plan-pricing engine:</strong> this method constructs a
+     * {@code PatientBill} directly at {@code amount = unitPrice * qty} (HALF_UP, NUMERIC 19,2),
+     * status=UNPAID, paymentType=CASH, against the GENERAL dummy patient. No plan lookup, no
+     * PriceLookup, no invoice accumulator. The bill is immediately saved and its uid returned.
+     *
+     * <p>Runs inside the caller's (pharmacy) transaction (Propagation.REQUIRED). The returned
+     * {@code billUid} is stored on the {@code PharmacySaleOrderDetail.patientBillUid} loose ref.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:3395-3442 — OTC bill creation reads
+     * {@code medicine.price * qty} directly (no plan engine). This method is the modernised
+     * cross-module seam for that inline billing write.
+     *
+     * @param patientUid  loose uid of the GENERAL dummy patient
+     * @param kind        {@link ServiceKind#MEDICINE}
+     * @param billItem    legacy bill-item label (e.g. "Medicine Sale")
+     * @param description human-readable description (e.g. "Medicine: Paracetamol")
+     * @param serviceUid  loose uid of the medicine (stored on the bill for traceability)
+     * @param qty         quantity ordered
+     * @param unitPrice   cash unit price from {@code medicines.price}
+     * @param ctx         transaction audit context
+     * @return the uid of the created {@code PatientBill}
+     */
+    String recordFlatCashSale(String patientUid, ServiceKind kind, String billItem,
+                              String description, String serviceUid,
+                              BigDecimal qty, BigDecimal unitPrice, TxAuditContext ctx);
 
     /**
      * Approve all PENDING invoices whose details contain any of the supplied bill uids.

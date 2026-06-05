@@ -84,6 +84,30 @@ public class StockService {
         return consumed;
     }
 
+    /**
+     * Decrement aggregate stock by {@code qty} + a stock-card OUT row, WITHOUT touching any
+     * {@link StockBatch} — the OTC dispense path. Legacy {@code give_medicine} decrements only
+     * {@code PharmacyMedicine.stock} and writes a stock-card row; {@code deductBatch} is COMMENTED
+     * OUT (PatientResource.java:6315-6317) so OTC sales never consume FEFO lots / lot-trace
+     * (Q9 / CR-08-FEFO-ON-OTC parked). The hard negative-stock gate (verbatim refusal) still applies.
+     *
+     * @throws NotFoundException          if no aggregate row exists for (pharmacy, medicine)
+     * @throws InsufficientStockException if aggregate stock &lt; qty
+     */
+    @Transactional
+    public void decrementAggregateOnly(String pharmacyUid, String medicineUid, BigDecimal qty,
+                                       MovementType movementType, String reference,
+                                       TxAuditContext ctx) {
+        PharmacyMedicine pm = pharmacyMedicineRepository
+                .findByPharmacyUidAndMedicineUid(pharmacyUid, medicineUid)
+                .orElseThrow(() -> new NotFoundException(
+                        "No stock record for medicine in this pharmacy"));
+        BigDecimal newBalance = pm.decrement(qty);          // hard negative-stock gate; NO batch walk
+        stockMovementRepository.save(new StockMovement(
+                pm, movementType, BigDecimal.ZERO, qty, newBalance,
+                reference, instant(ctx), ctx.dayUid()));
+    }
+
     // =========================================================================
     // Increment (transfer-in credit, no lot)
     // =========================================================================
