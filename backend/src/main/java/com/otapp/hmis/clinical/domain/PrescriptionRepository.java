@@ -130,15 +130,18 @@ public interface PrescriptionRepository extends JpaRepository<Prescription, Long
     // -------------------------------------------------------------------------
 
     /**
-     * Pharmacy dispense queue — all NOT-GIVEN prescriptions (settled or not, so the pharmacist
-     * can see pending orders). Ordered by creation time ascending (FIFO queue).
+     * Raw NOT-GIVEN queue — all NOT-GIVEN prescriptions, ordered by creation time ascending (FIFO).
+     * Uses the partial index {@code idx_prescriptions_pharmacy_worklist} (V27).
      *
-     * <p>Uses the partial index {@code idx_prescriptions_pharmacy_worklist} (V27).
-     * The settled filter is intentionally omitted here: the pharmacy sees ALL pending orders
-     * (the settled flag gates the lab/radiology worklists; pharmacy queues are different —
-     * the pharmacist validates payment before dispensing physically).
+     * <p><strong>This is the UNFILTERED queue.</strong> The pharmacy dispense worklist applies the
+     * legacy bill-status FILTER on top of this (PAID|COVERED; +VERIFIED for INPATIENT) — see
+     * {@link com.otapp.hmis.clinical.api.PrescriptionWorklistPort} (inc-08a, Q1, AC-RX-PRE-03/04/05).
+     * The inc-05 note that "the pharmacist validates payment physically, so the queue is unfiltered"
+     * was an un-CR'd deviation from the verified legacy FILTER (PatientResource.java:4347/4364/4381/4410)
+     * and has been reconciled: the cross-module pharmacy worklist FILTERS by bill status; this finder
+     * is the raw input it filters.
      *
-     * @return all NOT-GIVEN prescriptions, oldest first
+     * @return all NOT-GIVEN prescriptions, oldest first (unfiltered)
      */
     List<Prescription> findByStatusOrderByCreatedAtAsc(PrescriptionStatus status);
 

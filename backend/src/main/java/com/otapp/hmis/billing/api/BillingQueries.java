@@ -29,9 +29,36 @@ public interface BillingQueries {
     /**
      * Read the current status of a bill by its public uid.
      *
+     * <p><strong>Scoped to the {@code add_report} bill-gate only</strong> (ADR-0008 §6 Addendum) —
+     * settlement gates and worklist filters MUST NOT use this; they use the local settled flag or
+     * {@link #worklistAdmits(String, boolean)} respectively.
+     *
      * @param billUid the ULID of the bill
      * @return the bill's current {@link BillStatus}
      * @throws com.otapp.hmis.shared.error.NotFoundException if no bill with that uid exists
      */
     BillStatus getBillStatus(String billUid);
+
+    /**
+     * Whether a bill admits dispensing on the pharmacy worklist FILTER (inc-08a, Q1; AC-RX-PRE-03/04).
+     *
+     * <p>Reproduces the legacy pharmacy-worklist bill-status filter verbatim
+     * (PatientResource.java:4347/4364/4381/4410): an outpatient/outsider line is admitted when its
+     * bill is {@code PAID} or {@code COVERED}; an inpatient line additionally admits {@code VERIFIED}
+     * (inpatient credit/post-pay, NOT insurer-verification — D18). This is a purpose-named seam
+     * distinct from {@link #getBillStatus(String)} so the worklist FILTER does not reach through the
+     * add_report-scoped read, keeping the ADR-0008 §6 scoping honest. The three-valued
+     * PAID/COVERED/VERIFIED logic lives in {@code billing}, where bill status is owned — no billing
+     * domain type other than {@link BillStatus} (already published) crosses the boundary.
+     *
+     * <p>This is a {@code clinical → billing :: api} READ edge; clinical already depends on
+     * {@code billing :: api}, so no new module edge and no cycle —
+     * {@code ApplicationModules.verify()} stays green.
+     *
+     * @param billUid   the ULID of the prescription's bill
+     * @param inpatient whether the prescription is admission-bound (INPATIENT) — admits VERIFIED too
+     * @return {@code true} if the worklist should surface a NOT-GIVEN line linked to this bill;
+     *         {@code false} (incl. when the bill is missing) otherwise — a FILTER never throws
+     */
+    boolean worklistAdmits(String billUid, boolean inpatient);
 }
