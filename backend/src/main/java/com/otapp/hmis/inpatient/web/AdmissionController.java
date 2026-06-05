@@ -11,14 +11,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.Instant;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -88,5 +92,46 @@ public class AdmissionController {
                 .buildAndExpand(dto.uid())
                 .toUri();
         return ResponseEntity.created(location).body(dto);
+    }
+
+    /**
+     * List admissions, newest first, optionally filtered by status (inc-07 read surface —
+     * the admissions list screen).
+     *
+     * @param status optional status db-value filter (e.g. {@code IN-PROCESS}); omit for all
+     * @return 200 with the matching admissions (newest first)
+     */
+    @GetMapping("/admissions")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "List admissions",
+            description = "Returns admissions newest-first, optionally filtered by status "
+                    + "(PENDING / IN-PROCESS / STOPPED / HELD / SIGNED-OUT).",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "Admissions returned"),
+                @ApiResponse(responseCode = "404", description = "Unknown status filter value")
+            })
+    public List<AdmissionDto> listAdmissions(
+            @RequestParam(name = "status", required = false) String status) {
+        return admissionService.list(status);
+    }
+
+    /**
+     * Fetch a single admission by its public uid (inc-07 read surface — the admission detail
+     * screen).
+     *
+     * @param uid the admission's ULID
+     * @return 200 with the admission DTO
+     */
+    @GetMapping("/admissions/uid/{uid}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Get an admission by uid",
+            responses = {
+                @ApiResponse(responseCode = "200", description = "Admission found"),
+                @ApiResponse(responseCode = "404", description = "No admission with that uid")
+            })
+    public AdmissionDto getAdmission(@PathVariable("uid") String uid) {
+        return admissionService.getByUid(uid);
     }
 }

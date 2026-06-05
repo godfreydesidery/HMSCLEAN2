@@ -441,6 +441,48 @@ public class AdmissionService {
         };
     }
 
+    // -------------------------------------------------------------------------
+    // Read surface (inc-07 — the admissions list + detail screens)
+    // -------------------------------------------------------------------------
+
+    /**
+     * List admissions, newest first, optionally filtered to a single status.
+     *
+     * @param statusFilter a status db-value (e.g. {@code "IN-PROCESS"}); {@code null}/blank = all
+     * @return the matching admissions as DTOs (newest first)
+     * @throws NotFoundException if {@code statusFilter} is non-blank but not a known status
+     */
+    @Transactional(readOnly = true)
+    public List<AdmissionDto> list(String statusFilter) {
+        List<Admission> admissions;
+        if (statusFilter == null || statusFilter.isBlank()) {
+            admissions = admissionRepository.findAllByOrderByAdmittedAtDesc();
+        } else {
+            // Resolve the filter safely — an unknown value is a client error (404), not a 500.
+            String wanted = statusFilter.trim();
+            AdmissionStatus status = java.util.Arrays.stream(AdmissionStatus.values())
+                    .filter(s -> s.dbValue().equals(wanted))
+                    .findFirst()
+                    .orElseThrow(() -> new NotFoundException("Unknown admission status: " + statusFilter));
+            admissions = admissionRepository.findAllByStatusOrderByAdmittedAtDesc(status);
+        }
+        return admissions.stream().map(AdmissionService::toDto).toList();
+    }
+
+    /**
+     * Fetch a single admission by its public uid.
+     *
+     * @param uid the admission's ULID
+     * @return the admission DTO
+     * @throws NotFoundException (404) if no admission with that uid exists
+     */
+    @Transactional(readOnly = true)
+    public AdmissionDto getByUid(String uid) {
+        Admission admission = admissionRepository.findByUid(uid)
+                .orElseThrow(() -> new NotFoundException("Admission not found: " + uid));
+        return toDto(admission);
+    }
+
     /**
      * Map an {@link Admission} entity to its DTO (no id exposure — ADR-0014 §1).
      */

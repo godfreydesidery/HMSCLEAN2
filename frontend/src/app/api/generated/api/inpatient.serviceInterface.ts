@@ -22,6 +22,14 @@ export interface DoAdmissionRequestParams {
     admissionRequest: AdmissionRequest;
 }
 
+export interface GetAdmissionRequestParams {
+    uid: string;
+}
+
+export interface ListAdmissionsRequestParams {
+    status?: string;
+}
+
 
 export interface InpatientServiceInterface {
     defaultHeaders: HttpHeaders;
@@ -33,5 +41,19 @@ export interface InpatientServiceInterface {
 * @param requestParameters
      */
     doAdmission(requestParameters: DoAdmissionRequestParams, extraHttpRequestParams?: any): Observable<AdmissionDto>;
+
+    /**
+     * Get an admission by uid
+     * 
+* @param requestParameters
+     */
+    getAdmission(requestParameters: GetAdmissionRequestParams, extraHttpRequestParams?: any): Observable<AdmissionDto>;
+
+    /**
+     * List admissions
+     * Returns admissions newest-first, optionally filtered by status (PENDING / IN-PROCESS / STOPPED / HELD / SIGNED-OUT).
+* @param requestParameters
+     */
+    listAdmissions(requestParameters: ListAdmissionsRequestParams, extraHttpRequestParams?: any): Observable<Array<AdmissionDto>>;
 
 }

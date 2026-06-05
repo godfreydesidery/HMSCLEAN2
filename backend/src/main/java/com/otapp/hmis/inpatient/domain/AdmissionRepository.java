@@ -47,4 +47,20 @@ public interface AdmissionRepository extends JpaRepository<Admission, Long> {
      * @return matching admissions across all patients
      */
     List<Admission> findAllByStatusIn(List<AdmissionStatus> statuses);
+
+    /**
+     * All admissions, newest first (inc-07 read surface — the admissions list screen).
+     *
+     * @return every admission ordered by admit time descending
+     */
+    List<Admission> findAllByOrderByAdmittedAtDesc();
+
+    /**
+     * Admissions filtered to a single status, newest first (inc-07 read surface —
+     * the admissions list status filter).
+     *
+     * @param status the status to filter to
+     * @return matching admissions ordered by admit time descending
+     */
+    List<Admission> findAllByStatusOrderByAdmittedAtDesc(AdmissionStatus status);
 }
