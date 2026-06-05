@@ -1,14 +1,18 @@
 # Inc-07 Implementation Summary — Inpatient & Nursing
 
 **Date:** 2026-06-05 · **Branch:** `feat/increment-07-inpatient-nursing`
-**Status:** ✅ **BUILD-COMPLETE & GREEN** — `mvn -o verify` BUILD SUCCESS (734 tests / 800 incl. nested, 0 failures, 0 errors). One additive aggregate (CR-07-MAR) remains owner-gated and is intentionally NOT built.
+**Status:** ✅ **BUILD-COMPLETE & GREEN** — `mvn -o verify` BUILD SUCCESS, 0 failures. All owner-approved
+CRs are now built, including CR-07-MAR (the closed-loop MAR aggregate, added as chunk 07d after the
+owner ruled its two prerequisites on 2026-06-05).
 
 The inpatient bounded context, built from an empty stub to the exact-process baseline ratified in
 [03-DECISIONS-RATIFIED.md](03-DECISIONS-RATIFIED.md) + [03b-OWNER-RULINGS.md](03b-OWNER-RULINGS.md) and
 specified in [05-INC07-BUILD-SPEC.md](05-INC07-BUILD-SPEC.md). This was the highest-drift planning doc
 of the engagement (~21 phantom + ~25 drift behaviours in the original plan); discovery removed the
-phantoms (ward-to-ward transfer, closed-loop MAR, a non-existent inc-08 stock dependency) before any
-code was written. Built in verified chunks, each committed green.
+phantoms (ward-to-ward transfer, a non-existent inc-08 stock dependency) before any code was written.
+**MAR is the one exception** — the original plan listed it as a "mandatory" exact-process feature, which
+was a phantom (legacy had no MAR); but the owner separately approved it as a deliberate, clearly-labelled
+**net-new additive** aggregate (CR-07-MAR), NOT as legacy parity. Built in verified chunks, each committed green.
 
 ---
 
@@ -24,6 +28,7 @@ code was written. Built in verified chunks, each committed green.
 | 07c-i | Consumable issue/delete + Q11 fixes + stock seam | V49 | Consumable issue/delete, **Q11 three latent bugs FIXED**, `CONSUMABLE_ISSUE` stock seam over inc-08 (`pharmacy::api PharmacyStockDebit`), MEDICINE pricing + "Medication"/"Consumable: <name>" literals | 5 groups (`ConsumableChartIT`) |
 | 07c-ii | Ward-day accrual oracle + scheduled job | V50 | `WardAccrualService` (sweep) + **`WardAccrualOneTx`** (per-admission REQUIRES_NEW), `WardDayAccrualJob` (@Scheduled + ShedLock + `job_run_log`), `SchedulingConfig`, `WardAccrualOpsController`, `billing::api.recordWardAccrual` | 6 groups / 7 tests (`WardAccrualIT`) |
 | FINAL | OpenAPI per-module slices + full-verify gate | — | `OpenApiExportIT` rewrite: transitive `$ref` schema-pruning + new `inpatient.yaml` | full verify |
+| 07d | **Closed-loop MAR (net-new, CR-07-MAR)** | V51, V52, V53 | `AdministrationRoute` masterdata (CRUD + `RouteLookup` active-route seam, V51); `MEDICATION-ADMINISTER` privilege (V52); clinical-owned `MedicationAdministration` aggregate + `MedicationAdministrationPort` (V53); inpatient MAR section in `NursingChartService` (IN-PROCESS gate + route-active guard) + controller endpoints, `AuditRecorder` on create | 6 tests (`MedicationAdministrationIT`) |
 
 **Cross-module seams added (no cycles; `ApplicationModules.verify()` green):**
 - `inpatient → billing::api`: `admissionHasOutstandingBills` (discharge gate scans lab/rad/pharmacy bills inside billing), `recordWardTopUp`, `recordWardAccrual`, extended `ChargeRequest` (billItem + description, CR-07-Q13).
@@ -54,26 +59,47 @@ code was written. Built in verified chunks, each committed green.
 - Ward-insurance pricing: legacy max-price loop is dead code / top-up unreachable / ward-type-agnostic defect → owner chose **Option B** (ward-type-keyed pricing, real top-up). See [06-AMBIGUITY-WARD-INSURANCE-PRICE.md](06-AMBIGUITY-WARD-INSURANCE-PRICE.md).
 - **07c-ii fix (this session):** the per-admission accrual was a `@Transactional(REQUIRES_NEW)` method called via self-invocation, which Spring's proxy bypasses — writes ran in the read-only sweep tx → `UnexpectedRollbackException`. Extracted into a separate `WardAccrualOneTx` bean so the propagation boundary is honoured (real per-admission fault isolation, ADR-0018 §6). Verified by `WardAccrualIT` 7/7.
 
+## Chunk 07d — closed-loop MAR (net-new, CR-07-MAR) — BUILT
+
+The owner approved CR-07-MAR as a **net-new additive** aggregate and ruled its two prerequisites on
+2026-06-05 (see [03b-OWNER-RULINGS.md](03b-OWNER-RULINGS.md) §CR-07-MAR prerequisites):
+- **Route masterdata** → new `administration_routes` first-class table (code/name/active) with full CRUD
+  at `/api/v1/masterdata/administration-routes` + a `RouteLookup.isActiveRoute(uid)` seam (active
+  enforced, per CR-07-Q9 honour-active-flag). NOT an enum, NOT free text.
+- **PHI/audit** → standard posture: `AuditableEntity` + SHA-256 `AuditRecorder` on **create** (write-path
+  only, no read-audit), gated behind a new IAM privilege **`MEDICATION-ADMINISTER`** (V52).
+
+The MAR aggregate (`MedicationAdministration`, clinical-owned like the dosing note) carries
+`routeUid`, `administeredAt`, `doseGiven`, `patientResponse` + the prescription/admission/nurse links.
+It is **additive over** the free-text `PatientPrescriptionChart` dosing note (07b) — both coexist; MAR
+is create + read only (no 24h delete window — a closed-loop safety record). Guard split mirrors the
+dosing note: inpatient-side = admission IN-PROCESS + route-active; clinical-side = prescription GIVEN +
+nurse present. MAR ACs are **net-new acceptance tests, NOT golden-master parity** (no legacy MAR existed).
+
 ## Parked as CRs (NOT built — held behind owner sign-off)
 
-- **CR-07-MAR** (additive closed-loop MedicationAdministration / MAR aggregate) — owner approved into scope but blocked on the route/administration **masterdata + PHI/audit decision** (data-architect + security-architect). The only inc-07 scope item not yet built.
 - **CR-INC07-Q7** (referral FK — loose uid stands) · **CR-07-ward-transfer / Q8** (ward-to-ward transfer — excluded; no legacy basis).
 
 ## OpenAPI (FINAL chunk)
 
 `OpenApiExportIT` now prunes `components.schemas` to each slice's transitive `$ref` closure and emits a
-new **`inpatient.yaml`** (covers `/api/v1/inpatient/**` + the ops trigger `/api/v1/ops/jobs/ward-accrual/trigger`).
-This also fixed a pre-existing leak where the global schema set was copied into every slice — e.g.
-`pharmacy.yaml` shrank 82 KB → 12 KB and `inventory.yaml` 96 KB → 26 KB once cross-module DTOs
-(AdmissionRequest, DischargePlan…) were pruned. Dangling-ref check: 0 unresolved `$ref` in any slice.
+new **`inpatient.yaml`** (covers `/api/v1/inpatient/**` including the 07d MAR endpoint + the ops trigger
+`/api/v1/ops/jobs/ward-accrual/trigger`). This also fixed a pre-existing leak where the global schema set
+was copied into every slice — e.g. `pharmacy.yaml` shrank 82 KB → 12 KB and `inventory.yaml` 96 KB → 26 KB
+once cross-module DTOs (AdmissionRequest, DischargePlan…) were pruned. Dangling-ref check: 0 unresolved
+`$ref` in any slice.
 
 ## Migrations
 V44 (admission lifecycle) · V45 (`patient_bill.admission_uid`) · V46 (discharge plans) · V47 (disposition
 APPROVE privileges, 35→38) · V48 (nursing charts + dressings masterdata) · V49 (consumable charts) ·
-V50 (ShedLock + `job_run_log`). All additive; apply clean V1→V50 on PostgreSQL 16.
+V50 (ShedLock + `job_run_log`) · **V51 (administration_routes masterdata)** · **V52 (MEDICATION-ADMINISTER
+privilege, 38→39)** · **V53 (medication_administrations / MAR)**. All additive; apply clean V1→V53 on
+PostgreSQL 16.
 
 ## Verification
-`mvn -o verify` GREEN — 734 tests (800 incl. nested), 0 failures, 0 errors. ModularityTest green
-(no new cycle). Per-flow inpatient ITs (43 total): `AdmissionLifecycleIT` 6, `WardInsuranceBillingIT` 4,
-`DispositionIT` (3 groups), `NursingChartIT` (5 groups), `ConsumableChartIT` (5 groups),
-`WardAccrualIT` 7. `OpenApiExportIT` regenerates pharmacy / inventory / inpatient slices.
+`mvn -o verify` GREEN — 0 failures, 0 errors. ModularityTest green (no new cycle; MAR reuses the existing
+`inpatient → clinical::api` and `inpatient → masterdata::lookup` edges). PrivilegeGateArchTest green
+(`MEDICATION-ADMINISTER` registered as a live gate code). Per-flow inpatient ITs (49 total):
+`AdmissionLifecycleIT` 6, `WardInsuranceBillingIT` 4, `DispositionIT` (3 groups), `NursingChartIT`
+(5 groups), `ConsumableChartIT` (5 groups), `WardAccrualIT` 7, **`MedicationAdministrationIT` 6**.
+`OpenApiExportIT` regenerates pharmacy / inventory / inpatient slices.

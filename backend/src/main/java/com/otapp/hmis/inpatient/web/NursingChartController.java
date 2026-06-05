@@ -1,6 +1,7 @@
 package com.otapp.hmis.inpatient.web;
 
 import com.otapp.hmis.clinical.api.DressingChartView;
+import com.otapp.hmis.clinical.api.MedicationAdministrationView;
 import com.otapp.hmis.clinical.api.NursingCarePlanView;
 import com.otapp.hmis.clinical.api.NursingChartView;
 import com.otapp.hmis.clinical.api.NursingProgressNoteView;
@@ -8,6 +9,7 @@ import com.otapp.hmis.clinical.api.PrescriptionChartView;
 import com.otapp.hmis.inpatient.application.NursingChartService;
 import com.otapp.hmis.inpatient.application.dto.DosingNoteRequest;
 import com.otapp.hmis.inpatient.application.dto.DressingChartRequest;
+import com.otapp.hmis.inpatient.application.dto.MedicationAdministrationRequest;
 import com.otapp.hmis.inpatient.application.dto.NursingCarePlanRequest;
 import com.otapp.hmis.inpatient.application.dto.NursingChartRequest;
 import com.otapp.hmis.inpatient.application.dto.ProgressNoteRequest;
@@ -192,6 +194,27 @@ public class NursingChartController {
             @AuthenticationPrincipal Jwt jwt) {
         nursingChartService.deleteDosingNote(chartUid, buildCtx(jwt));
         return ResponseEntity.noContent().build();
+    }
+
+    // ---- Medication administration (MAR — net-new closed-loop record, inc-07 07d, CR-07-MAR) ----
+
+    @PostMapping("/medication-administrations")
+    @PreAuthorize("hasAuthority('MEDICATION-ADMINISTER')")
+    @Operation(summary = "Record a closed-loop medication administration (MAR) against a GIVEN prescription")
+    public ResponseEntity<MedicationAdministrationView> saveMedicationAdministration(
+            @PathVariable String admissionUid,
+            @Valid @RequestBody MedicationAdministrationRequest req,
+            @AuthenticationPrincipal Jwt jwt) {
+        MedicationAdministrationView v =
+                nursingChartService.recordMedicationAdministration(admissionUid, req, buildCtx(jwt));
+        return ResponseEntity.status(HttpStatus.CREATED).body(v);
+    }
+
+    @GetMapping("/medication-administrations")
+    @Operation(summary = "List medication administrations (MAR) for an admission")
+    public List<MedicationAdministrationView> listMedicationAdministrations(
+            @PathVariable String admissionUid) {
+        return nursingChartService.findMedicationAdministrations(admissionUid);
     }
 
     private TxAuditContext buildCtx(Jwt jwt) {

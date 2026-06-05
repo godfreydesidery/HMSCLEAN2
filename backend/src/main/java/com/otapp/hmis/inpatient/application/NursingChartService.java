@@ -1,6 +1,8 @@
 package com.otapp.hmis.inpatient.application;
 
 import com.otapp.hmis.clinical.api.DressingChartView;
+import com.otapp.hmis.clinical.api.MedicationAdministrationPort;
+import com.otapp.hmis.clinical.api.MedicationAdministrationView;
 import com.otapp.hmis.clinical.api.NursingCarePlanView;
 import com.otapp.hmis.clinical.api.NursingChartPort;
 import com.otapp.hmis.clinical.api.NursingChartView;
@@ -8,12 +10,14 @@ import com.otapp.hmis.clinical.api.NursingProgressNoteView;
 import com.otapp.hmis.clinical.api.PrescriptionChartPort;
 import com.otapp.hmis.clinical.api.PrescriptionChartView;
 import com.otapp.hmis.clinical.api.RecordDressingChartCommand;
+import com.otapp.hmis.clinical.api.RecordMedicationAdministrationCommand;
 import com.otapp.hmis.clinical.api.RecordNursingCarePlanCommand;
 import com.otapp.hmis.clinical.api.RecordNursingChartCommand;
 import com.otapp.hmis.clinical.api.RecordPrescriptionChartCommand;
 import com.otapp.hmis.clinical.api.RecordProgressNoteCommand;
 import com.otapp.hmis.inpatient.application.dto.DosingNoteRequest;
 import com.otapp.hmis.inpatient.application.dto.DressingChartRequest;
+import com.otapp.hmis.inpatient.application.dto.MedicationAdministrationRequest;
 import com.otapp.hmis.inpatient.application.dto.NursingCarePlanRequest;
 import com.otapp.hmis.inpatient.application.dto.NursingChartRequest;
 import com.otapp.hmis.inpatient.application.dto.ProgressNoteRequest;
@@ -21,6 +25,7 @@ import com.otapp.hmis.inpatient.domain.Admission;
 import com.otapp.hmis.inpatient.domain.AdmissionRepository;
 import com.otapp.hmis.inpatient.domain.AdmissionStatus;
 import com.otapp.hmis.masterdata.lookup.DressingLookup;
+import com.otapp.hmis.masterdata.lookup.RouteLookup;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.InvalidPatientOperationException;
 import com.otapp.hmis.shared.error.NotFoundException;
@@ -70,12 +75,16 @@ public class NursingChartService {
     private static final String MSG_SIGNED_OFF = "Could not be done. Patient already signed off";
     /** Verbatim legacy message — PatientServiceImpl.java:2094 / AC-07B-DRS-02. */
     private static final String MSG_NOT_DRESSING = "Procedure type is not listed as dressing";
+    /** Net-new guard (inc-07 07d, CR-07-MAR): route must be a registered ACTIVE route. */
+    private static final String MSG_NOT_ROUTE = "Administration route is not listed or is inactive";
     private static final String CONTEXT_ADMISSION = "ADMISSION";
 
     private final AdmissionRepository admissionRepository;
     private final NursingChartPort nursingChartPort;
     private final PrescriptionChartPort prescriptionChartPort;
+    private final MedicationAdministrationPort medicationAdministrationPort;
     private final DressingLookup dressingLookup;
+    private final RouteLookup routeLookup;
 
     // =========================================================================
     // PatientNursingChart
@@ -199,6 +208,33 @@ public class NursingChartService {
     @Transactional(propagation = Propagation.REQUIRED)
     public void deleteDosingNote(String chartUid, TxAuditContext ctx) {
         prescriptionChartPort.delete24hWindow(chartUid, ctx);
+    }
+
+    // =========================================================================
+    // MedicationAdministration (MAR) — NET-NEW closed-loop record (inc-07 07d, CR-07-MAR)
+    //
+    // Additive over the free-text dosing note above; both coexist. Inpatient-side guards:
+    // the admission-IN-PROCESS gate + the route-is-registered-ACTIVE guard (RouteLookup).
+    // The GIVEN-prescription + nurse-present guards are enforced clinical-side in the port.
+    // No delete path — a MAR entry is a closed-loop clinical-safety record (create + read only).
+    // =========================================================================
+
+    @Transactional(propagation = Propagation.REQUIRED)
+    public MedicationAdministrationView recordMedicationAdministration(
+            String admissionUid, MedicationAdministrationRequest req, TxAuditContext ctx) {
+        requireInProcessAdmission(admissionUid);
+        // Route guard (inpatient-side): the route must be a registered ACTIVE administration route.
+        if (!routeLookup.isActiveRoute(req.routeUid())) {
+            throw new InvalidPatientOperationException(MSG_NOT_ROUTE);
+        }
+        return medicationAdministrationPort.record(new RecordMedicationAdministrationCommand(
+                req.prescriptionUid(), admissionUid, req.nurseUid(), req.routeUid(),
+                req.administeredAt(), req.doseGiven(), req.patientResponse()), ctx);
+    }
+
+    @Transactional(readOnly = true)
+    public List<MedicationAdministrationView> findMedicationAdministrations(String admissionUid) {
+        return medicationAdministrationPort.findByAdmission(admissionUid);
     }
 
     // =========================================================================

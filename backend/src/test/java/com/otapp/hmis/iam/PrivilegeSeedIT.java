@@ -19,10 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * Asserts the privilege seed is complete and correctly categorised (build-spec §7).
  *
- * <p>Increment-01 seed: 35 codes (V2). Increment-07a-3 delta: +3 APPROVE codes (V47) → 38 total.
+ * <p>Increment-01 seed: 35 codes (V2). Increment-07a-3 delta: +3 APPROVE codes (V47).
+ * Increment-07d delta: +1 MEDICATION-ADMINISTER code (V52, CR-07-MAR) → 39 total.
  * <ul>
- *   <li>Asserts exactly 38 codes match the golden-master fixture {@code expected-privilege-codes.txt}.
- *   <li>Asserts the 9 dead codes have {@code category='DEAD'} and the 29 live codes are {@code 'ACTIVE'}.
+ *   <li>Asserts exactly 39 codes match the golden-master fixture {@code expected-privilege-codes.txt}.
+ *   <li>Asserts the 9 dead codes have {@code category='DEAD'} and the 30 live codes are {@code 'ACTIVE'}.
  * </ul>
  */
 class PrivilegeSeedIT extends AbstractIntegrationTest {
@@ -53,7 +54,7 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
     @Test
     void exactlyThirtyFiveCodesMatchFixture() throws IOException {
         List<String> fixture = fixtureLines();
-        assertThat(fixture).as("fixture has exactly 38 codes (35 V2 + 3 V47)").hasSize(38);
+        assertThat(fixture).as("fixture has exactly 39 codes (35 V2 + 3 V47 + 1 V52)").hasSize(39);
 
         List<String> actual = privilegeRepository.findAllByOrderByCodeAsc().stream()
                 .map(Privilege::getCode)
@@ -77,8 +78,8 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
     @Test
     void twentySixActiveCodesHaveCategoryActive() {
         List<Privilege> activePrivileges = privilegeRepository.findByCategory("ACTIVE");
-        // 26 original active codes (V2) + 3 disposition APPROVE codes (V47) = 29 ACTIVE
-        assertThat(activePrivileges).as("exactly 29 ACTIVE privileges (26 original + 3 V47)").hasSize(29);
+        // 26 original active codes (V2) + 3 disposition APPROVE codes (V47) + 1 MAR code (V52) = 30 ACTIVE
+        assertThat(activePrivileges).as("exactly 30 ACTIVE privileges (26 original + 3 V47 + 1 V52)").hasSize(30);
 
         // None of the active codes should be in the dead set
         activePrivileges.forEach(p ->
@@ -96,6 +97,8 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
         parsePrivilegesFromMigration("/db/migration/V2__seed_iam.sql", codes);
         // V47: 3 disposition APPROVE codes added in inc-07 07a-3 (CR-07-SoD)
         parsePrivilegesFromMigration("/db/migration/V47__iam_disposition_approve_privileges.sql", codes);
+        // V52: MEDICATION-ADMINISTER added in inc-07 07d (CR-07-MAR)
+        parsePrivilegesFromMigration("/db/migration/V52__iam_medication_administer_privilege.sql", codes);
         return codes;
     }
 

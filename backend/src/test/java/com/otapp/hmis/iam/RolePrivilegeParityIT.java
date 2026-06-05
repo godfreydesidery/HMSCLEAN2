@@ -9,9 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * Asserts the seeded ADMIN role has all 38 privileges (build-spec §7).
- * V2 seed (35) + V47 delta (3 disposition APPROVE codes — inc-07 07a-3 CR-07-SoD) = 38.
- * This confirms V2 seed + V4 category tag + V47 delta did not disrupt the ADMIN role's privilege set.
+ * Asserts the seeded ADMIN role has all 39 privileges (build-spec §7).
+ * V2 seed (35) + V47 delta (3 disposition APPROVE codes — inc-07 07a-3 CR-07-SoD)
+ * + V52 delta (1 MEDICATION-ADMINISTER code — inc-07 07d CR-07-MAR) = 39.
+ * This confirms V2 seed + V4 category tag + V47/V52 deltas did not disrupt the ADMIN role's privilege set.
  */
 class RolePrivilegeParityIT extends AbstractIntegrationTest {
 
@@ -23,10 +24,11 @@ class RolePrivilegeParityIT extends AbstractIntegrationTest {
         Role admin = roleRepository.findByName("ADMIN")
                 .orElseThrow(() -> new AssertionError("ADMIN role not found — V2 seed missing"));
 
-        // 35 (V2) + 3 (V47 — DISCHARGE-PLAN-APPROVE, REFERRAL-PLAN-APPROVE, DECEASED-NOTE-APPROVE) = 38
+        // 35 (V2) + 3 (V47 — DISCHARGE-PLAN-APPROVE, REFERRAL-PLAN-APPROVE, DECEASED-NOTE-APPROVE)
+        // + 1 (V52 — MEDICATION-ADMINISTER) = 39
         assertThat(admin.getPrivileges())
-                .as("ADMIN role must have all 38 seeded privileges (V2 + V47)")
-                .hasSize(38);
+                .as("ADMIN role must have all 39 seeded privileges (V2 + V47 + V52)")
+                .hasSize(39);
     }
 
     @Test

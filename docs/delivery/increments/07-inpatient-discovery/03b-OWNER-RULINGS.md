@@ -53,6 +53,21 @@ With these rulings, the build is **no longer "07a/07b freezable, 07c blocked"** 
 3. **Cross-increment note:** record that the inc-08 `@Version`-only concurrency posture (CR-08-Q4) is now superseded for contended bed + consumable-stock aggregates by the CR-07-Q3 / CR-07-consumable-stock pessimistic-lock rulings.
 4. **ADR register update:** 0017 + 0018 → Accepted; reconcile ADR-0022 status drift.
 
+## CR-07-MAR prerequisites — RULED 2026-06-05 (owner)
+
+The two bundled dependencies that gated CR-07-MAR (item 2 above) are now ruled. CR-07-MAR is
+**cleared to build as chunk 07d** on `feat/increment-07-inpatient-nursing`, before the inc-07 PR.
+
+| Prereq | Ruling | Build consequence |
+|--------|--------|-------------------|
+| **Route masterdata** (data-architect) | **New `administration_routes` masterdata table** — first-class entity (code / name / active) with full CRUD + a `RouteLookup` read seam, mirroring `DressingLookup` / `ConsumableLookup`. | `MedicationAdministration.routeUid` is a loose uid validated against `RouteLookup` (admin-manageable controlled vocabulary; no enum redeploy to add a route). New Flyway migration `administration_routes` + seed-optional. |
+| **PHI / audit posture** (security-architect) | **Standard posture** — `AuditableEntity` + SHA-256 chained `AuditRecorder` on **create** (write-path only; no read-path auditing), gated behind a **new IAM privilege `MEDICATION-ADMINISTER`** (APPROVE-suffix convention N/A — this is a create privilege, not an approval). | Same audit/RBAC plumbing as the nursing-chart + consumable write paths. NOT elevated read-audit. One new privilege row (Flyway), one new `ErrorCode` only if a guard needs it. |
+| **Sequencing** | **Build now as chunk 07d** on the inc-07 branch, before the PR — inc-07 merges as one complete unit. | MAR ACs are **net-new acceptance tests, NOT golden-master parity** (no legacy MAR exists). The legacy free-text `PatientPrescriptionChart` dosing-note path (already built in 07b) stays — MAR is additive over it. |
+
+**MAR aggregate shape (from the CR-07-MAR ruling row, unchanged):** net-new `MedicationAdministration`
+(`routeUid`, `administeredAt`, `doseGiven`, `patientResponse`) + a closed-loop administration endpoint,
+linked to the prescription + admission. Admission must be IN-PROCESS; administering user (nurse) required.
+
 ## Still parked (not ruled)
 
 - **CR-INC07-Q7** (ExternalMedicalProvider masterdata + real referral FK) — loose uid baseline stands.

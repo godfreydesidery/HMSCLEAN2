@@ -65,6 +65,9 @@ class OpenApiExportIT extends AbstractIntegrationTest {
         assertThat(paths.has("/api/v1/inventory/pp-transfers/rns/uid/{uid}/complete")).isTrue();
         assertThat(paths.has("/api/v1/inpatient/admissions")).isTrue();
         assertThat(paths.has("/api/v1/ops/jobs/ward-accrual/trigger")).isTrue();
+        // inc-07 07d MAR (CR-07-MAR): closed-loop medication-administration endpoint
+        assertThat(paths.has(
+                "/api/v1/inpatient/admissions/{admissionUid}/medication-administrations")).isTrue();
     }
 
     private void writeSlice(JsonNode api, String name, String title, List<String> prefixes)

@@ -33,6 +33,9 @@ class PrivilegeGateArchTest {
      *
      * <p>DISCHARGE-PLAN-APPROVE, REFERRAL-PLAN-APPROVE, DECEASED-NOTE-APPROVE are seeded in
      * V47 (inc-07 07a-3, CR-07-SoD second-approver gate — owner-APPROVED).
+     *
+     * <p>MEDICATION-ADMINISTER is seeded in V52 (inc-07 07d, CR-07-MAR — the closed-loop
+     * medication-administration create gate; owner-APPROVED).
      */
     private static final Set<String> LIVE_CODES = Set.of(
             "ADMIN-ACCESS",
@@ -66,7 +69,9 @@ class PrivilegeGateArchTest {
             // inc-07 07a-3 disposition second-approver gates (seeded V47, CR-07-SoD)
             "DISCHARGE-PLAN-APPROVE",
             "REFERRAL-PLAN-APPROVE",
-            "DECEASED-NOTE-APPROVE"
+            "DECEASED-NOTE-APPROVE",
+            // inc-07 07d MAR create gate (seeded V52, CR-07-MAR)
+            "MEDICATION-ADMINISTER"
     );
 
     /** Matches single-quoted authority codes inside hasAnyAuthority / hasAuthority expressions. */

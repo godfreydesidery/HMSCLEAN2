@@ -396,6 +396,52 @@ paths:
       responses:
         "200":
           description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/medication-administrations:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List medication administrations (MAR) for an admission"
+      operationId: "listMedicationAdministrations"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/MedicationAdministrationView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a closed-loop medication administration (MAR) against a GIVEN\
+        \ prescription"
+      operationId: "saveMedicationAdministration"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicationAdministrationRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MedicationAdministrationView"
   /api/v1/inpatient/admissions/{admissionUid}/nursing-care-plans:
     get:
       tags:
@@ -939,6 +985,50 @@ components:
         nano:
           type: "integer"
           format: "int32"
+    MedicationAdministrationRequest:
+      required:
+      - "administeredAt"
+      - "nurseUid"
+      - "prescriptionUid"
+      - "routeUid"
+      type: "object"
+      properties:
+        prescriptionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        routeUid:
+          type: "string"
+        administeredAt:
+          type: "string"
+          format: "date-time"
+        doseGiven:
+          type: "string"
+        patientResponse:
+          type: "string"
+    MedicationAdministrationView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        prescriptionUid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        routeUid:
+          type: "string"
+        administeredAt:
+          type: "string"
+          format: "date-time"
+        doseGiven:
+          type: "string"
+        patientResponse:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
     NursingCarePlanRequest:
       type: "object"
       properties:

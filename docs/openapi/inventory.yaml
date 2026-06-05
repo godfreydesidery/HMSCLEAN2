@@ -8,7 +8,7 @@ paths:
     post:
       tags:
       - "grn-controller"
-      operationId: "create_23"
+      operationId: "create_24"
       parameters:
       - name: "lpoUid"
         in: "query"
@@ -96,7 +96,7 @@ paths:
     get:
       tags:
       - "grn-controller"
-      operationId: "getByUid_23"
+      operationId: "getByUid_24"
       parameters:
       - name: "uid"
         in: "path"
@@ -132,7 +132,7 @@ paths:
     post:
       tags:
       - "lpo-controller"
-      operationId: "create_22"
+      operationId: "create_23"
       requestBody:
         content:
           application/json:
@@ -150,7 +150,7 @@ paths:
     get:
       tags:
       - "lpo-controller"
-      operationId: "getByUid_22"
+      operationId: "getByUid_23"
       parameters:
       - name: "uid"
         in: "path"
