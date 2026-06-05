@@ -38,12 +38,12 @@ const STATUS_MAP: Record<string, BadgeConfig> = {
       line-height: 1.6;
       white-space: nowrap;
     }
-    .badge--pending   { background: var(--mat-sys-secondary-container, #e8def8); color: var(--mat-sys-on-secondary-container, #1d1b20); }
-    .badge--approved  { background: var(--mat-sys-primary-container, #d0bcff);   color: var(--mat-sys-on-primary-container, #21005d); }
+    .badge--pending   { background: #e8def8; color: #1d1b20; }
+    .badge--approved  { background: #d0bcff; color: #21005d; }
     .badge--paid      { background: #c8e6c9; color: #1b5e20; }
-    .badge--unpaid    { background: var(--mat-sys-error-container, #f9dedc);     color: var(--mat-sys-on-error-container, #410002); }
-    .badge--covered   { background: var(--mat-sys-tertiary-container, #ffd8e4);  color: var(--mat-sys-on-tertiary-container, #31111d); }
-    .badge--verified  { background: var(--mat-sys-primary-container, #d0bcff);   color: var(--mat-sys-on-primary-container, #21005d); }
+    .badge--unpaid    { background: #f9dedc; color: #410002; }
+    .badge--covered   { background: #ffd8e4; color: #31111d; }
+    .badge--verified  { background: #d0bcff; color: #21005d; }
     .badge--cancelled { background: #f5f5f5; color: #616161; }
     .badge--none      { background: #f5f5f5; color: #616161; }
   `],
