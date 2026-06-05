@@ -64,6 +64,13 @@ export const routes: Routes = [
     loadChildren: () =>
       import('./features/inpatient/inpatient.routes').then((m) => m.INPATIENT_ROUTES),
   },
+  {
+    path: 'masterdata',
+    canActivate: [privilegeGuard],
+    data: { privilege: 'ADMIN-ACCESS' },
+    loadChildren: () =>
+      import('./features/masterdata/masterdata.routes').then((m) => m.MASTERDATA_ROUTES),
+  },
   { path: '', pathMatch: 'full', redirectTo: 'home' },
   { path: '**', redirectTo: 'home' },
 ];

@@ -30,7 +30,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Billing',      route: '/billing/cashier', icon: 'bi-cash-coin',    privilege: 'BILL-A',                 enabled: true  },
   { label: 'Inventory',    route: '/inventory',    icon: 'bi-box-seam',        privilege: 'LOCAL_PURCHASE_ORDER-ALL', enabled: false },
   { label: 'Payroll',      route: '/payroll',      icon: 'bi-wallet2',         privilege: 'PAYROLL-ALL',            enabled: false },
-  { label: 'Master Data',  route: '/masterdata',   icon: 'bi-database',        privilege: 'ADMIN-ACCESS',           enabled: false },
+  { label: 'Master Data',  route: '/masterdata',   icon: 'bi-database',        privilege: 'ADMIN-ACCESS',           enabled: true  },
   { label: 'Reports',      route: '/reports',      icon: 'bi-graph-up',        privilege: 'ADMIN-ACCESS',           enabled: false },
   { label: 'Users & Roles', route: '/iam',         icon: 'bi-shield-lock',     privilege: 'USER-ALL',               enabled: false },
 ];
