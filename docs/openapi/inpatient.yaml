@@ -1,0 +1,1118 @@
+---
+openapi: "3.0.1"
+info:
+  title: "Zana HMIS — inpatient API"
+  version: "v1"
+paths:
+  /api/v1/inpatient/admissions:
+    post:
+      tags:
+      - "Inpatient"
+      summary: "Admit a patient to a ward bed"
+      description: "Creates a PENDING admission, claims the bed (WAITING), creates\
+        \ the UNPAID ward-bed bill, and publishes PatientAdmittedEvent. Activation\
+        \ (PENDINGâ\x86\x92IN-PROCESS + bed OCCUPIED) is payment-gated."
+      operationId: "doAdmission"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionRequest"
+        required: true
+      responses:
+        "201":
+          description: "Admission created (PENDING)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdmissionDto"
+        "404":
+          description: "Ward bed or ward type not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdmissionDto"
+        "409":
+          description: "Bed not EMPTY (stale-entity race)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdmissionDto"
+        "422":
+          description: "Deceased patient / already admitted / business rule"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdmissionDto"
+  /api/v1/inpatient/admissions/{admissionUid}/consumable-charts:
+    get:
+      tags:
+      - "Inpatient Consumable Charts"
+      summary: "List consumable charts for an admission"
+      operationId: "listConsumableCharts"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/ConsumableChartView"
+    post:
+      tags:
+      - "Inpatient Consumable Charts"
+      summary: "Record a consumable chart entry (MEDICINE bill + stock decrement)"
+      operationId: "saveConsumableChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsumableChartRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ConsumableChartView"
+  /api/v1/inpatient/admissions/{admissionUid}/consumable-charts/{chartUid}:
+    delete:
+      tags:
+      - "Inpatient Consumable Charts"
+      summary: "Delete a consumable chart within 24h (billing reversal + stock restore)"
+      operationId: "deleteConsumableChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "chartUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/deceased-note:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Save a deceased note"
+      description: "Create or update a PENDING deceased note. patientSummary and causeOfDeath\
+        \ are mandatory. Admission transitions to HELD and bed freed early."
+      operationId: "saveDeceasedNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeceasedNoteRequest"
+        required: true
+      responses:
+        "201":
+          description: "Deceased note saved (PENDING); admission HELD"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+        "404":
+          description: "Admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+        "422":
+          description: "Missing summary/cause ('Summary and cause of death are missing')\
+            \ / business rule"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+  /api/v1/inpatient/admissions/{admissionUid}/deceased-note/approve:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Approve a deceased note"
+      description: "Bills-cleared gate + SoD gate, then signs out the admission (SIGNED-OUT,\
+        \ no dischargedAt stamp) and sets patient type=DECEASED."
+      operationId: "approveDeceasedNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveDispositionRequest"
+        required: true
+      responses:
+        "200":
+          description: "Deceased note approved"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+        "404":
+          description: "Note or admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+        "422":
+          description: "Bills outstanding / self-approval / business rule"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DeceasedNoteView"
+  /api/v1/inpatient/admissions/{admissionUid}/discharge-plan:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Save a discharge plan"
+      description: "Create or update a PENDING discharge plan for the admission. Idempotent:\
+        \ re-save updates the narrative in place."
+      operationId: "saveDischargePlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DischargePlanRequest"
+        required: true
+      responses:
+        "201":
+          description: "Discharge plan saved (PENDING)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+        "404":
+          description: "Admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+        "422":
+          description: "Business rule violation"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+  /api/v1/inpatient/admissions/{admissionUid}/discharge-plan/approve:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Approve a discharge plan"
+      description: "Bills-cleared gate + SoD second-approver gate, then signs out\
+        \ the admission (SIGNED-OUT), frees the bed, and closes the AdmissionBed."
+      operationId: "approveDischargePlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveDispositionRequest"
+        required: true
+      responses:
+        "200":
+          description: "Discharge approved"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+        "404":
+          description: "Plan or admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+        "422":
+          description: "Bills outstanding / self-approval / business rule"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DischargePlanDto"
+  /api/v1/inpatient/admissions/{admissionUid}/dosing-notes:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List dosing notes for an admission"
+      operationId: "listDosingNotes"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/PrescriptionChartView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a free-text dosing note against a GIVEN prescription"
+      operationId: "saveDosingNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DosingNoteRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PrescriptionChartView"
+  /api/v1/inpatient/admissions/{admissionUid}/dosing-notes/{chartUid}:
+    delete:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Delete a dosing note (within 24h)"
+      operationId: "deleteDosingNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "chartUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/dressing-charts:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List dressing charts for an admission"
+      operationId: "listDressingCharts"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/DressingChartView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a dressing chart (creates a PROCEDURE bill)"
+      operationId: "saveDressingChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DressingChartRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DressingChartView"
+  /api/v1/inpatient/admissions/{admissionUid}/dressing-charts/{chartUid}:
+    delete:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Delete a dressing chart (within 24h; billing reversal)"
+      operationId: "deleteDressingChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "chartUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/nursing-care-plans:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List nursing care plans for an admission"
+      operationId: "listCarePlans"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/NursingCarePlanView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a nursing care plan entry"
+      operationId: "saveCarePlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NursingCarePlanRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NursingCarePlanView"
+  /api/v1/inpatient/admissions/{admissionUid}/nursing-care-plans/{carePlanUid}:
+    delete:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Delete a nursing care plan (within 24h)"
+      operationId: "deleteCarePlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "carePlanUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/nursing-charts:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List nursing chart entries for an admission"
+      operationId: "listNursingCharts"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/NursingChartView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a nursing observation chart entry"
+      operationId: "saveNursingChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NursingChartRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NursingChartView"
+  /api/v1/inpatient/admissions/{admissionUid}/nursing-charts/{chartUid}:
+    delete:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Delete a nursing chart entry (within 24h)"
+      operationId: "deleteNursingChart"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "chartUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/progress-notes:
+    get:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "List progress notes for an admission"
+      operationId: "listProgressNotes"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "array"
+                items:
+                  $ref: "#/components/schemas/NursingProgressNoteView"
+    post:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Record a nursing progress note"
+      operationId: "saveProgressNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgressNoteRequest"
+        required: true
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NursingProgressNoteView"
+  /api/v1/inpatient/admissions/{admissionUid}/progress-notes/{noteUid}:
+    delete:
+      tags:
+      - "Inpatient Nursing Charts"
+      summary: "Delete a progress note (within 24h)"
+      operationId: "deleteProgressNote"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      - name: "noteUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+  /api/v1/inpatient/admissions/{admissionUid}/referral-plan:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Save a referral plan"
+      description: "Create or update a PENDING admission referral plan. externalMedicalProviderUid\
+        \ is mandatory (CR-07-Q7)."
+      operationId: "saveReferralPlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReferralPlanRequest"
+        required: true
+      responses:
+        "201":
+          description: "Referral plan saved (PENDING)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+        "404":
+          description: "Admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+        "422":
+          description: "Business rule violation"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+  /api/v1/inpatient/admissions/{admissionUid}/referral-plan/approve:
+    post:
+      tags:
+      - "Inpatient Dispositions"
+      summary: "Approve a referral plan"
+      description: "Bills-cleared gate + SoD gate, then signs out the admission, frees\
+        \ the bed, and resets patient type to OUTPATIENT only (insurance plan NOT\
+        \ cleared â\x80\x94 legacy asymmetry :5626 vs :5378-5381)."
+      operationId: "approveReferralPlan"
+      parameters:
+      - name: "admissionUid"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveDispositionRequest"
+        required: true
+      responses:
+        "200":
+          description: "Referral approved"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+        "404":
+          description: "Plan or admission not found"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+        "422":
+          description: "Bills outstanding / self-approval / business rule"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReferralPlanView"
+  /api/v1/ops/jobs/ward-accrual/trigger:
+    post:
+      tags:
+      - "Ops â\x80\x94 Scheduled Jobs"
+      summary: "Manually trigger the ward-day accrual sweep (net-new ops hook, ADR-0018)"
+      operationId: "triggerWardAccrual"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            '*/*':
+              schema:
+                type: "object"
+                additionalProperties:
+                  type: "object"
+components:
+  schemas:
+    AdmissionDto:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        patientUid:
+          type: "string"
+        wardBedUid:
+          type: "string"
+        paymentType:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+        status:
+          type: "string"
+        admittedAt:
+          type: "string"
+          format: "date-time"
+        dischargedAt:
+          type: "string"
+          format: "date-time"
+    AdmissionRequest:
+      required:
+      - "patientUid"
+      - "paymentType"
+      - "wardBedUid"
+      type: "object"
+      properties:
+        patientUid:
+          type: "string"
+        wardBedUid:
+          type: "string"
+        paymentType:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+    ApproveDispositionRequest:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+    ConsumableChartRequest:
+      required:
+      - "medicineName"
+      - "medicineUid"
+      - "nurseUid"
+      - "paymentType"
+      - "pharmacyUid"
+      - "qty"
+      type: "object"
+      properties:
+        nurseUid:
+          type: "string"
+        medicineUid:
+          type: "string"
+        medicineName:
+          type: "string"
+        pharmacyUid:
+          type: "string"
+        qty:
+          minimum: 0.01
+          exclusiveMinimum: false
+          type: "number"
+        paymentType:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+    ConsumableChartView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        medicineUid:
+          type: "string"
+        pharmacyUid:
+          type: "string"
+        patientBillUid:
+          type: "string"
+        qty:
+          type: "number"
+        status:
+          type: "string"
+        paymentType:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    DeceasedNoteRequest:
+      type: "object"
+      properties:
+        patientSummary:
+          type: "string"
+        causeOfDeath:
+          type: "string"
+        deathDate:
+          type: "string"
+          format: "date"
+        deathTime:
+          $ref: "#/components/schemas/LocalTime"
+    DeceasedNoteView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        patientUid:
+          type: "string"
+        patientSummary:
+          type: "string"
+        causeOfDeath:
+          type: "string"
+        deathDate:
+          type: "string"
+          format: "date"
+        deathTime:
+          $ref: "#/components/schemas/LocalTime"
+        status:
+          type: "string"
+        createdByUserUid:
+          type: "string"
+        approvedByUserUid:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    DischargePlanDto:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+        status:
+          type: "string"
+        createdBy:
+          type: "string"
+        approvedBy:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    DischargePlanRequest:
+      type: "object"
+      properties:
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+    DosingNoteRequest:
+      type: "object"
+      properties:
+        prescriptionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        dosage:
+          type: "string"
+        output:
+          type: "string"
+        remark:
+          type: "string"
+    DressingChartRequest:
+      type: "object"
+      properties:
+        nurseUid:
+          type: "string"
+        clinicianUid:
+          type: "string"
+        insurancePlanUid:
+          type: "string"
+        membershipNo:
+          type: "string"
+        procedureTypeUid:
+          type: "string"
+        procedureTypeName:
+          type: "string"
+        qty:
+          type: "number"
+        paymentType:
+          type: "string"
+    DressingChartView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        procedureTypeUid:
+          type: "string"
+        patientBillUid:
+          type: "string"
+        qty:
+          type: "number"
+        paymentType:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    LocalTime:
+      type: "object"
+      properties:
+        hour:
+          type: "integer"
+          format: "int32"
+        minute:
+          type: "integer"
+          format: "int32"
+        second:
+          type: "integer"
+          format: "int32"
+        nano:
+          type: "integer"
+          format: "int32"
+    NursingCarePlanRequest:
+      type: "object"
+      properties:
+        nurseUid:
+          type: "string"
+        nursingDiagnosis:
+          type: "string"
+        expectedOutcome:
+          type: "string"
+        implementation:
+          type: "string"
+        evaluation:
+          type: "string"
+    NursingCarePlanView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        nursingDiagnosis:
+          type: "string"
+        expectedOutcome:
+          type: "string"
+        implementation:
+          type: "string"
+        evaluation:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    NursingChartRequest:
+      type: "object"
+      properties:
+        nurseUid:
+          type: "string"
+        feeding:
+          type: "string"
+        changingPosition:
+          type: "string"
+        bedBathing:
+          type: "string"
+        randomBloodSugar:
+          type: "string"
+        fullBloodSugar:
+          type: "string"
+        drainageOutput:
+          type: "string"
+        fluidIntake:
+          type: "string"
+        urineOutput:
+          type: "string"
+    NursingChartView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        feeding:
+          type: "string"
+        changingPosition:
+          type: "string"
+        bedBathing:
+          type: "string"
+        randomBloodSugar:
+          type: "string"
+        fullBloodSugar:
+          type: "string"
+        drainageOutput:
+          type: "string"
+        fluidIntake:
+          type: "string"
+        urineOutput:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    NursingProgressNoteView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        nurseUid:
+          type: "string"
+        note:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    PrescriptionChartView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        prescriptionUid:
+          type: "string"
+        dosage:
+          type: "string"
+        output:
+          type: "string"
+        remark:
+          type: "string"
+        nurseUid:
+          type: "string"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    ProgressNoteRequest:
+      type: "object"
+      properties:
+        nurseUid:
+          type: "string"
+        note:
+          type: "string"
+    ReferralPlanRequest:
+      type: "object"
+      properties:
+        externalMedicalProviderUid:
+          type: "string"
+        referringDiagnosis:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+    ReferralPlanView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        patientUid:
+          type: "string"
+        externalMedicalProviderUid:
+          type: "string"
+        referringDiagnosis:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+        status:
+          type: "string"
+        createdByUserUid:
+          type: "string"
+        approvedByUserUid:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
