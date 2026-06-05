@@ -7,9 +7,12 @@ import com.otapp.hmis.billing.domain.CoverageStatus;
 import com.otapp.hmis.billing.domain.PatientBill;
 import com.otapp.hmis.billing.domain.PatientBillRepository;
 import com.otapp.hmis.billing.domain.PatientInvoice;
+import com.otapp.hmis.billing.domain.PatientInvoiceDetail;
 import com.otapp.hmis.billing.domain.PatientInvoiceDetailRepository;
 import com.otapp.hmis.billing.domain.PatientInvoiceRepository;
+import com.otapp.hmis.masterdata.lookup.PriceLookup;
 import com.otapp.hmis.masterdata.lookup.ServiceKind;
+import com.otapp.hmis.masterdata.lookup.ServicePriceResult;
 import com.otapp.hmis.shared.application.MoneyMapper;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
@@ -43,11 +46,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class BillingCommandsImpl implements BillingCommands {
 
+    private static final String CURRENCY        = "TZS";
+    private static final String AUDIT_BILL_ENTITY = "billing.PatientBill";
+
     private final BillingChargeService chargeService;
     private final CreditNoteService creditNoteService;
     private final PatientBillRepository patientBillRepository;
     private final PatientInvoiceDetailRepository invoiceDetailRepository;
     private final PatientInvoiceRepository invoiceRepository;
+    private final PriceLookup priceLookup;
     private final AuditRecorder auditRecorder;
     private final MoneyMapper moneyMapper;
 
@@ -121,7 +128,7 @@ class BillingCommandsImpl implements BillingCommands {
                 patientUid, kind, billItem, description, qty,
                 Money.of(amount), ctx.dayUid());
         patientBillRepository.save(bill);
-        auditRecorder.record("billing.PatientBill", bill.getUid(),
+        auditRecorder.record(AUDIT_BILL_ENTITY, bill.getUid(),
                 AuditAction.CREATE, ctx.actorUsername());
         return bill.getUid();
     }
@@ -195,10 +202,136 @@ class BillingCommandsImpl implements BillingCommands {
         principal.linkSupplementaryBill(topUp);
         patientBillRepository.save(principal);
 
-        auditRecorder.record("billing.PatientBill", topUp.getUid(),
+        auditRecorder.record(AUDIT_BILL_ENTITY, topUp.getUid(),
                 AuditAction.CREATE, ctx.actorUsername());
 
         return topUp.getUid();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p><strong>CASH path (UpdatePatient.java:304-325):</strong>
+     * Creates a PatientBill at wardPrice with status=VERIFIED, billItem="Bed",
+     * description="Ward Bed / Room". Links the bill to the admission uid for discharge-gate
+     * scanning. Does NOT attach to any invoice accumulator — VERIFIED cash accruals are
+     * collected at the cashier window directly.
+     *
+     * <p><strong>INSURANCE path (UpdatePatient.java:340-437, Option B / CR-07-WARD-INS-PRICE):</strong>
+     * Resolves the covered price via PriceLookup.resolve(planUid, WARD, wardTypeUid).
+     * If an insurance hit exists: creates a COVERED principal bill and attaches it to the
+     * PENDING insurance invoice. If diff = wardPrice - coveredPrice &gt; 0: also creates a
+     * VERIFIED supplementary top-up bill for the diff (verbatim legacy :421-437).
+     * Returns the principal bill uid.
+     *
+     * <p>Propagation REQUIRED — runs inside the accrual job's per-admission transaction.
+     *
+     * <p>Legacy citation: UpdatePatient.java:304-437 (accrued ward bill creation).
+     * Option B / CR-07-WARD-INS-PRICE for the insurance branch.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String recordWardAccrual(String patientUid, String admissionUid,
+                                    String wardTypeUid, BigDecimal wardPrice,
+                                    String insurancePlanUid, String membershipNo,
+                                    TxAuditContext ctx) {
+        BigDecimal scaledWardPrice = wardPrice.setScale(2, RoundingMode.HALF_UP);
+
+        if (insurancePlanUid != null) {
+            // ------------------------------------------------------------------
+            // INSURANCE accrual path (UpdatePatient.java:340-437, Option B)
+            // Resolve covered price via PriceLookup (mirrors 07a-2 admission path)
+            // ------------------------------------------------------------------
+            ServicePriceResult coveredRow = priceLookup.resolve(
+                    insurancePlanUid, ServiceKind.WARD, wardTypeUid, CURRENCY);
+
+            boolean insuranceHit = coveredRow.planUid() != null && coveredRow.covered();
+
+            if (insuranceHit) {
+                BigDecimal coveredPrice = coveredRow.amount().setScale(2, RoundingMode.HALF_UP);
+
+                // Create COVERED principal bill (UpdatePatient.java:359-366)
+                PatientBill principal = new PatientBill(
+                        patientUid, ServiceKind.WARD,
+                        "Bed",               // billItem — verbatim UpdatePatient.java:309
+                        "Ward Bed / Room",   // description — verbatim :310
+                        BigDecimal.ONE,
+                        Money.of(coveredPrice),
+                        ctx.dayUid());
+                principal.overrideWithInsurance(
+                        Money.of(coveredPrice), insurancePlanUid, membershipNo);
+                principal.linkAdmission(admissionUid);
+                patientBillRepository.save(principal);
+                auditRecorder.record(AUDIT_BILL_ENTITY, principal.getUid(),
+                        AuditAction.CREATE, ctx.actorUsername());
+
+                // Attach to PENDING insurance invoice (UpdatePatient.java:368-418)
+                attachToInsuranceInvoice(patientUid, insurancePlanUid, principal,
+                        CoverageStatus.COVERED, ctx);
+
+                // Top-up: diff = wardPrice - coveredPrice (UpdatePatient.java:420-437)
+                BigDecimal diff = scaledWardPrice.subtract(coveredPrice)
+                        .setScale(2, RoundingMode.HALF_UP);
+                if (diff.compareTo(BigDecimal.ZERO) > 0) {
+                    PatientBill topUp = new PatientBill(
+                            patientUid, ServiceKind.WARD,
+                            "Bed",                          // verbatim :425
+                            "Ward Bed / Room (Top up)",     // verbatim :428
+                            BigDecimal.ONE,
+                            Money.of(diff),
+                            ctx.dayUid());
+                    topUp.markVerified();   // accrued top-up is VERIFIED (collectable at cashier)
+                    topUp.linkAdmission(admissionUid);
+                    topUp.linkPrincipalBill(principal);
+                    patientBillRepository.save(topUp);
+                    principal.linkSupplementaryBill(topUp);
+                    patientBillRepository.save(principal);
+                    auditRecorder.record(AUDIT_BILL_ENTITY, topUp.getUid(),
+                            AuditAction.CREATE, ctx.actorUsername());
+                }
+
+                return principal.getUid();
+            }
+            // If no insurance hit for an INSURANCE patient, fall through to cash-VERIFIED path
+            // (consistent with the §2.2 not-covered fallback for WARD — currently a no-op in
+            // the charge engine; we handle it here by creating a VERIFIED cash bill).
+        }
+
+        // ------------------------------------------------------------------
+        // CASH accrual path (UpdatePatient.java:304-325)
+        // VERIFIED bill at wardPrice — verbatim legacy :311.
+        // ------------------------------------------------------------------
+        PatientBill accrued = new PatientBill(
+                patientUid, ServiceKind.WARD,
+                "Bed",               // billItem — verbatim UpdatePatient.java:309
+                "Ward Bed / Room",   // description — verbatim :310
+                BigDecimal.ONE,
+                Money.of(scaledWardPrice),
+                ctx.dayUid());
+        accrued.markVerified();       // status=VERIFIED — verbatim UpdatePatient.java:311
+        accrued.linkAdmission(admissionUid);
+        patientBillRepository.save(accrued);
+        auditRecorder.record(AUDIT_BILL_ENTITY, accrued.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+        return accrued.getUid();
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers for ward accrual insurance invoice attachment
+    // -------------------------------------------------------------------------
+
+    private void attachToInsuranceInvoice(String patientUid, String planUid,
+                                           PatientBill bill, CoverageStatus coverageStatus,
+                                           TxAuditContext ctx) {
+        PatientInvoice invoice = invoiceRepository
+                .findPendingInsuranceInvoice(patientUid, planUid)
+                .orElseGet(() -> {
+                    PatientInvoice newInvoice = new PatientInvoice(patientUid, planUid, ctx.dayUid());
+                    return invoiceRepository.save(newInvoice);
+                });
+        PatientInvoiceDetail detail = new PatientInvoiceDetail(invoice, bill, coverageStatus);
+        invoice.addDetail(detail);
+        invoiceRepository.save(invoice);
     }
 
     /**

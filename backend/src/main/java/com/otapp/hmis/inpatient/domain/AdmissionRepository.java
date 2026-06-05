@@ -35,4 +35,16 @@ public interface AdmissionRepository extends JpaRepository<Admission, Long> {
      * @return matching admissions (empty if none — admission is safe to proceed)
      */
     List<Admission> findAllByPatientUidAndStatusIn(String patientUid, List<AdmissionStatus> statuses);
+
+    /**
+     * Find all admissions whose status is in the given list, across all patients
+     * (inc-07 07c-ii — the ward-day accrual sweep).
+     *
+     * <p>The accrual job iterates {@code [IN_PROCESS, STOPPED]} admissions and re-accrues a
+     * ward-bed charge per rolling-24h window (UpdatePatient.java:258-262).
+     *
+     * @param statuses the status values to match (accrual: [IN_PROCESS, STOPPED])
+     * @return matching admissions across all patients
+     */
+    List<Admission> findAllByStatusIn(List<AdmissionStatus> statuses);
 }

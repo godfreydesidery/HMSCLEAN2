@@ -141,6 +141,56 @@ public interface BillingCommands {
                            com.otapp.hmis.shared.domain.TxAuditContext ctx);
 
     /**
+     * Record a ward-day accrual bill for a single ongoing inpatient admission.
+     *
+     * <p><strong>Accrual billing seam (inc-07 07c-ii, ADR-0018 JOB-001):</strong>
+     * The nightly ward-day accrual creates a bill that is VERIFIED (cash) or COVERED (insurance).
+     * This is distinct from the admission-time ward bill (which is UNPAID/COVERED) — accrued bills
+     * are always VERIFIED (cash) or COVERED (insurance) per legacy
+     * {@code UpdatePatient.java:311} ({@code status="VERIFIED"}) and {@code :365} ({@code status="COVERED"}).
+     *
+     * <p><strong>Why a dedicated method (not recordClinicalCharge):</strong>
+     * {@code recordClinicalCharge} with {@code kind=WARD, inpatient=true, paymentType=CASH}
+     * routes through the two-step engine: STEP1 builds UNPAID, STEP2 attempts coverage
+     * (coverageAttempt=true when isInpatient=true), resolve(null, WARD, wardTypeUid) returns the
+     * cash row (no plan hit), then {@code applyNotCoveredFallback(WARD)} is a NO-OP — leaving the
+     * bill UNPAID, not VERIFIED. The accrual requires VERIFIED for cash. A dedicated seam that
+     * creates VERIFIED directly avoids patching the general charge engine.
+     *
+     * <p><strong>CASH path:</strong> creates a PatientBill at {@code wardPrice} (NUMERIC 19,2
+     * HALF_UP) with {@code status=VERIFIED}, {@code billItem="Bed"},
+     * {@code description="Ward Bed / Room"} — verbatim legacy {@code UpdatePatient.java:309-311}.
+     * Bill is NOT added to any invoice accumulator (VERIFIED cash accruals are paid at the cashier
+     * window, not through an insurance invoice — same as the legacy direct save at :325).
+     *
+     * <p><strong>INSURANCE path (Option B, CR-07-WARD-INS-PRICE):</strong> resolves the covered
+     * price via {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)} — mirroring the 07a-2
+     * admission insurance path. Creates a COVERED bill at the plan price and attaches it to the
+     * PENDING insurance invoice accumulator (same as the admission-time insurance bill path).
+     * If covered price &lt; ward cash price (diff &gt; 0), also creates a VERIFIED supplementary
+     * top-up bill for the diff. Returns the principal bill uid.
+     *
+     * <p>Runs inside the caller's (inpatient accrual job) transaction (Propagation.REQUIRED).
+     * No billing domain type crosses the module boundary (ADR-0008 §1).
+     *
+     * <p>Legacy citation: {@code UpdatePatient.java:304-437} (accrued ward bill creation;
+     * insurance branch :340-437). Option B / CR-07-WARD-INS-PRICE for the insurance sub-path.
+     *
+     * @param patientUid       loose uid of the patient
+     * @param admissionUid     loose uid of the admission (linked for discharge-gate scanning)
+     * @param wardTypeUid      loose uid of the ward type (price key)
+     * @param wardPrice        the WardType cash price (NUMERIC 19,2 HALF_UP — caller resolves)
+     * @param insurancePlanUid loose uid of the insurance plan (null for CASH patients)
+     * @param membershipNo     insurance membership number (null for CASH patients)
+     * @param ctx              transaction audit context (dayUid, actor, timestamp)
+     * @return the uid of the newly created principal accrued PatientBill (VERIFIED or COVERED)
+     */
+    String recordWardAccrual(String patientUid, String admissionUid,
+                             String wardTypeUid, java.math.BigDecimal wardPrice,
+                             String insurancePlanUid, String membershipNo,
+                             com.otapp.hmis.shared.domain.TxAuditContext ctx);
+
+    /**
      * Approve all PENDING invoices linked to the given admission.
      *
      * <p>Collects all {@code PatientBill.uid} values where {@code PatientBill.admissionUid}
