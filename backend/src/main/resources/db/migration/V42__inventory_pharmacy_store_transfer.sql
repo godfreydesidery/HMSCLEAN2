@@ -85,7 +85,7 @@ CREATE TABLE store_to_pharmacy_to_details (
     id                  BIGINT GENERATED ALWAYS AS IDENTITY,
     uid                 VARCHAR(26)     NOT NULL,
     store_to_pharmacy_to_id BIGINT      NOT NULL,
-    item_uid            VARCHAR(26)     NOT NULL,            -- store SKU
+    item_uid            VARCHAR(26),                         -- store SKU (set on first add_batch)
     medicine_uid        VARCHAR(26)     NOT NULL,            -- pharmacy SKU
     ordered_pharmacy_sku_qty    NUMERIC(19,6)   NOT NULL,
     transfered_store_sku_qty    NUMERIC(19,6)   NOT NULL DEFAULT 0,

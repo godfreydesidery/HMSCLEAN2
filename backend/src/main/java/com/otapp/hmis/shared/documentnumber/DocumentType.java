@@ -47,7 +47,13 @@ public enum DocumentType {
     PPRN("PPRN", "seq_pprn_no"),
 
     /** Store→Pharmacy Received Note (the pharmacy's own GRN). {@code PGRN{yyyyMMdd}-{seq}}, {@code seq_pgrn_no} (V13). */
-    PGRN("PGRN", "seq_pgrn_no");
+    PGRN("PGRN", "seq_pgrn_no"),
+
+    /** Pharmacy→Store Requisition Order. {@code PSR{yyyyMMdd}-{seq}}, {@code seq_psr_no} (V13). */
+    PSR("PSR", "seq_psr_no"),
+
+    /** Pharmacy→Pharmacy Requisition Order. {@code PPR{yyyyMMdd}-{seq}}, {@code seq_ppr_no} (V13). */
+    PPR("PPR", "seq_ppr_no");
 
     private final String prefix;
     private final String sequenceName;
