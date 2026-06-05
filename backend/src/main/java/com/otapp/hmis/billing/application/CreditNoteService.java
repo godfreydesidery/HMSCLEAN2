@@ -15,6 +15,8 @@ import com.otapp.hmis.billing.domain.PatientPaymentDetail;
 import com.otapp.hmis.billing.domain.PatientPaymentDetailRepository;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
+import com.otapp.hmis.shared.documentnumber.DocumentNumberService;
+import com.otapp.hmis.shared.documentnumber.DocumentType;
 import com.otapp.hmis.shared.domain.TxAuditContext;
 import com.otapp.hmis.shared.error.NotFoundException;
 import java.util.List;
