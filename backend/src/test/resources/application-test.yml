@@ -22,6 +22,10 @@ hmis:
     refresh-token-ttl-hours: 8
   cors:
     allowed-origins: http://localhost:4200
+  # Disable the ward-accrual cron + ShedLock during tests — ITs drive WardAccrualService directly
+  # (inc-07 07c-ii). SchedulingConfig is @ConditionalOnProperty(hmis.scheduling.enabled=true).
+  scheduling:
+    enabled: false
 
 logging:
   level:

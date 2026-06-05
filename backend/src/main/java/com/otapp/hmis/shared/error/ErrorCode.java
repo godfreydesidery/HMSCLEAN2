@@ -118,7 +118,67 @@ public enum ErrorCode {
      * 422 reject is the frozen parity element. HTTP 422 Unprocessable Entity.
      */
     INSUFFICIENT_STOCK("urn:hmis:error:insufficient-stock",
-            HttpStatus.UNPROCESSABLE_ENTITY, "Insufficient stock to fulfil this request");
+            HttpStatus.UNPROCESSABLE_ENTITY, "Insufficient stock to fulfil this request"),
+
+    /**
+     * A concurrent writer won the race for a contended aggregate (the bed-claim race —
+     * inc-07 CR-07-Q3, ADR-0017 ratified). The PESSIMISTIC_WRITE lock on the {@code WardBed}
+     * master row serializes two admissions claiming the same EMPTY bed; the loser observes the
+     * bed already WAITING/OCCUPIED under the lock and is rejected. Also the handler target for
+     * {@code ObjectOptimisticLockingFailureException} on the {@code @Version} default path.
+     *
+     * <p>NET-NEW (inc-07): legacy had no row lock and no optimistic-lock surfacing — the race
+     * silently oversold the bed. This is the owner-approved deviation (CR-07-Q3); the 409 is a
+     * clean stable type so the Angular client can retry/refresh rather than string-match a 500.
+     * HTTP 409 Conflict.
+     */
+    STALE_ENTITY("urn:hmis:error:stale-entity",
+            HttpStatus.CONFLICT,
+            "The record was changed by another operation; reload and try again"),
+
+    /**
+     * An operation was attempted on a DECEASED patient (admit-time / OPD-booking deceased guard —
+     * inc-07 CR-07-deceased-guard, owner-approved). The patient's {@link
+     * com.otapp.hmis.registration.domain.PatientType} is {@code DECEASED}; no new admission may be
+     * opened. Reads {@code PatientType.DECEASED} — there is NO {@code Patient.deceased} boolean
+     * (CR-05 preserved).
+     *
+     * <p>NET-NEW (inc-07): legacy had no admit-time deceased branch (a signed-out, since-deceased
+     * patient was re-admittable). This closes that residual clinical-safety gap. HTTP 422.
+     */
+    PATIENT_DECEASED("urn:hmis:error:patient-deceased",
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "This operation is not permitted for a deceased patient"),
+
+    /**
+     * A disposition (discharge / referral / deceased) approval was attempted by the same actor who
+     * created it (second-approver Segregation-of-Duties gate — inc-07 CR-07-SoD, owner-approved).
+     * The approving principal MUST differ from the creator ({@code approvedBy != createdBy}).
+     *
+     * <p>NET-NEW (inc-07): legacy ALWAYS copied {@code approvedBy = createdBy} (single-actor, no
+     * gate). This is the owner-approved SoD deviation. Gated by the APPROVE-suffixed privileges
+     * ({@code DISCHARGE-PLAN-APPROVE} / {@code REFERRAL-PLAN-APPROVE} / {@code DECEASED-NOTE-APPROVE}).
+     * HTTP 422.
+     */
+    SELF_APPROVAL_FORBIDDEN("urn:hmis:error:self-approval-forbidden",
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "The approver must differ from the creator of this record"),
+
+    /**
+     * A disposition summary (discharge / referral / deceased) was requested while one or more of
+     * the admission's bills is still {@code UNPAID} or {@code VERIFIED} (the hard bills-cleared
+     * discharge gate — inc-07 07a, exact-process reproduction).
+     *
+     * <p>EXTRACTED legacy parity: legacy rejects the summary inline if ANY bill linked to the
+     * admission's invoices is UNPAID or VERIFIED (PatientResource.java:5342-5357 discharge,
+     * :5593-5603 referral, :5851-5882 deceased), across ALL admissions, not cash-only; insurance
+     * passes because COVERED bills are neither UNPAID nor VERIFIED. The predicate is computed via
+     * the new published {@code BillingQueries.admissionHasOutstandingBills(admissionUid)} seam.
+     * HTTP 422.
+     */
+    ADMISSION_BILLS_OUTSTANDING("urn:hmis:error:admission-bills-outstanding",
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Outstanding bills must be settled before this patient can be discharged");
 
     private final String type;
     private final HttpStatus status;

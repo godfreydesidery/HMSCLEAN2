@@ -21,4 +21,14 @@ public interface PatientInvoiceDetailRepository extends JpaRepository<PatientInv
            WHERE d.bill.uid = :billUid
            """)
     Optional<PatientInvoiceDetail> findByBillUid(@Param("billUid") String billUid);
+
+    /**
+     * Return the parent invoice uid for a given bill uid without lazy-loading the invoice entity.
+     * Used in integration tests to assert invoice identity without a surrounding transaction.
+     */
+    @Query("""
+           SELECT d.invoice.uid FROM PatientInvoiceDetail d
+           WHERE d.bill.uid = :billUid
+           """)
+    Optional<String> findInvoiceUidByBillUid(@Param("billUid") String billUid);
 }

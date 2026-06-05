@@ -33,6 +33,24 @@ class BillingQueriesImpl implements BillingQueries {
                 .getStatus();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Implemented in inc-07 07a: scans {@code patient_bills.admission_uid} for any row with
+     * status {@code UNPAID} or {@code VERIFIED} linked to the given admission.
+     * Reproduces the legacy bills-cleared discharge gate
+     * (PatientResource.java:5342-5357, :5593-5603, :5851-5882).
+     *
+     * <p>COVERED bills (insurance) carry neither status, so insurance patients auto-pass.
+     */
+    @Override
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
+    public boolean admissionHasOutstandingBills(String admissionUid) {
+        return patientBillRepository.existsByAdmissionUidAndStatusIn(
+                admissionUid,
+                java.util.List.of(BillStatus.UNPAID, BillStatus.VERIFIED));
+    }
+
     @Override
     @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
     public boolean worklistAdmits(String billUid, boolean inpatient) {

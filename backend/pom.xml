@@ -175,6 +175,22 @@
             <version>${archunit.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- ShedLock — distributed job-lock (ADR-0018 §1, JOB-001 ward-day accrual)
+             NOTE: ADR-0018 specifies 6.0.1 but that version is absent from the local offline
+             Maven repo; 5.16.0 is the latest version present locally. Using 5.16.0.
+             Behaviour is identical for the JDBC-template provider; upgrade to 6.x when internet
+             access is available. -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>5.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>5.16.0</version>
+        </dependency>
     </dependencies>
 
     <build>

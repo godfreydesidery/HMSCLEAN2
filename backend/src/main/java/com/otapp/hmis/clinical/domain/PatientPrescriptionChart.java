@@ -140,4 +140,38 @@ public class PatientPrescriptionChart extends AuditableEntity {
     /** Business day uid at time of record creation. */
     @Column(name = "business_day_uid", length = 26)
     private String businessDayUid;
+
+    /**
+     * Factory for the inpatient dosing-note write path (inc-07 07b — the write path
+     * deferred in C10 is now implemented in {@code PrescriptionChartPortImpl}).
+     *
+     * <p>Binds the chart to a prescription + a loose {@code admissionUid} + the administering
+     * {@code nurseUid} (the admission-context path; consultation/nonConsultation stay null —
+     * the V27 {@code num_nonnulls=1} CHECK is satisfied by {@code admission_uid}). The
+     * GIVEN-prescription guard and the admission-IN-PROCESS/nurse guards are enforced by the
+     * caller (PatientServiceImpl.java:2544, :2564-2577) before this factory is called.
+     *
+     * @param prescription mandatory parent prescription (must be GIVEN — guard upstream)
+     * @param admissionUid loose admission ref (the inpatient dosing-note context)
+     * @param patientUid   loose patient ref
+     * @param nurseUid     loose administering-nurse ref (required for the inpatient path)
+     * @param dosage       administered dosage free-text (nullable)
+     * @param output       observed output free-text (nullable)
+     * @param remark       remark free-text (nullable)
+     * @return a new chart entry (status defaults handled by the entity; status is not modelled
+     *         on this chart — legacy has no status column on patient_prescription_charts)
+     */
+    public static PatientPrescriptionChart createForAdmission(
+            Prescription prescription, String admissionUid, String patientUid, String nurseUid,
+            String dosage, String output, String remark) {
+        PatientPrescriptionChart chart = new PatientPrescriptionChart();
+        chart.prescription = prescription;
+        chart.admissionUid = admissionUid;
+        chart.patientUid = patientUid;
+        chart.nurseUid = nurseUid;
+        chart.dosage = dosage;
+        chart.output = output;
+        chart.remark = remark;
+        return chart;
+    }
 }

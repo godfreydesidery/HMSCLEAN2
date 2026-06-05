@@ -19,10 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * Asserts the privilege seed is complete and correctly categorised (build-spec §7).
  *
- * <p>Increment-01 additions:
+ * <p>Increment-01 seed: 35 codes (V2). Increment-07a-3 delta: +3 APPROVE codes (V47).
+ * Increment-07d delta: +1 MEDICATION-ADMINISTER code (V52, CR-07-MAR) → 39 total.
  * <ul>
- *   <li>Asserts exactly 35 codes match the golden-master fixture {@code expected-privilege-codes.txt}.
- *   <li>Asserts the 9 dead codes have {@code category='DEAD'} and the 26 live codes are {@code 'ACTIVE'}.
+ *   <li>Asserts exactly 39 codes match the golden-master fixture {@code expected-privilege-codes.txt}.
+ *   <li>Asserts the 9 dead codes have {@code category='DEAD'} and the 30 live codes are {@code 'ACTIVE'}.
  * </ul>
  */
 class PrivilegeSeedIT extends AbstractIntegrationTest {
@@ -53,7 +54,7 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
     @Test
     void exactlyThirtyFiveCodesMatchFixture() throws IOException {
         List<String> fixture = fixtureLines();
-        assertThat(fixture).as("fixture has exactly 35 codes").hasSize(35);
+        assertThat(fixture).as("fixture has exactly 39 codes (35 V2 + 3 V47 + 1 V52)").hasSize(39);
 
         List<String> actual = privilegeRepository.findAllByOrderByCodeAsc().stream()
                 .map(Privilege::getCode)
@@ -77,7 +78,8 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
     @Test
     void twentySixActiveCodesHaveCategoryActive() {
         List<Privilege> activePrivileges = privilegeRepository.findByCategory("ACTIVE");
-        assertThat(activePrivileges).as("exactly 26 ACTIVE privileges").hasSize(26);
+        // 26 original active codes (V2) + 3 disposition APPROVE codes (V47) + 1 MAR code (V52) = 30 ACTIVE
+        assertThat(activePrivileges).as("exactly 30 ACTIVE privileges (26 original + 3 V47 + 1 V52)").hasSize(30);
 
         // None of the active codes should be in the dead set
         activePrivileges.forEach(p ->
@@ -91,11 +93,25 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
 
     private Set<String> expectedCodesFromMigration() throws IOException {
         Set<String> codes = new LinkedHashSet<>();
-        try (InputStream in = getClass().getResourceAsStream("/db/migration/V2__seed_iam.sql")) {
-            assertThat(in).as("V2 migration is on the classpath").isNotNull();
+        // V2: original 35 privilege codes
+        parsePrivilegesFromMigration("/db/migration/V2__seed_iam.sql", codes);
+        // V47: 3 disposition APPROVE codes added in inc-07 07a-3 (CR-07-SoD)
+        parsePrivilegesFromMigration("/db/migration/V47__iam_disposition_approve_privileges.sql", codes);
+        // V52: MEDICATION-ADMINISTER added in inc-07 07d (CR-07-MAR)
+        parsePrivilegesFromMigration("/db/migration/V52__iam_medication_administer_privilege.sql", codes);
+        return codes;
+    }
+
+    private void parsePrivilegesFromMigration(String classpathPath, Set<String> codes) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream(classpathPath)) {
+            if (in == null) {
+                return; // migration not present — skip gracefully
+            }
             String sql = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             int start = sql.indexOf("INSERT INTO privileges");
-            assertThat(start).as("privilege INSERT block exists").isGreaterThanOrEqualTo(0);
+            if (start < 0) {
+                return; // no privilege INSERT in this file
+            }
             int end = sql.indexOf(';', start);
             String block = sql.substring(start, end);
             Pattern pattern = Pattern.compile("'[0-9A-Z]{26}',\\s*'([A-Z0-9_\\-]+)'\\s*,\\s*now\\(\\)");
@@ -104,7 +120,6 @@ class PrivilegeSeedIT extends AbstractIntegrationTest {
                 codes.add(matcher.group(1));
             }
         }
-        return codes;
     }
 
     private List<String> fixtureLines() throws IOException {

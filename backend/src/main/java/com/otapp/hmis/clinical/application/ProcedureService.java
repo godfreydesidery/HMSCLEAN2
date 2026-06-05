@@ -138,7 +138,10 @@ class ProcedureService implements ProcedurePort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null,  // description override — none
+                null   // admissionUid — null for outpatient procedure charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 
@@ -212,7 +215,10 @@ class ProcedureService implements ProcedurePort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null,  // description override — none
+                null   // admissionUid — null for outpatient procedure charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 

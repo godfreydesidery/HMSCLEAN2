@@ -1,6 +1,11 @@
 package com.otapp.hmis.clinical.application;
 
 import com.otapp.hmis.billing.api.BillingCommands;
+import com.otapp.hmis.clinical.api.AdmissionDispositionPort;
+import com.otapp.hmis.clinical.api.DeceasedNoteView;
+import com.otapp.hmis.clinical.api.RecordAdmissionDeceasedNoteCommand;
+import com.otapp.hmis.clinical.api.RecordAdmissionReferralCommand;
+import com.otapp.hmis.clinical.api.ReferralPlanView;
 import com.otapp.hmis.clinical.application.dto.DeceasedNoteDto;
 import com.otapp.hmis.clinical.application.dto.DeceasedNoteRequest;
 import com.otapp.hmis.clinical.application.dto.ReferralPlanDto;
@@ -107,7 +112,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
-class ClosureService implements ClosurePort {
+class ClosureService implements ClosurePort, AdmissionDispositionPort {
 
     private final ConsultationRepository    consultationRepository;
     private final DeceasedNoteRepository    deceasedNoteRepository;
@@ -208,9 +213,10 @@ class ClosureService implements ClosurePort {
 
         Consultation consultation = note.getConsultation();
         if (consultation == null) {
-            // Admission path — DEFERRED; this endpoint is OPD-only in C12
+            // Admission path — routed to approveAdmissionDeceasedNote (07a-3).
+            // The OPD approveDeceased endpoint should never be called for an admission note.
             throw new InvalidPatientOperationException(
-                    "Admission closure path is not yet supported (deferred)");
+                    "Use the inpatient disposition endpoint to approve an admission deceased note");
         }
 
         // Silent no-op: if consultation is not HELD, return unchanged (legacy behaviour)
@@ -367,9 +373,10 @@ class ClosureService implements ClosurePort {
 
         Consultation consultation = plan.getConsultation();
         if (consultation == null) {
-            // Admission path — DEFERRED
+            // Admission path — routed to approveAdmissionReferralPlan (07a-3).
+            // The OPD approveReferral endpoint should never be called for an admission plan.
             throw new InvalidPatientOperationException(
-                    "Admission referral closure path is not yet supported (deferred)");
+                    "Use the inpatient disposition endpoint to approve an admission referral plan");
         }
 
         // Bill-gate (referral gate — same UNPAID-only approximation via settled=false)
@@ -404,6 +411,257 @@ class ClosureService implements ClosurePort {
                 .stream()
                 .map(closureMapper::toDto)
                 .toList();
+    }
+
+    // =========================================================================
+    // AdmissionDispositionPort — admission-path save + approve (inc-07 07a-3)
+    // =========================================================================
+
+    /**
+     * Save or update a referral plan for an admission (inpatient path).
+     *
+     * <p>Idempotent: if a plan already exists for this admissionUid, update it in-place.
+     * Sets consultation=null, admissionUid from cmd. Does NOT transition the admission
+     * or publish any patient event — inpatient orchestrates those.
+     *
+     * <p>XOR validation: the SAME verbatim typo'd message is used for both the
+     * "both null" and "both non-null" branches:
+     * "Patient should be inpatient or outpatioent, but not both"
+     * (note 'outpatioent' — reproduce exactly per legacy).
+     *
+     * <p>Legacy citation: PatientResource.java:5593-5685 (save/approve referral — admission path).
+     */
+    @Override
+    @Transactional
+    public ReferralPlanView saveAdmissionReferralPlan(RecordAdmissionReferralCommand cmd,
+                                                      TxAuditContext ctx) {
+        // XOR guard: admissionUid must be non-null; cmd carries no consultationUid
+        if (isBlank(cmd.admissionUid())) {
+            throw new InvalidPatientOperationException(
+                    "Patient should be inpatient or outpatioent, but not both");
+        }
+
+        // externalMedicalProviderUid mandatory (CR-07-Q7)
+        if (isBlank(cmd.externalMedicalProviderUid())) {
+            throw new InvalidPatientOperationException(
+                    "External medical provider is required for referral");
+        }
+
+        ReferralPlan plan;
+        if (referralPlanRepository.existsByAdmissionUid(cmd.admissionUid())) {
+            plan = referralPlanRepository.findByAdmissionUid(cmd.admissionUid())
+                    .orElseThrow(() -> new NotFoundException("Referral plan not found"));
+            plan.updateNarrative(
+                    cmd.externalMedicalProviderUid(),
+                    cmd.referringDiagnosis(),
+                    cmd.history(),
+                    cmd.investigation(),
+                    cmd.management(),
+                    cmd.operationNote(),
+                    cmd.icuAdmissionNote(),
+                    cmd.generalRecommendation());
+            auditRecorder.record(AUDIT_ENTITY_REFERRAL, plan.getUid(), AuditAction.UPDATE,
+                    ctx.actorUsername());
+        } else {
+            plan = new ReferralPlan(
+                    cmd.admissionUid(),
+                    cmd.patientUid(),
+                    cmd.externalMedicalProviderUid(),
+                    cmd.referringDiagnosis(),
+                    cmd.history(),
+                    cmd.investigation(),
+                    cmd.management(),
+                    cmd.operationNote(),
+                    cmd.icuAdmissionNote(),
+                    cmd.generalRecommendation(),
+                    ctx.dayUid());
+            referralPlanRepository.save(plan);
+            auditRecorder.record(AUDIT_ENTITY_REFERRAL, plan.getUid(), AuditAction.CREATE,
+                    ctx.actorUsername());
+        }
+
+        return toReferralView(plan, ctx.actorUsername());
+    }
+
+    /**
+     * Save or update a deceased note for an admission (inpatient path).
+     *
+     * <p>Validates patientSummary AND causeOfDeath non-blank — verbatim 422
+     * "Summary and cause of death are missing" (PatientResource.java:5720-5730).
+     * Enforced here in the service, NOT via @NotBlank (adversarial-review BLOCKING item).
+     *
+     * <p>Idempotent: if a note already exists for this admissionUid, update it in-place.
+     * Does NOT transition the admission to HELD — inpatient does that. Does NOT free the bed.
+     *
+     * <p>Legacy citation: PatientResource.java:5693-5773 (save_deceased_note — admission path).
+     */
+    @Override
+    @Transactional
+    public DeceasedNoteView saveAdmissionDeceasedNote(RecordAdmissionDeceasedNoteCommand cmd,
+                                                      TxAuditContext ctx) {
+        // XOR guard: admissionUid must be non-null
+        if (isBlank(cmd.admissionUid())) {
+            throw new InvalidPatientOperationException(
+                    "Patient should be inpatient or outpatioent, but not both");
+        }
+
+        // Mandatory narrative guard — VERBATIM legacy message (PatientResource.java:5720-5730)
+        // Enforced in service, NOT @NotBlank (adversarial-review BLOCKING item)
+        if (isBlank(cmd.patientSummary()) || isBlank(cmd.causeOfDeath())) {
+            throw new InvalidPatientOperationException(
+                    "Summary and cause of death are missing");
+        }
+
+        DeceasedNote note;
+        if (deceasedNoteRepository.existsByAdmissionUid(cmd.admissionUid())) {
+            note = deceasedNoteRepository.findByAdmissionUid(cmd.admissionUid())
+                    .orElseThrow(() -> new NotFoundException("Deceased note not found"));
+            note.updateNarrative(
+                    cmd.patientSummary(),
+                    cmd.causeOfDeath(),
+                    cmd.deathDate(),
+                    cmd.deathTime());
+            auditRecorder.record(AUDIT_ENTITY_DECEASED, note.getUid(), AuditAction.UPDATE,
+                    ctx.actorUsername());
+        } else {
+            note = new DeceasedNote(
+                    cmd.admissionUid(),
+                    cmd.patientUid(),
+                    cmd.patientSummary(),
+                    cmd.causeOfDeath(),
+                    cmd.deathDate(),
+                    cmd.deathTime(),
+                    ctx.dayUid());
+            deceasedNoteRepository.save(note);
+            auditRecorder.record(AUDIT_ENTITY_DECEASED, note.getUid(), AuditAction.CREATE,
+                    ctx.actorUsername());
+        }
+
+        return toDeceasedView(note, ctx.actorUsername());
+    }
+
+    /**
+     * Approve a referral plan for an admission (inpatient path).
+     *
+     * <p>Asserts: plan exists, plan.admissionUid == admissionUid, plan.status == PENDING.
+     * Transitions PENDING→APPROVED with the real approver. Does NOT run bills gate or manage
+     * beds — inpatient orchestrates those before calling this method.
+     *
+     * <p>Legacy citation: PatientResource.java:5593-5685 (get_referral_summary approve —
+     * admission path; deferred stubs replaced in 07a-3).
+     */
+    @Override
+    @Transactional
+    public ReferralPlanView approveAdmissionReferralPlan(String referralUid, String admissionUid,
+                                                         TxAuditContext ctx) {
+        ReferralPlan plan = referralPlanRepository.findByUid(referralUid)
+                .orElseThrow(() -> new NotFoundException("Referral plan not found: " + referralUid));
+
+        // Ownership guard
+        if (!admissionUid.equals(plan.getAdmissionUid())) {
+            throw new InvalidPatientOperationException(
+                    "Referral plan does not belong to admission: " + admissionUid);
+        }
+
+        // Status guard — must be PENDING
+        if (plan.getStatus() != ReferralPlanStatus.PENDING) {
+            throw new InvalidPatientOperationException(
+                    "Referral plan is not in PENDING status: " + plan.getStatus());
+        }
+
+        plan.approve(ctx.actorUsername(), ctx.dayUid(), ctx.timestamp());
+        auditRecorder.record(AUDIT_ENTITY_REFERRAL, plan.getUid(), AuditAction.UPDATE,
+                ctx.actorUsername());
+
+        return toReferralView(plan, ctx.actorUsername());
+    }
+
+    /**
+     * Approve a deceased note for an admission (inpatient path).
+     *
+     * <p>Asserts: note exists, note.admissionUid == admissionUid, note.status == PENDING.
+     * Transitions PENDING→APPROVED with the real approver. Does NOT publish PatientDeceasedEvent
+     * — inpatient publishes that. Does NOT run the bills gate.
+     *
+     * <p>Legacy citation: PatientResource.java:5837-5934 (get_deceased_summary approve —
+     * admission path; deferred stubs replaced in 07a-3).
+     */
+    @Override
+    @Transactional
+    public DeceasedNoteView approveAdmissionDeceasedNote(String noteUid, String admissionUid,
+                                                         TxAuditContext ctx) {
+        DeceasedNote note = deceasedNoteRepository.findByUid(noteUid)
+                .orElseThrow(() -> new NotFoundException("Deceased note not found: " + noteUid));
+
+        // Ownership guard
+        if (!admissionUid.equals(note.getAdmissionUid())) {
+            throw new InvalidPatientOperationException(
+                    "Deceased note does not belong to admission: " + admissionUid);
+        }
+
+        // Status guard — must be PENDING
+        if (note.getStatus() != DeceasedNoteStatus.PENDING) {
+            throw new InvalidPatientOperationException(
+                    "Deceased note is not in PENDING status: " + note.getStatus());
+        }
+
+        note.approve(ctx.actorUsername(), ctx.dayUid(), ctx.timestamp());
+        auditRecorder.record(AUDIT_ENTITY_DECEASED, note.getUid(), AuditAction.UPDATE,
+                ctx.actorUsername());
+
+        return toDeceasedView(note, ctx.actorUsername());
+    }
+
+    // =========================================================================
+    // Private helpers — AdmissionDispositionPort view mappers
+    // =========================================================================
+
+    /**
+     * Map a {@link ReferralPlan} entity to a {@link ReferralPlanView}.
+     * The createdBy field is populated from the AuditableEntity.createdBy column.
+     */
+    private static ReferralPlanView toReferralView(ReferralPlan plan, String fallbackActor) {
+        // createdBy is set by AuditableEntity pre-persist; use it as the SoD creator identity.
+        // If null (e.g. for very old rows), fall back to fallbackActor.
+        String creator = plan.getCreatedBy() != null ? plan.getCreatedBy() : fallbackActor;
+        return new ReferralPlanView(
+                plan.getUid(),
+                plan.getAdmissionUid(),
+                plan.getPatientUid(),
+                plan.getExternalMedicalProviderUid(),
+                plan.getReferringDiagnosis(),
+                plan.getHistory(),
+                plan.getInvestigation(),
+                plan.getManagement(),
+                plan.getOperationNote(),
+                plan.getIcuAdmissionNote(),
+                plan.getGeneralRecommendation(),
+                plan.getStatus().name(),
+                creator,
+                plan.getApprovedByUserUid(),
+                plan.getApprovedAt(),
+                plan.getCreatedAt());
+    }
+
+    /**
+     * Map a {@link DeceasedNote} entity to a {@link DeceasedNoteView}.
+     * The createdBy field is populated from the AuditableEntity.createdBy column.
+     */
+    private static DeceasedNoteView toDeceasedView(DeceasedNote note, String fallbackActor) {
+        String creator = note.getCreatedBy() != null ? note.getCreatedBy() : fallbackActor;
+        return new DeceasedNoteView(
+                note.getUid(),
+                note.getAdmissionUid(),
+                note.getPatientUid(),
+                note.getPatientSummary(),
+                note.getCauseOfDeath(),
+                note.getDeathDate(),
+                note.getDeathTime(),
+                note.getStatus().name(),
+                creator,
+                note.getApprovedByUserUid(),
+                note.getApprovedAt(),
+                note.getCreatedAt());
     }
 
     // =========================================================================

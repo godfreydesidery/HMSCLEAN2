@@ -39,6 +39,22 @@ public interface DeceasedNoteRepository extends JpaRepository<DeceasedNote, Long
     boolean existsByConsultation(Consultation consultation);
 
     /**
+     * Find the deceased note for a specific admission (inpatient path — loose uid, inc-07 07a-3).
+     *
+     * @param admissionUid the loose uid of the owning admission
+     * @return the note for this admission, if any
+     */
+    Optional<DeceasedNote> findByAdmissionUid(String admissionUid);
+
+    /**
+     * Check whether a deceased note already exists for the given admission.
+     *
+     * @param admissionUid the loose uid of the owning admission
+     * @return true if a note already exists
+     */
+    boolean existsByAdmissionUid(String admissionUid);
+
+    /**
      * List all deceased notes with status in PENDING or APPROVED (ARCHIVED is hidden).
      *
      * <p>Legacy citation: PatientResource.java:5826 (load_deceased_list hides ARCHIVED).

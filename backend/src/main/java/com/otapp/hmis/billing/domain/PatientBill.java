@@ -147,6 +147,21 @@ public class PatientBill extends AuditableEntity {
     @JoinColumn(name = "supplementary_bill_id")
     private PatientBill supplementaryBill;
 
+    /**
+     * Loose cross-module ref to the admission that generated this charge (nullable).
+     *
+     * <p>Populated only for ward-bed and consumable charges created during an inpatient
+     * admission (inc-07 07a). Null for all outpatient / OTC / registration charges.
+     * Used by {@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills}
+     * to scan all bills linked to an admission for the discharge gate
+     * (PatientResource.java:5342-5357).
+     *
+     * <p>Column added by V45 migration (nullable VARCHAR(26) — no physical FK; the admission
+     * lives in the inpatient module, a different bounded context, ADR-0008 §1).
+     */
+    @Column(name = "admission_uid", length = 26)
+    private String admissionUid;
+
     /** Loose cross-module ref to the business day. */
     @NotBlank
     @Column(name = "business_day_uid", length = 26, nullable = false)
@@ -274,6 +289,50 @@ public class PatientBill extends AuditableEntity {
     public void markSettled(java.time.Instant at) {
         this.settled = true;
         this.settledAt = at;
+    }
+
+    /**
+     * Override the {@code billItem} label and/or {@code description} on this bill
+     * (inc-07 CR-07-Q13-billing-display).
+     *
+     * <p>Used exclusively by {@code BillingCommandsImpl.recordClinicalCharge} when the
+     * {@link com.otapp.hmis.billing.api.ChargeRequest} carries non-null {@code billItem} or
+     * {@code description} overrides — e.g. {@code "Medication"} / {@code "Consumable: <name>"}
+     * for inpatient consumable/dressing charges. When the caller passes {@code null} for either
+     * field this method is not called; the bill retains the {@code labelFor(kind)} default set
+     * at construction. Existing caller output is therefore fully preserved (no behavioural change
+     * on any existing path).
+     *
+     * <p>Both parameters are nullable; a null value leaves the corresponding field unchanged.
+     * Neither field may ever contain PHI.
+     *
+     * @param billItem    replacement bill-item label (nullable)
+     * @param description replacement description (nullable)
+     */
+    public void overrideBillLabels(String billItem, String description) {
+        if (billItem != null) {
+            this.billItem = billItem;
+        }
+        if (description != null) {
+            this.description = description;
+        }
+    }
+
+    /**
+     * Link this bill to an inpatient admission (inc-07 07a).
+     *
+     * <p>Set at ward-bed charge creation time so that
+     * {@link com.otapp.hmis.billing.api.BillingQueries#admissionHasOutstandingBills} can scan
+     * outstanding bills by admission uid (discharge gate — PatientResource.java:5342-5357).
+     * Null for all non-admission charges (outpatient, OTC, registration).
+     *
+     * <p>Called by {@code BillingCommandsImpl.recordClinicalCharge} when
+     * {@link com.otapp.hmis.billing.api.ChargeRequest#admissionUid()} is non-null.
+     *
+     * @param admissionUid loose uid of the owning admission (no FK — ADR-0008 §1)
+     */
+    public void linkAdmission(String admissionUid) {
+        this.admissionUid = admissionUid;
     }
 
     /**

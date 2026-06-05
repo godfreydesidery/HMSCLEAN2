@@ -111,6 +111,28 @@ public class GlobalExceptionHandler {
         return toResponse(ErrorCode.INTERNAL, ErrorCode.INTERNAL.title(), request);
     }
 
+    /**
+     * Optimistic-locking failure on a {@code @Version} aggregate → clean 409 {@code STALE_ENTITY}
+     * (inc-07 CR-07-Q3 bundled dependency, ADR-0017 ratified).
+     *
+     * <p>Without this handler an {@code ObjectOptimisticLockingFailureException} (raised by
+     * Hibernate when a concurrent writer bumped the {@code @Version} between read and flush)
+     * falls through to the catch-all 500 above — misleading to the client, which cannot tell a
+     * transient lost-update race from a genuine server fault. The bed-claim race is the motivating
+     * case (CR-07-Q3): the PESSIMISTIC_WRITE lock on the {@code WardBed} master row prevents the
+     * lost update at source, but any other {@code @Version} aggregate that loses a race surfaces
+     * here as a retriable 409 rather than a 500. The raw message is NOT echoed (it can leak the
+     * entity class + id); the stable {@code urn:hmis:error:stale-entity} type lets the Angular
+     * client reload-and-retry.
+     */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ProblemDetail> handleOptimisticLock(
+            org.springframework.orm.ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+        String path = request != null ? request.getRequestURI() : "?";
+        log.warn("Optimistic-lock conflict handling {}: {}", path, ex.toString());
+        return toResponse(ErrorCode.STALE_ENTITY, ErrorCode.STALE_ENTITY.title(), request);
+    }
+
     private ResponseEntity<ProblemDetail> toResponse(ErrorCode code, String detail, HttpServletRequest request) {
         HttpStatus status = code.status();
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail != null ? detail : code.title());

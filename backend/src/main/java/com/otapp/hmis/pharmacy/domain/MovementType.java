@@ -38,5 +38,21 @@ public enum MovementType {
     TRANSFER_IN,
 
     /** Manual absolute stock overwrite ("Stock Update"). */
-    ADJUSTMENT
+    ADJUSTMENT,
+
+    /**
+     * Inpatient consumable issue — stock decremented when a consumable medicine is recorded
+     * on a patient's consumable chart during an admission (CR-07-consumable-stock, inc-07 07c).
+     * Net-new movement kind: the legacy system billed consumables but did NOT touch pharmacy
+     * stock (billing-only path). This value classifies the stock-card OUT row that we add
+     * to keep stock consistent when a consumable is issued to an inpatient.
+     */
+    CONSUMPTION,
+
+    /**
+     * Reversal of a consumable issue — stock credited back when a consumable chart is deleted
+     * within the 24-hour window (CR-07-consumable-stock, inc-07 07c). Aggregate-only increment;
+     * no batch is re-created (the consumed FEFO lots cannot be meaningfully un-walked).
+     */
+    CONSUMPTION_REVERSAL
 }

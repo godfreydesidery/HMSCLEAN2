@@ -153,7 +153,10 @@ class LabTestService implements LabTestPort {
                 BigDecimal.ONE,
                 paymentMode,
                 false, // outpatient
-                false  // not a follow-up
+                false, // not a follow-up
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null,  // description override — none
+                null   // admissionUid — null for outpatient lab charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 
@@ -234,7 +237,10 @@ class LabTestService implements LabTestPort {
                 BigDecimal.ONE,
                 paymentMode,
                 false, // outsider = not inpatient
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null,  // description override — none
+                null   // admissionUid — null for non-consultation lab charges (inc-07 07a)
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 

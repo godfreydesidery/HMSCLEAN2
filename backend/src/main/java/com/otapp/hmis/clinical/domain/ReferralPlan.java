@@ -235,8 +235,97 @@ public class ReferralPlan extends AuditableEntity {
     }
 
     // -------------------------------------------------------------------------
+    // Business constructor — Admission/inpatient path
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a new PENDING referral plan bound to an admission (inpatient path — inc-07 07a-3).
+     *
+     * <p>XOR-context: {@code consultation = null}, {@code admissionUid} set. V28 CHECK
+     * constraint {@code num_nonnulls(consultation_id, admission_uid) = 1} is satisfied.
+     *
+     * <p>Guards (enforced by the service layer before calling this):
+     * <ul>
+     *   <li>externalMedicalProviderUid is non-blank (CR-07-Q7 — mandatory for admission path).</li>
+     *   <li>No existing ReferralPlan for this admission (service creates only if absent).</li>
+     * </ul>
+     *
+     * <p>Legacy citation: PatientResource.java:5593-5685 (get_referral_summary for admission path).
+     *
+     * @param admissionUid                 loose uid of the owning admission
+     * @param patientUid                   loose uid of the patient
+     * @param externalMedicalProviderUid   MANDATORY loose uid of the external provider
+     * @param referringDiagnosis           narrative (nullable)
+     * @param history                      narrative (nullable)
+     * @param investigation                narrative (nullable)
+     * @param management                   narrative (nullable)
+     * @param operationNote                narrative (nullable)
+     * @param icuAdmissionNote             narrative (nullable)
+     * @param generalRecommendation        narrative (nullable)
+     * @param businessDayUid               loose uid of the current open business day
+     */
+    public ReferralPlan(String admissionUid,
+                        String patientUid,
+                        String externalMedicalProviderUid,
+                        String referringDiagnosis,
+                        String history,
+                        String investigation,
+                        String management,
+                        String operationNote,
+                        String icuAdmissionNote,
+                        String generalRecommendation,
+                        String businessDayUid) {
+        this.consultation = null; // inpatient path — no consultation
+        this.admissionUid = admissionUid;
+        this.patientUid = patientUid;
+        this.externalMedicalProviderUid = externalMedicalProviderUid;
+        this.referringDiagnosis = referringDiagnosis;
+        this.history = history;
+        this.investigation = investigation;
+        this.management = management;
+        this.operationNote = operationNote;
+        this.icuAdmissionNote = icuAdmissionNote;
+        this.generalRecommendation = generalRecommendation;
+        this.status = ReferralPlanStatus.PENDING;
+        this.businessDayUid = businessDayUid;
+    }
+
+    // -------------------------------------------------------------------------
     // Domain methods — lifecycle
     // -------------------------------------------------------------------------
+
+    /**
+     * Update the narrative fields of an existing plan (reuse-if-exists pattern — admission path).
+     *
+     * <p>Called when {@code saveAdmissionReferralPlan} is invoked but a plan already exists for
+     * this admission. Mirrors the {@code DeceasedNote.updateNarrative} pattern.
+     *
+     * @param externalMedicalProviderUid MANDATORY loose uid of the external provider (may change)
+     * @param referringDiagnosis         updated diagnosis narrative (nullable)
+     * @param history                    updated history narrative (nullable)
+     * @param investigation              updated investigation narrative (nullable)
+     * @param management                 updated management narrative (nullable)
+     * @param operationNote              updated operation note narrative (nullable)
+     * @param icuAdmissionNote           updated ICU note narrative (nullable)
+     * @param generalRecommendation      updated recommendation narrative (nullable)
+     */
+    public void updateNarrative(String externalMedicalProviderUid,
+                                String referringDiagnosis,
+                                String history,
+                                String investigation,
+                                String management,
+                                String operationNote,
+                                String icuAdmissionNote,
+                                String generalRecommendation) {
+        this.externalMedicalProviderUid = externalMedicalProviderUid;
+        this.referringDiagnosis = referringDiagnosis;
+        this.history = history;
+        this.investigation = investigation;
+        this.management = management;
+        this.operationNote = operationNote;
+        this.icuAdmissionNote = icuAdmissionNote;
+        this.generalRecommendation = generalRecommendation;
+    }
 
     /**
      * Approve the plan: PENDING → APPROVED.

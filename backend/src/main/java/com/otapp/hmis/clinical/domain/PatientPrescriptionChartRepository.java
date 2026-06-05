@@ -37,4 +37,13 @@ public interface PatientPrescriptionChartRepository
      * @return chart entries for this patient, newest first
      */
     List<PatientPrescriptionChart> findByPatientUidOrderByCreatedAtDesc(String patientUid);
+
+    /**
+     * All dosing-note chart entries for a given admission (loose uid), oldest first
+     * (inc-07 07b — the inpatient dosing-note read surface).
+     *
+     * @param admissionUid the ULID of the admission
+     * @return chart entries bound to this admission, oldest first
+     */
+    List<PatientPrescriptionChart> findByAdmissionUidOrderByCreatedAtAsc(String admissionUid);
 }

@@ -92,6 +92,125 @@ public interface BillingCommands {
                               BigDecimal qty, BigDecimal unitPrice, TxAuditContext ctx);
 
     /**
+     * Record an UNPAID supplementary "Ward Bed / Room (Top up)" bill for the insurance top-up
+     * delta (cash ward price minus covered plan price) and wire the bidirectional
+     * principal&harr;supplementary self-link on {@code PatientBill}.
+     *
+     * <p><strong>Option B / CR-07-WARD-INS-PRICE — genuinely load-bearing top-up:</strong>
+     * When {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)} returns a covered price
+     * that is <em>less than</em> the WardType cash price, the patient owes the difference at the
+     * cashier. This method creates the UNPAID top-up bill for that difference:
+     * <ul>
+     *   <li>billItem = {@code "Bed"} (verbatim legacy PatientServiceImpl.java:1889)</li>
+     *   <li>description = {@code "Ward Bed / Room (Top up)"} (verbatim legacy :1890)</li>
+     *   <li>paymentType = {@code CASH} (the top-up is collected from the patient at the cashier)</li>
+     *   <li>amount = {@code diff} (NUMERIC 19,2 HALF_UP; {@code diff = cashPrice - coveredPrice > 0})</li>
+     *   <li>status = {@code UNPAID}</li>
+     *   <li>{@code admission_uid} linked so the discharge-gate includes this bill
+     *       ({@link BillingQueries#admissionHasOutstandingBills})</li>
+     *   <li>Bidirectional link: {@code supplementaryBill.principalBill = principalBill} (the COVERED
+     *       bill) AND {@code principalBill.supplementaryBill = supplementaryBill} (the new top-up)
+     *       using the existing self-ref columns on {@link com.otapp.hmis.billing.domain.PatientBill}
+     *       (PatientBill.java:65-73).</li>
+     * </ul>
+     *
+     * <p>Runs inside the caller's (inpatient) transaction (Propagation.REQUIRED). The returned uid
+     * is stored on {@code AdmissionBed.patientBillUid} so the
+     * {@link com.otapp.hmis.inpatient.application.AdmissionSettlementListener} fires when the top-up
+     * is paid — activating the admission to IN-PROCESS and occupying the bed.
+     *
+     * <p><strong>Parameters are Strings/BigDecimal only — no billing domain type crosses the module
+     * boundary (ADR-0008 §1).</strong>
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1880-1897 (supplementary bill creation, top-up
+     * branch). Option B / CR-07-WARD-INS-PRICE makes this branch genuinely load-bearing (the legacy
+     * top-up guard was always-false dead code — see docs/delivery/increments/07-inpatient-discovery/
+     * 06-AMBIGUITY-WARD-INSURANCE-PRICE.md).
+     *
+     * @param principalBillUid  uid of the COVERED principal ward bill (created by
+     *                          {@link #recordClinicalCharge} for the insurance hit)
+     * @param patientUid        loose uid of the patient
+     * @param admissionUid      loose uid of the owning admission (linked for discharge gate)
+     * @param amount            the top-up amount ({@code cashPrice - coveredPrice}, must be &gt; 0;
+     *                          caller ensures this precondition)
+     * @param ctx               transaction audit context (dayUid, actor, timestamp)
+     * @return the uid of the newly created UNPAID supplementary top-up {@code PatientBill}
+     */
+    String recordWardTopUp(String principalBillUid, String patientUid,
+                           String admissionUid, java.math.BigDecimal amount,
+                           com.otapp.hmis.shared.domain.TxAuditContext ctx);
+
+    /**
+     * Record a ward-day accrual bill for a single ongoing inpatient admission.
+     *
+     * <p><strong>Accrual billing seam (inc-07 07c-ii, ADR-0018 JOB-001):</strong>
+     * The nightly ward-day accrual creates a bill that is VERIFIED (cash) or COVERED (insurance).
+     * This is distinct from the admission-time ward bill (which is UNPAID/COVERED) — accrued bills
+     * are always VERIFIED (cash) or COVERED (insurance) per legacy
+     * {@code UpdatePatient.java:311} ({@code status="VERIFIED"}) and {@code :365} ({@code status="COVERED"}).
+     *
+     * <p><strong>Why a dedicated method (not recordClinicalCharge):</strong>
+     * {@code recordClinicalCharge} with {@code kind=WARD, inpatient=true, paymentType=CASH}
+     * routes through the two-step engine: STEP1 builds UNPAID, STEP2 attempts coverage
+     * (coverageAttempt=true when isInpatient=true), resolve(null, WARD, wardTypeUid) returns the
+     * cash row (no plan hit), then {@code applyNotCoveredFallback(WARD)} is a NO-OP — leaving the
+     * bill UNPAID, not VERIFIED. The accrual requires VERIFIED for cash. A dedicated seam that
+     * creates VERIFIED directly avoids patching the general charge engine.
+     *
+     * <p><strong>CASH path:</strong> creates a PatientBill at {@code wardPrice} (NUMERIC 19,2
+     * HALF_UP) with {@code status=VERIFIED}, {@code billItem="Bed"},
+     * {@code description="Ward Bed / Room"} — verbatim legacy {@code UpdatePatient.java:309-311}.
+     * Bill is NOT added to any invoice accumulator (VERIFIED cash accruals are paid at the cashier
+     * window, not through an insurance invoice — same as the legacy direct save at :325).
+     *
+     * <p><strong>INSURANCE path (Option B, CR-07-WARD-INS-PRICE):</strong> resolves the covered
+     * price via {@code PriceLookup.resolve(planUid, WARD, wardTypeUid)} — mirroring the 07a-2
+     * admission insurance path. Creates a COVERED bill at the plan price and attaches it to the
+     * PENDING insurance invoice accumulator (same as the admission-time insurance bill path).
+     * If covered price &lt; ward cash price (diff &gt; 0), also creates a VERIFIED supplementary
+     * top-up bill for the diff. Returns the principal bill uid.
+     *
+     * <p>Runs inside the caller's (inpatient accrual job) transaction (Propagation.REQUIRED).
+     * No billing domain type crosses the module boundary (ADR-0008 §1).
+     *
+     * <p>Legacy citation: {@code UpdatePatient.java:304-437} (accrued ward bill creation;
+     * insurance branch :340-437). Option B / CR-07-WARD-INS-PRICE for the insurance sub-path.
+     *
+     * @param patientUid       loose uid of the patient
+     * @param admissionUid     loose uid of the admission (linked for discharge-gate scanning)
+     * @param wardTypeUid      loose uid of the ward type (price key)
+     * @param wardPrice        the WardType cash price (NUMERIC 19,2 HALF_UP — caller resolves)
+     * @param insurancePlanUid loose uid of the insurance plan (null for CASH patients)
+     * @param membershipNo     insurance membership number (null for CASH patients)
+     * @param ctx              transaction audit context (dayUid, actor, timestamp)
+     * @return the uid of the newly created principal accrued PatientBill (VERIFIED or COVERED)
+     */
+    String recordWardAccrual(String patientUid, String admissionUid,
+                             String wardTypeUid, java.math.BigDecimal wardPrice,
+                             String insurancePlanUid, String membershipNo,
+                             com.otapp.hmis.shared.domain.TxAuditContext ctx);
+
+    /**
+     * Approve all PENDING invoices linked to the given admission.
+     *
+     * <p>Collects all {@code PatientBill.uid} values where {@code PatientBill.admissionUid}
+     * matches the given uid, then delegates to {@link #approveInvoicesForBills} to flip their
+     * parent invoices PENDING→APPROVED.
+     *
+     * <p>Reproduces the legacy discharge/referral/deceased invoice-approve side-effect
+     * (PatientResource.java:5354-5357, :5626-5631, :5884-5887 — all three use the same
+     * admission-level approve pattern). The inpatient {@code DispositionService} calls this
+     * instead of the consultation-scoped {@link #approveInvoicesForBills} overload.
+     *
+     * <p>Runs inside the caller's (inpatient) transaction (Propagation.REQUIRED).
+     * Parameters are Strings only — no billing domain type crosses the module boundary (ADR-0008 §1).
+     *
+     * @param admissionUid the ULID of the admission whose invoices should be approved
+     * @param ctx          transaction audit context (dayUid, actor)
+     */
+    void approveInvoicesForAdmission(String admissionUid, TxAuditContext ctx);
+
+    /**
      * Approve all PENDING invoices whose details contain any of the supplied bill uids.
      *
      * <p>Used by {@code ClosureService.approveDeceased} to reproduce the legacy

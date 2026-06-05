@@ -58,6 +58,15 @@ hmis:
     base-path: ${HMIS_ATTACHMENTS_PATH:}
     # 10 MiB cap — verbatim legacy guard (PatientServiceImpl.java:2842-2844).
     max-file-size-bytes: 10485760
+  # Background scheduling (ADR-0018, inc-07 07c-ii / CR-07-Q2). Enabled by default; tests set
+  # hmis.scheduling.enabled=false so the ward-accrual cron + ShedLock do not fire during the suite.
+  scheduling:
+    enabled: ${HMIS_SCHEDULING_ENABLED:true}
+  jobs:
+    ward-accrual:
+      # ADR-0018 JOB-001: 00:05 daily. Calendar-night cron (net-new MECHANISM; the accrual
+      # TOTAL/STATUS semantics are legacy parity — CR-07-Q2 accepted the midnight-vs-rolling-24h variance).
+      cron: ${HMIS_WARD_ACCRUAL_CRON:0 5 0 * * *}
 
 management:
   endpoints:

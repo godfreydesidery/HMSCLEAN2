@@ -42,6 +42,22 @@ public interface ReferralPlanRepository extends JpaRepository<ReferralPlan, Long
     boolean existsByConsultationAndStatus(Consultation consultation, ReferralPlanStatus status);
 
     /**
+     * Find the referral plan for a specific admission (inpatient path — loose uid, inc-07 07a-3).
+     *
+     * @param admissionUid the loose uid of the owning admission
+     * @return the plan for this admission, if any
+     */
+    Optional<ReferralPlan> findByAdmissionUid(String admissionUid);
+
+    /**
+     * Check whether a referral plan already exists for the given admission.
+     *
+     * @param admissionUid the loose uid of the owning admission
+     * @return true if a plan already exists
+     */
+    boolean existsByAdmissionUid(String admissionUid);
+
+    /**
      * List all referral plans with status in PENDING or APPROVED (ARCHIVED is hidden).
      *
      * <p>Mirrors the deceased list pattern (PatientResource.java:5826 — ARCHIVED hidden).

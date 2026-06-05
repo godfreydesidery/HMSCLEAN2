@@ -180,7 +180,10 @@ public class PatientRegistrationProcess {
                 BigDecimal.ONE,
                 mapPaymentMode(req.paymentType()),
                 false,                      // inpatient: always false at registration (CR-12)
-                false);                     // followUp: REGISTRATION is never a follow-up
+                false,                      // followUp: REGISTRATION is never a follow-up
+                null,                       // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null,                       // description override — none
+                null);                      // admissionUid — null for registration charges (inc-07 07a)
 
         ChargeResult result = billingCommands.recordClinicalCharge(chargeReq, ctx);
 
@@ -482,7 +485,10 @@ public class PatientRegistrationProcess {
                         BigDecimal.ONE,
                         mapPaymentMode(patient.getPaymentType()),
                         false,                    // inpatient: always false for OPD send-to-doctor
-                        req.followUp()),
+                        req.followUp(),
+                        null,                     // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                        null,                     // description override — none
+                        null),                    // admissionUid — null for OPD consultation charges (inc-07 07a)
                 ctx);
 
         // Step 6 — persist SUBSEQUENT Visit unconditionally (no same-day dedup, AC3.6)
