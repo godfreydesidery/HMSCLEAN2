@@ -20,7 +20,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: readonly NavItem[] = [
-  { label: 'Registration', route: '/registration', icon: 'bi-person-plus',     privilege: 'PATIENT-ALL',            enabled: false },
+  { label: 'Registration', route: '/registration', icon: 'bi-person-plus',     privilege: 'PATIENT-ALL',            enabled: true  },
   { label: 'Outpatient',   route: '/outpatient',   icon: 'bi-clipboard-pulse', privilege: 'PATIENT-ALL',            enabled: false },
   { label: 'Inpatient',    route: '/inpatient',    icon: 'bi-hospital',        privilege: 'PATIENT-ALL',            enabled: true  },
   { label: 'Pharmacy',     route: '/pharmacy',     icon: 'bi-capsule',         privilege: 'PHARMACY_ORDER-ALL',     enabled: false },
