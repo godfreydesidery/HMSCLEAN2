@@ -33,6 +33,25 @@ class BillingQueriesImpl implements BillingQueries {
                 .getStatus();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>TODO(07a/07c): {@code PatientBill} carries no {@code admissionUid} column in the
+     * current schema. Once chunk 07a/07c adds that column and populates it at ward/consumable
+     * charge time, replace this stub with a real query such as:
+     * {@code patientBillRepository.existsByAdmissionUidAndStatusIn(admissionUid,
+     *     List.of(BillStatus.UNPAID, BillStatus.VERIFIED))}.
+     * Until then this method safely returns {@code false} — the discharge gate in the inpatient
+     * module will not fire prematurely (PatientResource.java:5342-5357, :5593-5603, :5851-5882).
+     */
+    @Override
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
+    public boolean admissionHasOutstandingBills(String admissionUid) {
+        // TODO(07a/07c): no admission_uid linkage on PatientBill yet — returns false until
+        // chunk 07a/07c adds the column and the real query (see BillingQueries javadoc).
+        return false;
+    }
+
     @Override
     @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
     public boolean worklistAdmits(String billUid, boolean inpatient) {

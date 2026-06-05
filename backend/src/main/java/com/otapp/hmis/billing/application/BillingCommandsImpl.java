@@ -73,6 +73,15 @@ class BillingCommandsImpl implements BillingCommands {
                 req.followUp(),
                 ctx);
 
+        // inc-07 CR-07-Q13-billing-display: when the caller supplies explicit bill-item /
+        // description overrides (e.g. "Medication" / "Consumable: <name>" for inpatient
+        // consumable charges), apply them now.  When both fields are null — which is the case
+        // for ALL existing callers — overrideBillLabels is not called and the bill retains the
+        // labelFor(kind) default set by BillingChargeService.  Existing output is unchanged.
+        if (req.billItem() != null || req.description() != null) {
+            bill.overrideBillLabels(req.billItem(), req.description());
+        }
+
         // Derive coverage status from bill status for the result record
         CoverageStatus coverage = switch (bill.getStatus()) {
             case COVERED  -> CoverageStatus.COVERED;

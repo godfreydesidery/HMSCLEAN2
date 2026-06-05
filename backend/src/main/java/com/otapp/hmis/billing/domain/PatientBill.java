@@ -277,6 +277,33 @@ public class PatientBill extends AuditableEntity {
     }
 
     /**
+     * Override the {@code billItem} label and/or {@code description} on this bill
+     * (inc-07 CR-07-Q13-billing-display).
+     *
+     * <p>Used exclusively by {@code BillingCommandsImpl.recordClinicalCharge} when the
+     * {@link com.otapp.hmis.billing.api.ChargeRequest} carries non-null {@code billItem} or
+     * {@code description} overrides — e.g. {@code "Medication"} / {@code "Consumable: <name>"}
+     * for inpatient consumable/dressing charges. When the caller passes {@code null} for either
+     * field this method is not called; the bill retains the {@code labelFor(kind)} default set
+     * at construction. Existing caller output is therefore fully preserved (no behavioural change
+     * on any existing path).
+     *
+     * <p>Both parameters are nullable; a null value leaves the corresponding field unchanged.
+     * Neither field may ever contain PHI.
+     *
+     * @param billItem    replacement bill-item label (nullable)
+     * @param description replacement description (nullable)
+     */
+    public void overrideBillLabels(String billItem, String description) {
+        if (billItem != null) {
+            this.billItem = billItem;
+        }
+        if (description != null) {
+            this.description = description;
+        }
+    }
+
+    /**
      * Wire up the ward top-up self-link on the principal covered bill.
      * CR-11 schema plumbing only in P1 — selection logic deferred.
      */

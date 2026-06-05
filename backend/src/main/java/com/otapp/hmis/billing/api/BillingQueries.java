@@ -40,6 +40,39 @@ public interface BillingQueries {
     BillStatus getBillStatus(String billUid);
 
     /**
+     * Whether the given admission has any outstanding (UNPAID or VERIFIED) bills.
+     *
+     * <p>Reproduces the legacy bills-cleared discharge gate
+     * (PatientResource.java:5342-5357 discharge, :5593-5603 referral, :5851-5882 deceased):
+     * legacy rejects the summary if ANY bill linked to the admission's invoices is UNPAID or
+     * VERIFIED, across ALL service kinds (ward, consumable, pharmacy, lab, radiology,
+     * procedure). Insurance-covered bills are neither UNPAID nor VERIFIED, so insurance
+     * patients pass automatically.
+     *
+     * <p>This scan lives in {@code billing} because {@link PatientBill} and
+     * {@link PatientInvoice} are owned here; the {@code inpatient} module cannot enumerate
+     * lab/radiology/pharmacy bills directly.
+     *
+     * <p><strong>TODO(07a/07c):</strong> the {@code admission_uid} linkage column on ward and
+     * consumable bills is populated when those bills are created in chunk 07a/07c. Until that
+     * column exists and is populated on the billing side this method returns {@code false} for
+     * every call — it compiles and satisfies the discharge gate contract but yields no positive
+     * results. Once chunk 07a/07c adds {@code PatientBill.admissionUid} and populates it at
+     * charge time, this query must be updated to scan by that column.
+     *
+     * <p>Investigation result (inc-07 chunk P): {@code PatientBill}, {@code PatientInvoice},
+     * and {@code PatientInvoiceDetail} carry NO {@code admissionUid} column in the current
+     * schema. There is therefore no admission-linkage path in the billing domain yet. The
+     * method body returns {@code false} as a safe compile-passing stub until 07a/07c adds
+     * the column and the real query.
+     *
+     * @param admissionUid the loose uid of the admission whose bills are to be checked
+     * @return {@code true} if ANY bill linked to this admission is UNPAID or VERIFIED;
+     *         {@code false} otherwise (including when no linkage column exists yet — 07a/07c)
+     */
+    boolean admissionHasOutstandingBills(String admissionUid);
+
+    /**
      * Whether a bill admits dispensing on the pharmacy worklist FILTER (inc-08a, Q1; AC-RX-PRE-03/04).
      *
      * <p>Reproduces the legacy pharmacy-worklist bill-status filter verbatim

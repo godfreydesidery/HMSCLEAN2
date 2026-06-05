@@ -66,4 +66,26 @@ public class WardBed extends AuditableEntity {
         this.status = status;
         this.active = active;
     }
+
+    /**
+     * Mutate ONLY the {@code status} field, leaving {@code no} and {@code active} unchanged.
+     *
+     * <p>Used by {@code WardBedClaimImpl} (in {@code masterdata.application}) for the three
+     * atomic bed-state transitions driven by the inpatient lifecycle:
+     * EMPTY → WAITING ({@code claimBed}), WAITING → OCCUPIED ({@code occupyBed}),
+     * * → EMPTY ({@code freeBed}).
+     *
+     * <p>The broader {@link #update} method is NOT used here because the bed-claim seam must
+     * not overwrite {@code no} or {@code active} as a side-effect — those fields are managed
+     * by the masterdata admin path only (WardBed.java:64-68, inc-07 SEAM-1).
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:1703-1711 (claimBed guard sets WAITING);
+     * PatientBillResource.java:352-365 (payment-driven OCCUPIED); get_*_summary frees bed.
+     * CR-07-Q3 / ADR-0017 ratified.
+     *
+     * @param status the new free-text status value (EMPTY / WAITING / OCCUPIED — CR-16)
+     */
+    public void changeStatus(String status) {
+        this.status = status;
+    }
 }

@@ -138,7 +138,9 @@ class ProcedureService implements ProcedurePort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null   // description override — none
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 
@@ -212,7 +214,9 @@ class ProcedureService implements ProcedurePort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null   // description override — none
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 

@@ -154,7 +154,9 @@ class RadiologyService implements RadiologyPort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null   // description override — none
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 
@@ -227,7 +229,9 @@ class RadiologyService implements RadiologyPort {
                 BigDecimal.ONE,
                 paymentMode,
                 false,
-                false
+                false,
+                null,  // billItem override — none (CR-07-Q13; inpatient consumable path only)
+                null   // description override — none
         );
         ChargeResult chargeResult = billingCommands.recordClinicalCharge(chargeRequest, ctx);
 

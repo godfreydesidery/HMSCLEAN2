@@ -23,6 +23,16 @@ import java.math.BigDecimal;
  * @param followUp     true if this is a follow-up consultation (no charge — CR-20);
  *                     only meaningful when {@code kind == CONSULTATION}; must be
  *                     {@code false} for all other service kinds
+ * @param billItem     optional override for the legacy {@code bill_item} label on the
+ *                     created {@link com.otapp.hmis.billing.domain.PatientBill}
+ *                     (inc-07 CR-07-Q13-billing-display). When {@code null}, the default
+ *                     {@code labelFor(kind)} value derived in
+ *                     {@code BillingChargeService} is used unchanged — existing caller
+ *                     behaviour is fully preserved. Typical non-null values:
+ *                     {@code "Medication"}, {@code "Consumable: <name>"}. Never PHI.
+ * @param description  optional override for the human-readable description on the bill
+ *                     (inc-07 CR-07-Q13-billing-display). When {@code null}, the existing
+ *                     default (currently mirrors {@code billItem}) is used. Never PHI.
  */
 public record ChargeRequest(
         String patientUid,
@@ -33,6 +43,8 @@ public record ChargeRequest(
         BigDecimal qty,
         PaymentMode paymentType,
         boolean inpatient,
-        boolean followUp
+        boolean followUp,
+        String billItem,
+        String description
 ) {
 }
