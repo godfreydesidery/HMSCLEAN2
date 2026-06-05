@@ -13,9 +13,10 @@
  *   <li>{@code iam :: lookup} — personnel existence where needed.</li>
  * </ul>
  *
- * <p>NO three-way match / SupplierInvoice (Q3 — dropped). The pharmacy↔store transfer (08b) adds a
- * narrow {@code pharmacy :: api} consumption seam for the pharmacy-side credit; declared then.
+ * <p>NO three-way match / SupplierInvoice (Q3 — dropped). The pharmacy↔store transfer (08b chunk 6)
+ * consumes {@code pharmacy :: api} ({@code PharmacyStockCredit}) to credit pharmacy stock at the
+ * store→pharmacy RN; the edge is {@code inventory → pharmacy::api}, no reverse edge, no cycle.
  */
 @org.springframework.modulith.ApplicationModule(
-        allowedDependencies = {"shared", "masterdata :: lookup", "iam :: lookup"})
+        allowedDependencies = {"shared", "masterdata :: lookup", "iam :: lookup", "pharmacy :: api"})
 package com.otapp.hmis.inventory;
