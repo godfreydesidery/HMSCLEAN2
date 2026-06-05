@@ -1,7 +1,7 @@
 # ADR-0017: Concurrency & locking for stock and documents
-- **Status:** Proposed (Architecture phase)
-- **Date:** 2026-06-02
-- **Deciders:** solution-architect (reviewed by security-architect, data-architect)
+- **Status:** Accepted — ratified for inc-07 (Inpatient & Nursing) on 2026-06-05 (see [../delivery/increments/07-inpatient-discovery/03b-OWNER-RULINGS.md](../delivery/increments/07-inpatient-discovery/03b-OWNER-RULINGS.md)). Note: this ADR's pessimistic-locking scope is stock + documents; CR-07-Q3 extends it to the inpatient bed-claim aggregate as an explicit owner-approved deviation (the bed extension was authorized alongside this ratification, but is recorded as its own CR — ADR-0017 alone does not cover non-stock/non-document aggregates).
+- **Date:** 2026-06-02 (proposed); 2026-06-05 (ratified)
+- **Deciders:** solution-architect (reviewed by security-architect, data-architect); ratified by product owner / engagement-lead
 - **Engagement:** Zana HMIS modernization, fresh build, no data migration
 
 ## Context
