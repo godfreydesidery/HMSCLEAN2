@@ -334,11 +334,13 @@ class WardAccrualIT extends AbstractIntegrationTest {
 
             // Directly save a second OPENED bed for the same admission (simulating the de-dup scenario)
             // Use the same wardBedUid and patientUid. The bill uid is a synthetic test-only value.
+            // patient_bill_uid is VARCHAR(26) (ULID length) — keep the synthetic value within 26 chars.
+            String synthBillUid = ("SYNTHDEDUP" + tag + "0000000000000000").substring(0, 26); // synthetic — test-only
             var bed2 = new com.otapp.hmis.inpatient.domain.AdmissionBed(
                     admUid,
                     wardBedUid,
                     patientUid,
-                    "SYNTH-BILL-DEDUP-" + tag,   // synthetic bill uid — test-only
+                    synthBillUid,
                     Instant.now());
             admissionBedRepository.saveAndFlush(bed2);
 
