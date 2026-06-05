@@ -97,7 +97,7 @@ Deliver a fully operational `masterdata` Spring Modulith module — covering eve
 - `POST /masterdata/company-profile` inserts if absent; `PUT /masterdata/company-profile` updates the single row. A second `POST` must return `409 CONFLICT`. Seeded via `V{n}__seed_company_profile.sql`; the seed script uses `INSERT ... ON CONFLICT DO NOTHING`.
 
 **Document-number sequences (ADR-0009 §5):**
-- Although document-bearing numbers (GRN, LPO, etc.) are not generated in this increment, all `SEQUENCE` objects defined in ADR-0009 (`seq_grn_no`, `seq_lpo_no`, `seq_pcn_no`, `seq_prl_no`, `seq_pprn_no`, `seq_psr_no`, `seq_ppr_no`, `seq_sto_no`, `seq_ptp_no`, `seq_pgrn_no`, `seq_mrno`, `seq_usr_no`) must be created in the DDL migration delivered by this increment so that the sequences start at 1 on a fresh deployment. Assertion: `SELECT last_value FROM seq_grn_no` returns `1` after migration, `0` before first use.
+- Although document-bearing numbers (GRN, LPO, etc.) are not generated in this increment, all `SEQUENCE` objects defined in ADR-0009 (`seq_grn_no`, `seq_lpo_no`, `seq_pcn_no`, `seq_prl_no`, `seq_pprn_no`, `seq_psr_no`, `seq_ppr_no`, `seq_spto_no`, `seq_ppto_no`, `seq_pgrn_no`, `seq_mrno`, `seq_usr_no`) must be created in the DDL migration delivered by this increment so that the sequences start at 1 on a fresh deployment. Assertion: `SELECT last_value FROM seq_grn_no` returns `1` after migration, `0` before first use.
 
 **SPTO / PPTO prefix (ADR-0009 §6):**
 - The document-type enum seeded here must map `STORE_TO_PHARMACY_TO → "SPTO"` and `PHARMACY_TO_PHARMACY_TO → "PPTO"`. No row carrying prefix `"SPT"` may exist in the `md_document_type` seed table. Assertion: `SELECT prefix FROM md_document_type WHERE kind = 'STORE_TO_PHARMACY_TO'` returns `'SPTO'`.

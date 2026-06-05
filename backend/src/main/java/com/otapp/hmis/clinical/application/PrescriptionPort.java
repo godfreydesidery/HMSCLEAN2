@@ -121,12 +121,16 @@ public interface PrescriptionPort {
     List<PrescriptionDto> byPatient(String patientUid);
 
     /**
-     * Pharmacy dispense worklist — all NOT-GIVEN prescriptions, ordered oldest first (FIFO).
+     * Raw NOT-GIVEN queue (intra-module, clinical controller) — all NOT-GIVEN prescriptions, oldest
+     * first (FIFO), UNFILTERED by bill status.
      *
-     * <p>Returns all NOT-GIVEN prescriptions regardless of settled flag (the pharmacist
-     * validates payment physically before dispensing).
+     * <p><strong>Not the pharmacy dispense worklist.</strong> The cross-module pharmacy dispense
+     * worklist applies the legacy bill-status FILTER (PAID|COVERED; +VERIFIED for INPATIENT) via
+     * {@link com.otapp.hmis.clinical.api.PrescriptionWorklistPort} (inc-08a, Q1, AC-RX-PRE-05). The
+     * earlier "pharmacist validates payment physically, queue is unfiltered" note was an un-CR'd
+     * deviation from the verified legacy FILTER and has been reconciled there.
      *
-     * @return pharmacy worklist (NOT-GIVEN prescriptions)
+     * @return all NOT-GIVEN prescriptions, oldest first (unfiltered)
      */
     List<PrescriptionDto> pharmacyWorklist();
 

@@ -5,13 +5,18 @@ import com.otapp.hmis.billing.api.ChargeRequest;
 import com.otapp.hmis.billing.api.ChargeResult;
 import com.otapp.hmis.billing.domain.CoverageStatus;
 import com.otapp.hmis.billing.domain.PatientBill;
+import com.otapp.hmis.billing.domain.PatientBillRepository;
 import com.otapp.hmis.billing.domain.PatientInvoice;
 import com.otapp.hmis.billing.domain.PatientInvoiceDetailRepository;
 import com.otapp.hmis.billing.domain.PatientInvoiceRepository;
+import com.otapp.hmis.masterdata.lookup.ServiceKind;
 import com.otapp.hmis.shared.application.MoneyMapper;
 import com.otapp.hmis.shared.audit.AuditAction;
 import com.otapp.hmis.shared.audit.AuditRecorder;
+import com.otapp.hmis.shared.domain.Money;
 import com.otapp.hmis.shared.domain.TxAuditContext;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -40,6 +45,7 @@ class BillingCommandsImpl implements BillingCommands {
 
     private final BillingChargeService chargeService;
     private final CreditNoteService creditNoteService;
+    private final PatientBillRepository patientBillRepository;
     private final PatientInvoiceDetailRepository invoiceDetailRepository;
     private final PatientInvoiceRepository invoiceRepository;
     private final AuditRecorder auditRecorder;
@@ -79,6 +85,30 @@ class BillingCommandsImpl implements BillingCommands {
                 bill.getStatus(),
                 moneyMapper.toDto(bill.getAmount()),
                 coverage);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Flat-cash path: amount = unitPrice * qty (HALF_UP NUMERIC 19,2). No plan engine.
+     * No invoice accumulator. Saves a single PatientBill directly and returns its uid.
+     * Propagation REQUIRED — runs inside the caller's (pharmacy) transaction.
+     *
+     * <p>Legacy citation: PatientServiceImpl.java:3395-3442.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public String recordFlatCashSale(String patientUid, ServiceKind kind,
+                                     String billItem, String description, String serviceUid,
+                                     BigDecimal qty, BigDecimal unitPrice, TxAuditContext ctx) {
+        BigDecimal amount = unitPrice.multiply(qty).setScale(2, RoundingMode.HALF_UP);
+        PatientBill bill = new PatientBill(
+                patientUid, kind, billItem, description, qty,
+                Money.of(amount), ctx.dayUid());
+        patientBillRepository.save(bill);
+        auditRecorder.record("billing.PatientBill", bill.getUid(),
+                AuditAction.CREATE, ctx.actorUsername());
+        return bill.getUid();
     }
 
     /**

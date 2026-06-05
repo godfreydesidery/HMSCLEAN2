@@ -1,9 +1,11 @@
 # ADR-0009: Monetary, Numeric and Document-Numbering Policy
 
-- **Status:** Proposed (Architecture phase)
-- **Date:** 2026-06-02
+- **Status:** Proposed (Architecture phase) · *as-built correction applied 2026-06-05 — see drift note below*
+- **Date:** 2026-06-02 (rev. 2026-06-05)
 - **Deciders:** solution-architect (reviewed by security-architect, data-architect)
 - **Engagement:** Zana HMIS modernization, fresh build, no data migration
+
+> **As-built drift correction (inc-08 Q6, 2026-06-05).** This ADR originally named the two transfer-order sequences `seq_sto_no` (StoreToPharmacy TO → SPTO) and `seq_ptp_no` (PharmacyToPharmacy TO → PPTO). The inc-02 Flyway migration that actually shipped (`V13__masterdata_document_sequences.sql`) created them as **`seq_spto_no`** and **`seq_ppto_no`**. The as-built database wins; this ADR's §5, Implementation-notes SQL, and prefix table have been corrected to the as-built names. **No migration is touched** — the DB is already correct; only this ADR's stale placeholder names were superseded. The SPTO/PPTO *prefixes* and §6 are unchanged.
 
 ## Context
 
@@ -32,7 +34,7 @@ Define an immutable `Money` value object: `BigDecimal amount` + `Currency curren
 Legacy has no explicit rounding step. The parity contract for behavioural golden-master tests is: `round(BigDecimal.valueOf(legacyDouble), 2).equals(round(newBigDecimalTotal, 2))`. This is not matching a legacy rounding step — it asserts that converting the same inputs through BigDecimal arithmetic and rounding once to 2 dp at persistence produces the same two-decimal result.
 
 **5. Document-number formats reproduced exactly; numbering made concurrency-safe.**
-Every legacy `PREFIX{yyyyMMdd}-{id}` format is reproduced verbatim. The `MAX(id)+1` race is replaced with one dedicated PostgreSQL `SEQUENCE` per document type (`seq_grn_no`, `seq_lpo_no`, `seq_pcn_no`, `seq_prl_no`, `seq_pprn_no`, `seq_psr_no`, `seq_ppr_no`, `seq_sto_no`, `seq_ptp_no`, `seq_pgrn_no`). Because this is a fresh build starting empty there is no legacy MAX(id) to seed from — all sequences start at 1.
+Every legacy `PREFIX{yyyyMMdd}-{id}` format is reproduced verbatim. The `MAX(id)+1` race is replaced with one dedicated PostgreSQL `SEQUENCE` per document type (`seq_grn_no`, `seq_lpo_no`, `seq_pcn_no`, `seq_prl_no`, `seq_pprn_no`, `seq_psr_no`, `seq_ppr_no`, `seq_spto_no`, `seq_ppto_no`, `seq_pgrn_no`). Because this is a fresh build starting empty there is no legacy MAX(id) to seed from — all sequences start at 1.
 
 The generation pattern is: (a) obtain the next sequence value; (b) insert the row with `no = PREFIX + LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam")).format("yyyyMMdd") + "-" + seqNextVal`; (c) the inserted row carries its `no` value from the first insert — no double-save. This is a clean break from the legacy save-then-assign double-save pattern; the fresh build does not replicate that implementation defect.
 
@@ -101,8 +103,8 @@ CREATE SEQUENCE seq_prl_no  START 1 INCREMENT 1 NO CYCLE;
 CREATE SEQUENCE seq_pprn_no START 1 INCREMENT 1 NO CYCLE;
 CREATE SEQUENCE seq_psr_no  START 1 INCREMENT 1 NO CYCLE;
 CREATE SEQUENCE seq_ppr_no  START 1 INCREMENT 1 NO CYCLE;
-CREATE SEQUENCE seq_sto_no  START 1 INCREMENT 1 NO CYCLE;  -- StoreToPharmacy TO → SPTO
-CREATE SEQUENCE seq_ptp_no  START 1 INCREMENT 1 NO CYCLE;  -- PharmacyToPharmacy TO → PPTO
+CREATE SEQUENCE seq_spto_no START 1 INCREMENT 1 NO CYCLE;  -- StoreToPharmacy TO → SPTO
+CREATE SEQUENCE seq_ppto_no START 1 INCREMENT 1 NO CYCLE;  -- PharmacyToPharmacy TO → PPTO
 CREATE SEQUENCE seq_pgrn_no START 1 INCREMENT 1 NO CYCLE;
 ```
 
@@ -130,8 +132,8 @@ public String next(DocumentType type) {
 | Pharmacy-to-Pharmacy RN | PPRN | seq_pprn_no |
 | Pharmacy-to-Store RO | PSR | seq_psr_no |
 | Pharmacy-to-Pharmacy RO | PPR | seq_ppr_no |
-| StoreToPharmacy TO | **SPTO** | seq_sto_no |
-| PharmacyToPharmacy TO | **PPTO** | seq_ptp_no |
+| StoreToPharmacy TO | **SPTO** | seq_spto_no |
+| PharmacyToPharmacy TO | **PPTO** | seq_ppto_no |
 | Store-to-Pharmacy RN | PGRN | seq_pgrn_no |
 | User code | USR-{000000} | seq_usr_no (formatSix, no date) |
 | Patient MR | MRNO/{year}/{seq} | seq_mrno |

@@ -118,10 +118,10 @@ Full prescription lifecycle (§8.1); OTC sale order lifecycle (§8.2); FEFO stoc
    - GRN: `GRN{yyyyMMdd}-{seq}` via `seq_grn_no`
    - LPO: `LPO{yyyyMMdd}-{seq}` via `seq_lpo_no`
    - Pharmacy-to-Pharmacy RO: `PPR{yyyyMMdd}-{seq}` via `seq_ppr_no`
-   - Pharmacy-to-Pharmacy TO: `PPTO{yyyyMMdd}-{seq}` via `seq_ptp_no` (replaces legacy `SPT`, ADR-0009 §6)
+   - Pharmacy-to-Pharmacy TO: `PPTO{yyyyMMdd}-{seq}` via `seq_ppto_no` (replaces legacy `SPT`, ADR-0009 §6)
    - Pharmacy-to-Pharmacy RN: `PPRN{yyyyMMdd}-{seq}` via `seq_pprn_no`
    - Pharmacy-to-Store RO: `PSR{yyyyMMdd}-{seq}` via `seq_psr_no`
-   - StoreToPharmacy TO: `SPTO{yyyyMMdd}-{seq}` via `seq_sto_no` (replaces legacy `SPT`, ADR-0009 §6)
+   - StoreToPharmacy TO: `SPTO{yyyyMMdd}-{seq}` via `seq_spto_no` (replaces legacy `SPT`, ADR-0009 §6)
    - StoreToPharmacy RN: `PGRN{yyyyMMdd}-{seq}` via `seq_pgrn_no`
    Each `next()` call uses `DocumentNumberService` (ADR-0009 §5); date formatted in `Africa/Dar_es_Salaam` timezone.
 

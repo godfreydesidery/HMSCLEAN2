@@ -32,4 +32,24 @@ class BillingQueriesImpl implements BillingQueries {
                 .orElseThrow(() -> new NotFoundException("Bill not found: " + billUid))
                 .getStatus();
     }
+
+    @Override
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRED)
+    public boolean worklistAdmits(String billUid, boolean inpatient) {
+        // A FILTER never throws — a missing/unresolvable bill is simply not admitted.
+        BillStatus status = patientBillRepository.findByUid(billUid)
+                .map(b -> b.getStatus())
+                .orElse(null);
+        if (status == null) {
+            return false;
+        }
+        // Legacy pharmacy worklist filter (PatientResource.java:4347/4364/4381/4410):
+        // OUTPATIENT/OUTSIDER admit PAID|COVERED; INPATIENT additionally admits VERIFIED
+        // (inpatient credit/post-pay, NOT insurer-verification — D18).
+        return switch (status) {
+            case PAID, COVERED -> true;
+            case VERIFIED -> inpatient;
+            default -> false;            // UNPAID, NONE, CANCELED
+        };
+    }
 }
