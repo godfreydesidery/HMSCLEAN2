@@ -106,7 +106,19 @@ public enum ErrorCode {
      */
     MISSING_INSURANCE_INFORMATION("urn:hmis:error:missing-insurance-information",
             HttpStatus.UNPROCESSABLE_ENTITY,
-            "Insurance plan and membership number are required for insurance patients");
+            "Insurance plan and membership number are required for insurance patients"),
+
+    /**
+     * A stock-decrementing operation (clinical dispense, OTC dispense, transfer goods-issue,
+     * GRN approve) was requested for more quantity than is available (inc-08, AC-RX-DSP-07/20,
+     * AC-OTC-08). Reproduces the legacy hard negative-stock REFUSAL
+     * ({@code PatientResource.java:3243-3250}, {@code :6272-6273}) — the verbatim exact-process
+     * gate — surfaced as a stable RFC 7807 type so the Angular client can react without
+     * string-matching. The DB {@code CHECK (stock >= 0)} is a net-new backstop; this app-layer
+     * 422 reject is the frozen parity element. HTTP 422 Unprocessable Entity.
+     */
+    INSUFFICIENT_STOCK("urn:hmis:error:insufficient-stock",
+            HttpStatus.UNPROCESSABLE_ENTITY, "Insufficient stock to fulfil this request");
 
     private final String type;
     private final HttpStatus status;
