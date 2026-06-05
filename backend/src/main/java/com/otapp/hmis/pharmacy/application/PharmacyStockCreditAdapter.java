@@ -29,4 +29,22 @@ class PharmacyStockCreditAdapter implements PharmacyStockCredit {
         stockService.receiveLot(pharmacyUid, medicineUid, batchNo, manufacturedDate, expiryDate,
                 qty, reference, ctx);
     }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void creditTransferAggregate(String pharmacyUid, String medicineUid, BigDecimal qty,
+                                        String reference, TxAuditContext ctx) {
+        // increment aggregate + TRANSFER_IN card, NO batch — the reproduced p2p gap (Q7).
+        stockService.increment(pharmacyUid, medicineUid, qty,
+                com.otapp.hmis.pharmacy.domain.MovementType.TRANSFER_IN, reference, ctx);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void debitTransferOut(String pharmacyUid, String medicineUid, BigDecimal qty,
+                                 String reference, TxAuditContext ctx) {
+        // hard negative-stock gate + FEFO + TRANSFER_OUT card (source/delivering pharmacy).
+        stockService.decrementFefo(pharmacyUid, medicineUid, qty,
+                com.otapp.hmis.pharmacy.domain.MovementType.TRANSFER_OUT, reference, ctx);
+    }
 }

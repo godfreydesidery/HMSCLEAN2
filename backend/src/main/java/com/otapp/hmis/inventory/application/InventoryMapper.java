@@ -46,6 +46,35 @@ public final class InventoryMapper {
                         .toList());
     }
 
+    // ---- pharmacy<->pharmacy transfer (chunk 7) — requesting=pharmacyUid, delivering=storeUid slot ----
+
+    public static TransferDto toPpRoDto(com.otapp.hmis.inventory.domain.PharmacyToPharmacyRO ro) {
+        return new TransferDto(ro.getUid(), ro.getNo(), "RO", ro.getStatus().dbValue(),
+                ro.getStatusDescription(), ro.getRequestingPharmacyUid(), ro.getDeliveringPharmacyUid(),
+                ro.getDetails().stream()
+                        .map(d -> new TransferDto.Line(d.getUid(), null, d.getMedicineUid(),
+                                d.getOrderedQty(), null, null))
+                        .toList());
+    }
+
+    public static TransferDto toPpToDto(com.otapp.hmis.inventory.domain.PharmacyToPharmacyTO to) {
+        return new TransferDto(to.getUid(), to.getNo(), "TO", to.getStatus().dbValue(),
+                to.getStatusDescription(), to.getRequestingPharmacyUid(), to.getDeliveringPharmacyUid(),
+                to.getDetails().stream()
+                        .map(d -> new TransferDto.Line(d.getUid(), null, d.getMedicineUid(),
+                                d.getOrderedQty(), d.getTransferedQty(), d.getTransferedQty()))
+                        .toList());
+    }
+
+    public static TransferDto toPpRnDto(com.otapp.hmis.inventory.domain.PharmacyToPharmacyRN rn) {
+        return new TransferDto(rn.getUid(), rn.getNo(), "RN", rn.getStatus().name(),
+                rn.getStatusDescription(), rn.getRequestingPharmacyUid(), rn.getDeliveringPharmacyUid(),
+                rn.getDetails().stream()
+                        .map(d -> new TransferDto.Line(d.getUid(), null, d.getMedicineUid(),
+                                d.getOrderedQty(), d.getReceivedQty(), d.getReceivedQty()))
+                        .toList());
+    }
+
     public static LpoDto toLpoDto(LocalPurchaseOrder o) {
         return new LpoDto(
                 o.getUid(), o.getNo(), o.getStatus().name(), o.getStatusDescription(),
