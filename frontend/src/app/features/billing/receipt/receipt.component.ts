@@ -6,12 +6,7 @@ import {
   signal,
 } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { MatCardModule } from '@angular/material/card';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatDividerModule } from '@angular/material/divider';
-import { DefaultService, ReceiptDto } from '../../../api/generated';
+import { BillingReportControllerService, ReceiptDto } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.component';
@@ -22,11 +17,6 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
-    MatCardModule,
-    MatButtonModule,
-    MatIconModule,
-    MatProgressSpinnerModule,
-    MatDividerModule,
     BillingStatusBadgeComponent,
   ],
   template: `
@@ -35,21 +25,21 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
       <!-- Screen-only nav bar -->
       <div class="receipt-nav no-print">
         <button
-          mat-icon-button
+          type="button"
+          class="btn btn-link p-1"
           routerLink="/billing/cashier"
           aria-label="Return to cashier workspace"
         >
-          <mat-icon>arrow_back</mat-icon>
+          <i class="bi bi-arrow-left"></i>
         </button>
         <span class="nav-title">Receipt</span>
         <button
-          mat-raised-button
-          color="primary"
-          class="no-print"
+          type="button"
+          class="btn btn-primary no-print"
           (click)="print()"
           aria-label="Print this receipt"
         >
-          <mat-icon>print</mat-icon>
+          <i class="bi bi-printer me-1"></i>
           Print Receipt
         </button>
       </div>
@@ -57,7 +47,9 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
       <!-- Loading state -->
       @if (loading()) {
         <div class="state-container" role="status" aria-label="Loading receipt">
-          <mat-spinner diameter="48"></mat-spinner>
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading…</span>
+          </div>
           <p>Loading receipt…</p>
         </div>
       }
@@ -66,7 +58,7 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
       @if (error()) {
         <div class="error-container">
           <p class="error-msg" role="alert">{{ error() }}</p>
-          <a mat-stroked-button routerLink="/billing/cashier" aria-label="Return to cashier workspace">
+          <a class="btn btn-outline-secondary" routerLink="/billing/cashier" aria-label="Return to cashier workspace">
             Back to Cashier
           </a>
         </div>
@@ -74,8 +66,8 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
 
       <!-- Receipt card -->
       @if (!loading() && !error() && receipt()) {
-        <mat-card
-          class="receipt-card"
+        <div
+          class="card receipt-card"
           id="receipt-card"
           role="region"
           [attr.aria-label]="'Payment receipt ' + (receipt()?.receiptNo ?? '')"
@@ -86,13 +78,13 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
             <p class="hospital-subtitle">Official Payment Receipt</p>
           </div>
 
-          <mat-card-header>
-            <mat-card-title>Official Receipt</mat-card-title>
-            <mat-card-subtitle>No. {{ receipt()?.receiptNo ?? '—' }}</mat-card-subtitle>
-          </mat-card-header>
+          <div class="card-header">
+            <h2 class="h5 mb-0">Official Receipt</h2>
+            <div class="text-muted">No. {{ receipt()?.receiptNo ?? '—' }}</div>
+          </div>
 
-          <mat-card-content>
-            <mat-divider></mat-divider>
+          <div class="card-body">
+            <hr class="my-2">
 
             <dl class="receipt-dl">
               <dt>Date</dt>
@@ -113,33 +105,33 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
               </dd>
             </dl>
 
-            <mat-divider class="amount-divider"></mat-divider>
+            <hr class="amount-divider my-2">
 
             <div class="amount-row">
               <span class="amount-label">Amount</span>
               <span class="amount-value">{{ formatMoney(receipt()?.amount?.amount, receipt()?.amount?.currency) }}</span>
             </div>
 
-            <mat-divider></mat-divider>
+            <hr class="my-2">
 
             <dl class="receipt-dl receipt-dl--small">
               <dt>Business Day</dt>
               <dd>{{ receipt()?.businessDayUid ?? '—' }}</dd>
             </dl>
-          </mat-card-content>
+          </div>
 
-          <mat-card-actions class="no-print">
+          <div class="card-footer no-print">
             <button
-              mat-raised-button
-              color="primary"
+              type="button"
+              class="btn btn-primary"
               (click)="print()"
               aria-label="Print this receipt"
             >
-              <mat-icon>print</mat-icon>
+              <i class="bi bi-printer me-1"></i>
               Print Receipt
             </button>
-          </mat-card-actions>
-        </mat-card>
+          </div>
+        </div>
       }
 
     </div>
@@ -220,14 +212,14 @@ import { BillingStatusBadgeComponent } from '../shared/billing-status-badge.comp
       .hospital-name { font-size: 1.4rem; margin: 0; }
       .hospital-subtitle { font-size: 0.9rem; margin: 0.25rem 0 0; color: #444; }
       .receipt-print-header { display: block !important; }
-      mat-card-actions { display: none !important; }
+      .card-footer { display: none !important; }
       body { background: white; }
     }
   `],
 })
 export class ReceiptComponent implements OnInit {
-  private readonly route          = inject(ActivatedRoute);
-  private readonly defaultService = inject(DefaultService);
+  private readonly route                = inject(ActivatedRoute);
+  private readonly billingReportService = inject(BillingReportControllerService);
 
   readonly formatMoney = formatMoney;
 
@@ -239,7 +231,7 @@ export class ReceiptComponent implements OnInit {
     const uid = this.route.snapshot.paramMap.get('uid') ?? '';
     this.loading.set(true);
 
-    this.defaultService.getReceipt({ uid }).subscribe({
+    this.billingReportService.receipt({ uid }).subscribe({
       next: (data) => {
         this.receipt.set(data);
         this.loading.set(false);

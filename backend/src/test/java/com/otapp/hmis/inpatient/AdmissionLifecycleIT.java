@@ -1,6 +1,7 @@
 package com.otapp.hmis.inpatient;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -255,6 +256,75 @@ class AdmissionLifecycleIT extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(admissionJson("X", "Y", "CASH", null, null)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // =========================================================================
+    // Read surface (inc-07): GET /admissions list + GET /admissions/uid/{uid}
+    // =========================================================================
+
+    @Test
+    void getAdmissionByUid_returnsTheAdmission() throws Exception {
+        String tag = uniq();
+        String patientUid = seedCashPatient(tag);
+        String wardBedUid = seedWardWithBed(tag, "500.00");
+        String admUid = createAdmission(patientUid, wardBedUid);
+
+        mockMvc.perform(get(ADMISSIONS + "/uid/" + admUid)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.uid").value(admUid))
+                .andExpect(jsonPath("$.patientUid").value(patientUid))
+                .andExpect(jsonPath("$.wardBedUid").value(wardBedUid))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void getAdmissionByUid_unknown_returns404() throws Exception {
+        mockMvc.perform(get(ADMISSIONS + "/uid/NOSUCHADMISSION0000000000")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listAdmissions_returnsCreatedAdmission_andStatusFilterWorks() throws Exception {
+        String tag = uniq();
+        String patientUid = seedCashPatient(tag);
+        String wardBedUid = seedWardWithBed(tag, "500.00");
+        String admUid = createAdmission(patientUid, wardBedUid);
+
+        // Unfiltered list contains the new admission
+        mockMvc.perform(get(ADMISSIONS).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.uid == '" + admUid + "')]").exists());
+
+        // PENDING filter contains it; SIGNED-OUT filter does not
+        mockMvc.perform(get(ADMISSIONS).param("status", "PENDING")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.uid == '" + admUid + "')]").exists());
+
+        mockMvc.perform(get(ADMISSIONS).param("status", "SIGNED-OUT")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.uid == '" + admUid + "')]").doesNotExist());
+    }
+
+    @Test
+    void listAdmissions_unknownStatus_returns404() throws Exception {
+        mockMvc.perform(get(ADMISSIONS).param("status", "BOGUS")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    /** Create a PENDING admission and return its uid (reuses the happy-path POST). */
+    private String createAdmission(String patientUid, String wardBedUid) throws Exception {
+        MvcResult res = mockMvc.perform(post(ADMISSIONS)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(admissionJson(patientUid, wardBedUid, "CASH", null, null)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(res.getResponse().getContentAsString()).get("uid").asText();
     }
 
     // =========================================================================

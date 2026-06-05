@@ -3,7 +3,7 @@
  *
  * Schedules a proactive silent token refresh before the access token expires.
  * It is a separate service (not inlined into AuthStore) so it can inject
- * DefaultService and Router without creating a circular dependency chain, and
+ * AuthControllerService and Router without creating a circular dependency chain, and
  * so its timer lifecycle is independently testable.
  *
  * Lifecycle contract:
@@ -13,13 +13,13 @@
  *  - `cancel()` — clears the pending timeout and nulls the handle; called from
  *    AuthStore.clear() and implicitly from schedule() before re-arming.
  *
- * On fire the scheduler calls DefaultService.refreshToken, then hands the
+ * On fire the scheduler calls AuthControllerService.refresh, then hands the
  * result back to AuthStore.setTokens (which re-schedules automatically).
  * On failure it calls AuthStore.clear() and navigates to /login.
  */
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { DefaultService } from '../../api/generated';
+import { AuthControllerService } from '../../api/generated';
 import type { AuthStore } from './auth.store';
 
 /** Minimum lead-time in seconds before expiry at which we fire the refresh. */
@@ -30,8 +30,8 @@ const MIN_DELAY_SECONDS = 5;
 
 @Injectable({ providedIn: 'root' })
 export class TokenRefreshScheduler {
-  private readonly defaultService = inject(DefaultService);
-  private readonly router         = inject(Router);
+  private readonly authService = inject(AuthControllerService);
+  private readonly router      = inject(Router);
 
   /** Handle returned by setTimeout; null when no timer is pending. */
   private timerId: ReturnType<typeof setTimeout> | null = null;
@@ -76,8 +76,8 @@ export class TokenRefreshScheduler {
   }
 
   private executeRefresh(refreshToken: string): void {
-    this.defaultService
-      .refreshToken({ refreshRequest: { refreshToken } })
+    this.authService
+      .refresh({ refreshRequest: { refreshToken } })
       .subscribe({
         next: (tokenResponse) => {
           // setTokens re-arms the scheduler via schedule() internally.

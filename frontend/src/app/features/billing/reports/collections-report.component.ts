@@ -14,24 +14,14 @@ import {
   ValidatorFn,
   Validators,
 } from '@angular/forms';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatNativeDateModule } from '@angular/material/core';
-import { MatTableModule } from '@angular/material/table';
-import { MatButtonModule } from '@angular/material/button';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatIconModule } from '@angular/material/icon';
-import { MatDividerModule } from '@angular/material/divider';
-import { CollectionReportRow, DefaultService } from '../../../api/generated';
+import { BillingReportControllerService, CollectionReportRow } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 
-/** Cross-field validator: 'to' must be >= 'from' */
+/** Cross-field validator: 'to' must be >= 'from' (ISO yyyy-MM-dd strings compare lexically) */
 const dateRangeValidator: ValidatorFn = (group: AbstractControl): ValidationErrors | null => {
-  const from = group.get('from')?.value as Date | null;
-  const to   = group.get('to')?.value   as Date | null;
+  const from = group.get('from')?.value as string | null;
+  const to   = group.get('to')?.value   as string | null;
   if (from && to && to < from) {
     return { dateRangeInvalid: true };
   }
@@ -54,16 +44,6 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
-    MatCardModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatDatepickerModule,
-    MatNativeDateModule,
-    MatTableModule,
-    MatButtonModule,
-    MatProgressSpinnerModule,
-    MatIconModule,
-    MatDividerModule,
   ],
   template: `
     <div class="report-wrapper">
@@ -79,80 +59,79 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
       </div>
 
       <!-- Filter card -->
-      <mat-card class="report-filter-card print-hidden">
-        <mat-card-header>
-          <mat-card-title>
-            <mat-icon aria-hidden="true">table_chart</mat-icon>
+      <div class="card report-filter-card print-hidden">
+        <div class="card-header">
+          <h2 class="h5 mb-0">
+            <i class="bi bi-table" aria-hidden="true"></i>
             Collections Report
-          </mat-card-title>
-        </mat-card-header>
+          </h2>
+        </div>
 
-        <mat-card-content>
+        <div class="card-body">
           <form [formGroup]="form" novalidate (ngSubmit)="runReport()" class="filter-form">
 
-            <mat-form-field appearance="outline">
-              <mat-label>From date</mat-label>
+            <div class="mb-3 filter-field">
+              <label class="form-label" for="from-date">From date</label>
               <input
-                matInput
-                [matDatepicker]="fromPicker"
+                id="from-date"
+                type="date"
+                class="form-control"
                 formControlName="from"
-                [max]="today()"
+                [max]="todayIso()"
                 aria-label="Start date (from)"
                 aria-required="true"
-                readonly
+                [class.is-invalid]="form.controls.from.invalid && form.controls.from.touched"
               />
-              <mat-datepicker-toggle matIconSuffix [for]="fromPicker"></mat-datepicker-toggle>
-              <mat-datepicker #fromPicker></mat-datepicker>
               @if (form.controls.from.invalid && form.controls.from.touched) {
-                <mat-error>Start date is required.</mat-error>
+                <div class="invalid-feedback">Start date is required.</div>
               }
-            </mat-form-field>
+            </div>
 
-            <mat-form-field appearance="outline">
-              <mat-label>To date</mat-label>
+            <div class="mb-3 filter-field">
+              <label class="form-label" for="to-date">To date</label>
               <input
-                matInput
-                [matDatepicker]="toPicker"
+                id="to-date"
+                type="date"
+                class="form-control"
                 formControlName="to"
-                [max]="today()"
+                [max]="todayIso()"
                 aria-label="End date (to)"
                 aria-required="true"
                 [attr.aria-describedby]="'date-range-error'"
-                readonly
+                [class.is-invalid]="(form.controls.to.invalid || form.errors?.['dateRangeInvalid']) && form.controls.to.touched"
               />
-              <mat-datepicker-toggle matIconSuffix [for]="toPicker"></mat-datepicker-toggle>
-              <mat-datepicker #toPicker></mat-datepicker>
               @if (form.controls.to.invalid && form.controls.to.touched) {
-                <mat-error>End date is required.</mat-error>
+                <div class="invalid-feedback">End date is required.</div>
               }
               @if (form.errors?.['dateRangeInvalid'] && form.controls.to.touched) {
-                <mat-error id="date-range-error">End date must be on or after the start date.</mat-error>
+                <div class="invalid-feedback d-block" id="date-range-error">End date must be on or after the start date.</div>
               }
-            </mat-form-field>
+            </div>
 
-            <mat-form-field appearance="outline">
-              <mat-label>Cashier (optional)</mat-label>
+            <div class="mb-3 filter-field">
+              <label class="form-label" for="cashier">Cashier (optional)</label>
               <input
-                matInput
+                id="cashier"
+                type="text"
+                class="form-control"
                 formControlName="cashier"
                 maxlength="100"
                 aria-label="Cashier username filter (optional)"
                 placeholder="Leave blank for all cashiers"
               />
-            </mat-form-field>
+            </div>
 
             <button
-              mat-raised-button
-              color="primary"
+              class="btn btn-primary"
               type="submit"
               [disabled]="loading()"
               [attr.aria-busy]="loading()"
               aria-label="Run collections report"
             >
               @if (loading()) {
-                <mat-spinner diameter="20" class="btn-spinner"></mat-spinner>
+                <span class="spinner-border spinner-border-sm btn-spinner" role="status" aria-hidden="true"></span>
               } @else {
-                <mat-icon>table_chart</mat-icon>
+                <i class="bi bi-table"></i>
               }
               {{ loading() ? 'Running…' : 'Run Report' }}
             </button>
@@ -162,10 +141,10 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
           @if (!hasRun()) {
             <p class="hint-text">Select a date range and click Run Report.</p>
           }
-        </mat-card-content>
-      </mat-card>
+        </div>
+      </div>
 
-      <mat-divider class="print-hidden"></mat-divider>
+      <hr class="my-2 print-hidden">
 
       <!-- Error -->
       @if (runError()) {
@@ -175,7 +154,9 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
       <!-- Loading -->
       @if (loading()) {
         <div class="state-container" role="status" aria-live="polite" aria-label="Running report">
-          <mat-spinner diameter="40"></mat-spinner>
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading…</span>
+          </div>
           <p>Loading report…</p>
         </div>
       }
@@ -183,81 +164,72 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
       <!-- Empty state after run -->
       @if (hasRun() && !loading() && reportRows().length === 0) {
         <div class="empty-state" role="status">
-          <mat-icon aria-hidden="true">table_chart</mat-icon>
+          <i class="bi bi-table" aria-hidden="true"></i>
           <p>No collections found for this period.</p>
         </div>
       }
 
       <!-- Results card -->
       @if (hasRun() && reportRows().length > 0) {
-        <mat-card class="report-results-card">
-          <mat-card-header>
-            <mat-card-title>
+        <div class="card report-results-card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">
               Results: {{ lastFrom() }} – {{ lastTo() }}
-            </mat-card-title>
-            <mat-card-actions>
+            </h2>
+            <div class="card-actions">
               <button
-                mat-stroked-button
-                class="print-hidden"
+                class="btn btn-outline-secondary print-hidden"
+                type="button"
                 (click)="print()"
                 aria-label="Print this report"
               >
-                <mat-icon>print</mat-icon>
+                <i class="bi bi-printer"></i>
                 Print
               </button>
-            </mat-card-actions>
-          </mat-card-header>
+            </div>
+          </div>
 
-          <mat-card-content class="table-content">
+          <div class="card-body table-content">
             <table
-              mat-table
-              [dataSource]="reportRows()"
-              class="report-table"
+              class="table table-sm align-middle report-table"
               [attr.aria-label]="tableAriaLabel()"
             >
-              <!-- Item Name column -->
-              <ng-container matColumnDef="itemName">
-                <th mat-header-cell *matHeaderCellDef>Item</th>
-                <td mat-cell *matCellDef="let row">{{ row.itemName ?? '—' }}</td>
-                <td mat-footer-cell *matFooterCellDef><strong>TOTAL</strong></td>
-              </ng-container>
-
-              <!-- Channel column -->
-              <ng-container matColumnDef="channel">
-                <th mat-header-cell *matHeaderCellDef>Payment Channel</th>
-                <td mat-cell *matCellDef="let row">{{ row.paymentChannel ?? '—' }}</td>
-                <td mat-footer-cell *matFooterCellDef>—</td>
-              </ng-container>
-
-              <!-- Amount column -->
-              <ng-container matColumnDef="amount">
-                <th mat-header-cell *matHeaderCellDef class="col-right">Amount</th>
-                <td mat-cell *matCellDef="let row" class="col-right">
-                  {{ formatMoney(row.amount, 'TZS') }}
-                </td>
-                <td
-                  mat-footer-cell
-                  *matFooterCellDef
-                  class="col-right total-amount-cell"
-                  aria-live="polite"
+              <thead>
+                <tr>
+                  <th scope="col">Item</th>
+                  <th scope="col">Payment Channel</th>
+                  <th scope="col" class="col-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of reportRows(); track $index) {
+                  <tr>
+                    <td>{{ row.itemName ?? '—' }}</td>
+                    <td>{{ row.paymentChannel ?? '—' }}</td>
+                    <td class="col-right">{{ formatMoney(row.amount, 'TZS') }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr
+                  class="total-row"
+                  role="row"
                   [attr.aria-label]="'Grand total: ' + formatMoney(grandTotal(), 'TZS')"
                 >
-                  <strong>{{ formatMoney(grandTotal(), 'TZS') }}</strong>
-                </td>
-              </ng-container>
-
-              <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-              <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
-              <tr
-                mat-footer-row
-                *matFooterRowDef="displayedColumns"
-                class="total-row"
-                role="row"
-                [attr.aria-label]="'Grand total: ' + formatMoney(grandTotal(), 'TZS')"
-              ></tr>
+                  <td><strong>TOTAL</strong></td>
+                  <td>—</td>
+                  <td
+                    class="col-right total-amount-cell"
+                    aria-live="polite"
+                    [attr.aria-label]="'Grand total: ' + formatMoney(grandTotal(), 'TZS')"
+                  >
+                    <strong>{{ formatMoney(grandTotal(), 'TZS') }}</strong>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
-          </mat-card-content>
-        </mat-card>
+          </div>
+        </div>
       }
 
     </div>
@@ -277,8 +249,8 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
       gap: 1rem;
       align-items: flex-start;
     }
-    .filter-form mat-form-field { min-width: 200px; }
-    .filter-form button { margin-top: 4px; min-height: 44px; }
+    .filter-form .filter-field { min-width: 200px; }
+    .filter-form button { margin-top: 1.75rem; min-height: 44px; }
     .btn-spinner { display: inline-block; margin-right: 0.5rem; }
     .hint-text { color: #757575; font-size: 0.875rem; margin: 0.5rem 0 0; }
     .error-msg { color: #c62828; font-size: 0.875rem; margin: 0; }
@@ -297,13 +269,13 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
       padding: 2rem;
       color: #757575;
     }
-    .empty-state mat-icon { font-size: 3rem; width: 3rem; height: 3rem; }
+    .empty-state i { font-size: 3rem; }
     .table-content { padding: 0; }
-    .report-table { width: 100%; }
+    .report-table { width: 100%; margin-bottom: 0; }
     .col-right { text-align: right; }
     .total-row {
-      background-color: var(--mat-sys-surface-variant, #e7e0ec);
-      border-top: 2px solid var(--mat-sys-outline, #79747e);
+      background-color: #e7e0ec;
+      border-top: 2px solid #79747e;
     }
     .total-amount-cell { font-size: 1rem; font-weight: 700; }
     .report-print-header { display: none; }
@@ -328,18 +300,21 @@ const REPORT_COLUMNS = ['itemName', 'channel', 'amount'];
   `],
 })
 export class CollectionsReportComponent {
-  private readonly fb             = inject(NonNullableFormBuilder);
-  private readonly defaultService = inject(DefaultService);
+  private readonly fb                   = inject(NonNullableFormBuilder);
+  private readonly billingReportService = inject(BillingReportControllerService);
 
   readonly formatMoney     = formatMoney;
   readonly displayedColumns = REPORT_COLUMNS;
 
   readonly today = signal<Date>(new Date());
 
+  /** Today as ISO yyyy-MM-dd for the native date input's [max] */
+  readonly todayIso = computed(() => toIsoDate(this.today()));
+
   readonly form = this.fb.group(
     {
-      from:    new FormControl<Date | null>(null, { validators: Validators.required }),
-      to:      new FormControl<Date | null>(null, { validators: Validators.required }),
+      from:    new FormControl<string | null>(null, { validators: Validators.required }),
+      to:      new FormControl<string | null>(null, { validators: Validators.required }),
       cashier: ['', Validators.maxLength(100)],
     },
     { validators: dateRangeValidator },
@@ -373,16 +348,16 @@ export class CollectionsReportComponent {
     const { from, to, cashier } = this.form.getRawValue();
     if (!from || !to) return;
 
-    const fromIso = toIsoDate(from);
-    const toIso   = toIsoDate(to);
+    const fromIso = from;
+    const toIso   = to;
 
     this.loading.set(true);
     this.runError.set(null);
     this.reportRows.set([]);
     this.hasRun.set(false);
 
-    this.defaultService
-      .getCollectionsReport({
+    this.billingReportService
+      .collectionsReport({
         from: fromIso,
         to:   toIso,
         cashier: cashier.trim() || undefined,

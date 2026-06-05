@@ -16,7 +16,7 @@
  *
  * SILENT BOOT   — on construction, if a refresh token is found in
  *   sessionStorage but there is no in-memory access token, a silent
- *   DefaultService.refreshToken() call is issued.  Guards (CanActivate) are
+ *   AuthControllerService.refresh() call is issued.  Guards (CanActivate) are
  *   responsible for routing; the store does NOT navigate on failure here —
  *   only on failure during a proactive scheduled refresh or a 401 retry.
  *
@@ -26,7 +26,7 @@
  *   pending refresh at a time.  clear() cancels it unconditionally.
  */
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { DefaultService, type TokenResponse } from '../../api/generated';
+import { AuthControllerService, type TokenResponse } from '../../api/generated';
 import { TokenRefreshScheduler } from './token-refresh-scheduler';
 
 const REFRESH_KEY = 'hmis.refreshToken';
@@ -57,8 +57,8 @@ function decodePrivileges(jwt: string): string[] {
 
 @Injectable({ providedIn: 'root' })
 export class AuthStore {
-  private readonly scheduler      = inject(TokenRefreshScheduler);
-  private readonly defaultService = inject(DefaultService);
+  private readonly scheduler   = inject(TokenRefreshScheduler);
+  private readonly authService = inject(AuthControllerService);
 
   /**
    * Access token is purely in-memory.  Never written to sessionStorage or
@@ -143,8 +143,8 @@ export class AuthStore {
    * Does NOT navigate on failure — guards handle routing to /login.
    */
   private silentBoot(refreshToken: string): void {
-    this.defaultService
-      .refreshToken({ refreshRequest: { refreshToken } })
+    this.authService
+      .refresh({ refreshRequest: { refreshToken } })
       .subscribe({
         next: (tokenResponse) => {
           this.setTokens(tokenResponse);

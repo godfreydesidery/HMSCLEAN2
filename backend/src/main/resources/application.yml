@@ -78,6 +78,12 @@ management:
       show-details: never
 
 springdoc:
+  # Declare application/json as the default produced media type so the generated
+  # OpenAPI marks responses as application/json (not the Spring default '*/*').
+  # The typescript-angular client uses the Accept type to pick responseType: a
+  # '*/*' accept makes it parse bodies as TEXT, breaking JSON deserialization
+  # (e.g. login TokenResponse). See frontend api codegen.
+  default-produces-media-type: application/json
   api-docs:
     path: /v3/api-docs
   swagger-ui:

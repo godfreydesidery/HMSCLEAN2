@@ -7,16 +7,10 @@ import {
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
-import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatIconModule } from '@angular/material/icon';
-import { MatDividerModule } from '@angular/material/divider';
+import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
 import {
   CancellationResultDto,
-  DefaultService,
+  CreditNoteControllerService,
 } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
@@ -35,53 +29,55 @@ export interface CancelChargeDialogData {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
-    MatDialogModule,
-    MatButtonModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatProgressSpinnerModule,
-    MatIconModule,
-    MatDividerModule,
     BillingStatusBadgeComponent,
   ],
   template: `
-    <h2 mat-dialog-title id="cancel-charge-dialog-title">Cancel Charge</h2>
+    <div class="modal-header">
+      <h5 class="modal-title" id="cancel-charge-dialog-title">Cancel Charge</h5>
+      <button
+        type="button"
+        class="btn-close"
+        aria-label="Close"
+        (click)="activeModal.dismiss('cancel')"
+      ></button>
+    </div>
 
-    <mat-dialog-content>
+    <div class="modal-body">
       <div class="warning-banner" role="alert">
-        <mat-icon aria-hidden="true" class="warning-icon">warning_amber</mat-icon>
+        <i class="bi bi-exclamation-triangle warning-icon" aria-hidden="true"></i>
         <span>
-          You are cancelling: <strong>{{ dialogData.description }}</strong><br />
-          Amount: <strong>{{ formatMoney(dialogData.amount, dialogData.currency) }}</strong><br />
+          You are cancelling: <strong>{{ data.description }}</strong><br />
+          Amount: <strong>{{ formatMoney(data.amount, data.currency) }}</strong><br />
           If this bill has been paid, a credit note will be issued automatically.
         </span>
       </div>
 
-      <mat-divider class="section-divider"></mat-divider>
+      <hr class="section-divider" />
 
       @if (!result()) {
         <form [formGroup]="form" novalidate>
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Reason (required)</mat-label>
+          <div class="mb-3 full-width">
+            <label class="form-label" for="cancel-reference">Reason (required)</label>
             <textarea
-              matInput
+              id="cancel-reference"
+              class="form-control"
               formControlName="reference"
               rows="4"
               maxlength="255"
-              cdkFocusInitial
               aria-label="Cancellation reason"
               aria-required="true"
               [attr.aria-describedby]="'cancel-hint cancel-error'"
+              [class.is-invalid]="form.controls.reference.invalid && form.controls.reference.touched"
             ></textarea>
-            <mat-hint id="cancel-hint">{{ charCount() }}/255</mat-hint>
+            <div class="form-text" id="cancel-hint">{{ charCount() }}/255</div>
             @if (form.controls.reference.invalid && form.controls.reference.touched) {
               @if (form.controls.reference.hasError('required') || form.controls.reference.hasError('minlength')) {
-                <mat-error id="cancel-error">Cancellation reason is required.</mat-error>
+                <div class="invalid-feedback d-block" id="cancel-error">Cancellation reason is required.</div>
               } @else if (form.controls.reference.hasError('maxlength')) {
-                <mat-error id="cancel-error">Reason cannot exceed 255 characters.</mat-error>
+                <div class="invalid-feedback d-block" id="cancel-error">Reason cannot exceed 255 characters.</div>
               }
             }
-          </mat-form-field>
+          </div>
         </form>
       }
 
@@ -106,12 +102,12 @@ export interface CancelChargeDialogData {
           }
         </div>
       }
-    </mat-dialog-content>
+    </div>
 
-    <mat-dialog-actions align="end">
+    <div class="modal-footer">
       @if (!result()) {
         <button
-          mat-button
+          class="btn btn-link"
           type="button"
           (click)="cancel()"
           [disabled]="submitting()"
@@ -120,8 +116,7 @@ export interface CancelChargeDialogData {
           Close
         </button>
         <button
-          mat-raised-button
-          color="warn"
+          class="btn btn-danger"
           type="button"
           (click)="confirm()"
           [disabled]="submitting() || form.invalid"
@@ -129,7 +124,7 @@ export interface CancelChargeDialogData {
           aria-label="Confirm charge cancellation"
         >
           @if (submitting()) {
-            <mat-spinner diameter="20" class="btn-spinner"></mat-spinner>
+            <span class="spinner-border spinner-border-sm btn-spinner" role="status" aria-hidden="true"></span>
             Processing…
           } @else {
             Confirm Cancellation
@@ -137,8 +132,7 @@ export interface CancelChargeDialogData {
         </button>
       } @else {
         <button
-          mat-raised-button
-          color="primary"
+          class="btn btn-primary"
           type="button"
           (click)="close()"
           aria-label="Close cancellation dialog"
@@ -146,7 +140,7 @@ export interface CancelChargeDialogData {
           Close
         </button>
       }
-    </mat-dialog-actions>
+    </div>
   `,
   styles: [`
     .warning-banner {
@@ -160,7 +154,7 @@ export interface CancelChargeDialogData {
       margin-bottom: 1rem;
       font-size: 0.9rem;
     }
-    .warning-icon { color: #f57f17; }
+    .warning-icon { color: #f57f17; font-size: 1.25rem; }
     .section-divider { margin: 0.5rem 0 1rem; }
     .full-width { width: 100%; display: block; }
     .error-msg { color: #c62828; font-size: 0.875rem; margin-top: 0.5rem; }
@@ -171,14 +165,15 @@ export interface CancelChargeDialogData {
     .result-dl dt { font-weight: 500; color: #555; }
     .result-dl dd { margin: 0; }
     .no-refund-msg { color: #616161; font-style: italic; }
-    mat-dialog-content { min-width: 360px; }
+    .modal-body { min-width: 360px; }
   `],
 })
 export class CancelChargeDialogComponent {
   private readonly fb             = inject(NonNullableFormBuilder);
-  private readonly dialogRef      = inject(MatDialogRef<CancelChargeDialogComponent>);
-  private readonly defaultService = inject(DefaultService);
-  readonly dialogData             = inject<CancelChargeDialogData>(MAT_DIALOG_DATA);
+  protected readonly activeModal  = inject(NgbActiveModal);
+  private readonly creditNoteService = inject(CreditNoteControllerService);
+
+  data!: CancelChargeDialogData;
 
   readonly formatMoney = formatMoney;
 
@@ -200,11 +195,11 @@ export class CancelChargeDialogComponent {
   readonly result     = signal<CancellationResultDto | null>(null);
 
   cancel(): void {
-    this.dialogRef.close(null);
+    this.activeModal.dismiss('cancel');
   }
 
   close(): void {
-    this.dialogRef.close(this.result());
+    this.activeModal.close(this.result());
   }
 
   confirm(): void {
@@ -216,9 +211,9 @@ export class CancelChargeDialogComponent {
     this.submitting.set(true);
     this.apiError.set(null);
 
-    this.defaultService
+    this.creditNoteService
       .cancelCharge({
-        billUid: this.dialogData.billUid,
+        billUid: this.data.billUid,
         cancelChargeRequest: { reference: this.form.controls.reference.value },
       })
       .subscribe({

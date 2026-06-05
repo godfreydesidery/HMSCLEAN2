@@ -5,14 +5,8 @@ import {
   signal,
 } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
-import { MatButtonModule } from '@angular/material/button';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatListModule } from '@angular/material/list';
-import { DefaultService, PatientPaymentDto, RecordPaymentRequest } from '../../../api/generated';
+import { NgbActiveModal } from '@ng-bootstrap/ng-bootstrap';
+import { PatientPaymentDto, PaymentControllerService, RecordPaymentRequest } from '../../../api/generated';
 import { extractProblem } from '../../../core/error/problem-detail';
 import { formatMoney } from '../../../core/billing/format-money';
 
@@ -29,70 +23,78 @@ export interface RecordPaymentDialogData {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
-    MatDialogModule,
-    MatButtonModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatSelectModule,
-    MatProgressSpinnerModule,
-    MatListModule,
   ],
   template: `
-    <h2 mat-dialog-title id="record-payment-dialog-title">Record Payment</h2>
+    <div class="modal-header">
+      <h5 class="modal-title" id="record-payment-dialog-title">Record Payment</h5>
+      <button
+        type="button"
+        class="btn-close"
+        aria-label="Close"
+        (click)="activeModal.dismiss('cancel')"
+      ></button>
+    </div>
 
-    <mat-dialog-content aria-describedby="bills-summary-desc">
+    <div class="modal-body" aria-describedby="bills-summary-desc">
       <p id="bills-summary-desc" class="bills-label">Bills being paid:</p>
-      <mat-list dense class="bills-list">
-        @for (bill of dialogData.billSummaries; track bill.description) {
-          <mat-list-item>
-            <span matListItemTitle>{{ bill.description }}</span>
-            <span matListItemLine>{{ formatMoney(bill.amount, dialogData.currency) }}</span>
-          </mat-list-item>
+      <ul class="list-group bills-list">
+        @for (bill of data.billSummaries; track bill.description) {
+          <li class="list-group-item">
+            <span class="d-block">{{ bill.description }}</span>
+            <span class="d-block text-muted small">{{ formatMoney(bill.amount, data.currency) }}</span>
+          </li>
         }
-      </mat-list>
+      </ul>
 
       <p class="total-line">
-        Total: <strong>{{ formatMoney(dialogData.total, dialogData.currency) }}</strong>
+        Total: <strong>{{ formatMoney(data.total, data.currency) }}</strong>
       </p>
 
       <form [formGroup]="form" novalidate id="payment-form">
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Tendered Amount</mat-label>
+        <div class="mb-3">
+          <label class="form-label" for="tendered-amount">Tendered Amount</label>
           <input
-            matInput
+            id="tendered-amount"
+            class="form-control"
             type="number"
             step="0.01"
             formControlName="tenderedAmount"
-            cdkFocusInitial
             aria-label="Tendered amount"
             [attr.aria-required]="true"
+            [class.is-invalid]="form.controls.tenderedAmount.invalid && form.controls.tenderedAmount.touched"
           />
-          <mat-hint>Enter amount in {{ dialogData.currency }}</mat-hint>
+          <div class="form-text">Enter amount in {{ data.currency }}</div>
           @if (form.controls.tenderedAmount.invalid && form.controls.tenderedAmount.touched) {
-            <mat-error>Enter a valid amount (minimum 0.01).</mat-error>
+            <div class="invalid-feedback">Enter a valid amount (minimum 0.01).</div>
           }
-        </mat-form-field>
+        </div>
 
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Payment Mode</mat-label>
-          <mat-select formControlName="paymentMode" aria-label="Payment mode">
-            <mat-option value="CASH">Cash</mat-option>
-            <mat-option value="INSURANCE">Insurance</mat-option>
-          </mat-select>
+        <div class="mb-3">
+          <label class="form-label" for="payment-mode">Payment Mode</label>
+          <select
+            id="payment-mode"
+            class="form-select"
+            formControlName="paymentMode"
+            aria-label="Payment mode"
+            [class.is-invalid]="form.controls.paymentMode.invalid && form.controls.paymentMode.touched"
+          >
+            <option value="CASH">Cash</option>
+            <option value="INSURANCE">Insurance</option>
+          </select>
           @if (form.controls.paymentMode.invalid && form.controls.paymentMode.touched) {
-            <mat-error>Payment mode is required.</mat-error>
+            <div class="invalid-feedback">Payment mode is required.</div>
           }
-        </mat-form-field>
+        </div>
       </form>
 
       @if (apiError()) {
         <p class="error-msg" role="alert">{{ apiError() }}</p>
       }
-    </mat-dialog-content>
+    </div>
 
-    <mat-dialog-actions align="end">
+    <div class="modal-footer">
       <button
-        mat-button
+        class="btn btn-link"
         type="button"
         (click)="cancel()"
         [disabled]="submitting()"
@@ -101,8 +103,7 @@ export interface RecordPaymentDialogData {
         Cancel
       </button>
       <button
-        mat-raised-button
-        color="primary"
+        class="btn btn-primary"
         type="button"
         (click)="confirm()"
         [disabled]="submitting() || form.invalid"
@@ -110,35 +111,34 @@ export interface RecordPaymentDialogData {
         aria-label="Confirm payment"
       >
         @if (submitting()) {
-          <mat-spinner diameter="20" class="btn-spinner"></mat-spinner>
+          <span class="spinner-border spinner-border-sm btn-spinner" role="status" aria-hidden="true"></span>
           Processing…
         } @else {
           Confirm Payment
         }
       </button>
-    </mat-dialog-actions>
+    </div>
   `,
   styles: [`
     .bills-label  { margin: 0 0 0.25rem; font-weight: 500; }
     .bills-list   { margin-bottom: 1rem; }
     .total-line   { font-size: 1rem; margin: 0.75rem 0 1rem; }
-    .full-width   { width: 100%; display: block; margin-bottom: 0.75rem; }
     .error-msg    { color: #c62828; font-size: 0.875rem; margin-top: 0.5rem; }
-    .btn-spinner  { display: inline-block; margin-right: 0.5rem; }
-    mat-dialog-content { min-width: 360px; }
+    .btn-spinner  { margin-right: 0.5rem; }
   `],
 })
 export class RecordPaymentDialogComponent {
   private readonly fb             = inject(NonNullableFormBuilder);
-  private readonly dialogRef      = inject(MatDialogRef<RecordPaymentDialogComponent>);
-  private readonly defaultService = inject(DefaultService);
-  readonly dialogData             = inject<RecordPaymentDialogData>(MAT_DIALOG_DATA);
+  protected readonly activeModal  = inject(NgbActiveModal);
+  private readonly paymentService = inject(PaymentControllerService);
+
+  data!: RecordPaymentDialogData;
 
   readonly formatMoney = formatMoney;
 
   readonly form = this.fb.group({
     tenderedAmount: [
-      this.dialogData.total,
+      0,
       [Validators.required, Validators.min(0.01)],
     ],
     paymentMode: [
@@ -151,7 +151,7 @@ export class RecordPaymentDialogComponent {
   readonly apiError   = signal<string | null>(null);
 
   cancel(): void {
-    this.dialogRef.close(null);
+    this.activeModal.dismiss('cancel');
   }
 
   confirm(): void {
@@ -165,13 +165,13 @@ export class RecordPaymentDialogComponent {
 
     const { tenderedAmount, paymentMode } = this.form.getRawValue();
 
-    this.defaultService
-      .recordBillsPayment({
+    this.paymentService
+      .recordPayment({
         recordPaymentRequest: {
-          billUids: this.dialogData.billUids,
+          billUids: this.data.billUids,
           tenderedTotal: {
             amount: tenderedAmount,
-            currency: this.dialogData.currency,
+            currency: this.data.currency,
           },
           paymentMode,
         },
@@ -179,7 +179,7 @@ export class RecordPaymentDialogComponent {
       .subscribe({
         next: (result: PatientPaymentDto) => {
           this.submitting.set(false);
-          this.dialogRef.close(result);
+          this.activeModal.close(result);
         },
         error: (err: unknown) => {
           this.submitting.set(false);
@@ -191,7 +191,7 @@ export class RecordPaymentDialogComponent {
   private mapError(err: unknown): string {
     const problem = extractProblem(err);
     if (problem.type === 'urn:hmis:error:payment-amount-mismatch') {
-      return `Tendered amount must equal the total (${formatMoney(this.dialogData.total, this.dialogData.currency)}).`;
+      return `Tendered amount must equal the total (${formatMoney(this.data.total, this.data.currency)}).`;
     }
     if (problem.type === 'urn:hmis:error:bill-not-payable') {
       return 'One or more selected bills can no longer be paid.';

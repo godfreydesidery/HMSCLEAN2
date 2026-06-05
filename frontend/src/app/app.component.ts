@@ -1,13 +1,19 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatToolbarModule } from '@angular/material/toolbar';
-import { DefaultService } from './api/generated';
+import { AuthControllerService } from './api/generated';
 import { AuthStore } from './core/auth/auth.store';
 import { HealthIndicatorComponent } from './core/health/health-indicator.component';
 import { CanDirective } from './core/auth/can.directive';
+import { NAV_ITEMS } from './core/nav/nav-items';
 
+/**
+ * Application shell — Bootstrap 5 layout (top navbar + collapsible left sidebar).
+ *
+ * The sidebar lists every module from {@link NAV_ITEMS}; each link is gated by the
+ * `*appCan` privilege directive (privilege codes only — never role names). Modules
+ * whose feature is not yet built render as disabled "coming soon" items rather than
+ * dead links. The shell itself carries no business logic beyond logout.
+ */
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -16,9 +22,6 @@ import { CanDirective } from './core/auth/can.directive';
     RouterOutlet,
     RouterLink,
     RouterLinkActive,
-    MatToolbarModule,
-    MatButtonModule,
-    MatIconModule,
     HealthIndicatorComponent,
     CanDirective,
   ],
@@ -26,15 +29,23 @@ import { CanDirective } from './core/auth/can.directive';
   styleUrl: './app.component.scss',
 })
 export class AppComponent {
-  protected readonly authStore     = inject(AuthStore);
-  private  readonly defaultService = inject(DefaultService);
-  private  readonly router         = inject(Router);
+  protected readonly authStore   = inject(AuthStore);
+  private  readonly authService = inject(AuthControllerService);
+  private  readonly router      = inject(Router);
+
+  protected readonly navItems = NAV_ITEMS;
+
+  /** Sidebar open/closed state (collapsed on small screens; toggled by the hamburger). */
+  protected readonly sidebarOpen = signal(true);
+
+  protected toggleSidebar(): void {
+    this.sidebarOpen.update((v) => !v);
+  }
 
   /**
-   * Logout: best-effort revoke the refresh token on the server so it cannot
-   * be replayed, then clear local state unconditionally and navigate to /login.
-   * The revoke call is fire-and-forget — a network failure must never prevent
-   * the user from logging out of the local session.
+   * Logout: best-effort revoke the refresh token on the server so it cannot be
+   * replayed, then clear local state unconditionally and navigate to /login. The
+   * revoke call is fire-and-forget — a network failure must never block local logout.
    */
   logout(): void {
     const refreshToken = this.authStore.getRefreshToken();
@@ -49,12 +60,11 @@ export class AppComponent {
       return;
     }
 
-    this.defaultService
-      .revokeToken({ revokeRequest: { refreshToken } })
+    this.authService
+      .revoke({ revokeRequest: { refreshToken } })
       .subscribe({
-        next:     () => doLocalLogout(),
-        error:    () => doLocalLogout(), // best-effort: clear regardless
-        complete: () => { /* handled by next/error */ },
+        next:  () => doLocalLogout(),
+        error: () => doLocalLogout(), // best-effort: clear regardless
       });
   }
 }
