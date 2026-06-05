@@ -9,6 +9,7 @@ import com.otapp.hmis.shared.event.PatientAdmittedEvent;
 import com.otapp.hmis.shared.event.PatientDeceasedEvent;
 import com.otapp.hmis.shared.event.PatientDischargedEvent;
 import com.otapp.hmis.shared.event.PatientInsuranceClearedEvent;
+import com.otapp.hmis.shared.event.PatientReferredEvent;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -169,6 +170,46 @@ public class PatientClosureListener {
                             event.patientUid());
                 },
                 () -> log.warn("PatientClosureListener: patient uid={} not found for discharged event; "
+                        + TYPE_NOT_UPDATED, event.patientUid())
+        );
+    }
+
+    /**
+     * Handle the {@link PatientReferredEvent}: set {@code Patient.type = OUTPATIENT} ONLY.
+     *
+     * <p>Referral asymmetry vs discharge (PatientResource.java:5626 vs :5378-5381):
+     * the referral sign-out sets patient type=OUTPATIENT but does NOT clear insurance plan
+     * or payment type. {@link PatientDischargedEvent} performs the full reset (type+CASH+null);
+     * this handler performs the type-only reset.
+     *
+     * <p>Runs BEFORE_COMMIT in the inpatient module's referral-approve transaction, so the
+     * Patient type change is atomic with the Admission sign-out.
+     *
+     * <p>Same failure-mode policy as {@link #onPatientDeceased}: WARN-and-return if patient
+     * not found — never roll back a completed referral sign-out.
+     *
+     * <p>Legacy citation: PatientResource.java:5626 — referral approval sets patient
+     * type=OUTPATIENT only (inc-07 07a-3). Asymmetry with discharge at :5378-5381 documented
+     * in {@link PatientReferredEvent}.
+     *
+     * @param event the referred event carrying the patient uid and actor
+     */
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void onPatientReferred(PatientReferredEvent event) {
+        log.debug("PatientClosureListener: handling PatientReferredEvent for patient uid={}",
+                event.patientUid());
+
+        patientRepository.findByUid(event.patientUid()).ifPresentOrElse(
+                patient -> {
+                    patient.changeType(PatientType.OUTPATIENT);
+                    // NOTE: intentionally NO changePaymentType call — referral type-only reset
+                    // (PatientResource.java:5626 asymmetry vs discharge :5378-5381).
+                    auditRecorder.record(ENTITY_TYPE, patient.getUid(),
+                            AuditAction.UPDATE, event.actorUsername());
+                    log.debug("PatientClosureListener: Patient {} referred → OUTPATIENT (type only)",
+                            event.patientUid());
+                },
+                () -> log.warn("PatientClosureListener: patient uid={} not found for referred event; "
                         + TYPE_NOT_UPDATED, event.patientUid())
         );
     }

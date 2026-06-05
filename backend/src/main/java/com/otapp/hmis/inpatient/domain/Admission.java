@@ -167,15 +167,39 @@ public class Admission extends AuditableEntity {
     }
 
     /**
-     * Sign out this admission (discharge / referral / deceased disposition — 07a-3).
+     * Hold this admission: any-status → HELD (deceased save side-effect — 07a-3).
      *
-     * <p>Sets status SIGNED_OUT and stamps the discharged-at instant. Called by the disposition
-     * service in 07a-3. Guard on current status is the responsibility of the caller.
+     * <p>Called by the disposition service when a deceased note is saved for an inpatient.
+     * Legacy: PatientResource.java:5729 — admission status set to "HELD" at deceased-note save.
+     * The physical bed is freed by the caller immediately after this transition.
+     */
+    public void hold() {
+        this.status = AdmissionStatus.HELD;
+    }
+
+    /**
+     * Sign out this admission (discharge / referral — 07a-3).
+     *
+     * <p>Sets status SIGNED_OUT and stamps the discharged-at instant.
+     * Used by discharge and referral disposition flows.
+     * Guard on current status is the responsibility of the caller.
      *
      * @param dischargedAt the instant of discharge
      */
     public void signOut(Instant dischargedAt) {
         this.status = AdmissionStatus.SIGNED_OUT;
         this.dischargedAt = dischargedAt;
+    }
+
+    /**
+     * Sign out this admission without stamping dischargedAt (deceased approve — 07a-3).
+     *
+     * <p>Legacy does NOT set dischargedAt on the deceased path
+     * (PatientResource.java:5851-5934 — no discharged_at stamp for deceased).
+     * Only the status is flipped to SIGNED_OUT.
+     */
+    public void signOutDeceased() {
+        this.status = AdmissionStatus.SIGNED_OUT;
+        // dischargedAt intentionally NOT set (legacy deceased path — PatientResource.java:5851-5934)
     }
 }

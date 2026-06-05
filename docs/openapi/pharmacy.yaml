@@ -2385,6 +2385,155 @@ components:
         dischargedAt:
           type: "string"
           format: "date-time"
+    ReferralPlanRequest:
+      type: "object"
+      properties:
+        externalMedicalProviderUid:
+          type: "string"
+        referringDiagnosis:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+    ReferralPlanView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        patientUid:
+          type: "string"
+        externalMedicalProviderUid:
+          type: "string"
+        referringDiagnosis:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+        status:
+          type: "string"
+        createdByUserUid:
+          type: "string"
+        approvedByUserUid:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    ApproveDispositionRequest:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+    DischargePlanRequest:
+      type: "object"
+      properties:
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+    DischargePlanDto:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        history:
+          type: "string"
+        investigation:
+          type: "string"
+        management:
+          type: "string"
+        operationNote:
+          type: "string"
+        icuAdmissionNote:
+          type: "string"
+        generalRecommendation:
+          type: "string"
+        status:
+          type: "string"
+        createdBy:
+          type: "string"
+        approvedBy:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
+    DeceasedNoteRequest:
+      type: "object"
+      properties:
+        patientSummary:
+          type: "string"
+        causeOfDeath:
+          type: "string"
+        deathDate:
+          type: "string"
+          format: "date"
+        deathTime:
+          $ref: "#/components/schemas/LocalTime"
+    DeceasedNoteView:
+      type: "object"
+      properties:
+        uid:
+          type: "string"
+        admissionUid:
+          type: "string"
+        patientUid:
+          type: "string"
+        patientSummary:
+          type: "string"
+        causeOfDeath:
+          type: "string"
+        deathDate:
+          type: "string"
+          format: "date"
+        deathTime:
+          $ref: "#/components/schemas/LocalTime"
+        status:
+          type: "string"
+        createdByUserUid:
+          type: "string"
+        approvedByUserUid:
+          type: "string"
+        approvedAt:
+          type: "string"
+          format: "date-time"
+        createdAt:
+          type: "string"
+          format: "date-time"
     CreateUserRequest:
       required:
       - "firstName"
@@ -3029,27 +3178,6 @@ components:
           type: "string"
         businessDayUid:
           type: "string"
-    ReferralPlanRequest:
-      required:
-      - "externalMedicalProviderUid"
-      type: "object"
-      properties:
-        externalMedicalProviderUid:
-          type: "string"
-        referringDiagnosis:
-          type: "string"
-        history:
-          type: "string"
-        investigation:
-          type: "string"
-        management:
-          type: "string"
-        operationNote:
-          type: "string"
-        icuAdmissionNote:
-          type: "string"
-        generalRecommendation:
-          type: "string"
     FinalDiagnosisDto:
       type: "object"
       properties:
@@ -3067,18 +3195,6 @@ components:
           type: "string"
         businessDayUid:
           type: "string"
-    DeceasedNoteRequest:
-      type: "object"
-      properties:
-        patientSummary:
-          type: "string"
-        causeOfDeath:
-          type: "string"
-        deathDate:
-          type: "string"
-          format: "date"
-        deathTime:
-          $ref: "#/components/schemas/LocalTime"
     SoapNoteRequest:
       type: "object"
       properties:

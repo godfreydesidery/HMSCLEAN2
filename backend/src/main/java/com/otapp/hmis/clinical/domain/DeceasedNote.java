@@ -216,6 +216,52 @@ public class DeceasedNote extends AuditableEntity {
     }
 
     // -------------------------------------------------------------------------
+    // Business constructor — Admission/inpatient path
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a new PENDING deceased note bound to an admission (inpatient path — inc-07 07a-3).
+     *
+     * <p>XOR-context: {@code consultation = null}, {@code admissionUid} set. V28 CHECK
+     * constraint {@code num_nonnulls(consultation_id, admission_uid) = 1} is satisfied by
+     * construction.
+     *
+     * <p>Guards (enforced by the service layer before calling this):
+     * <ul>
+     *   <li>patientSummary and causeOfDeath are both non-blank — verbatim 422
+     *       "Summary and cause of death are missing" (PatientResource.java:5720-5730).</li>
+     *   <li>No existing DeceasedNote for this admission (service creates only if absent).</li>
+     * </ul>
+     *
+     * <p>Legacy citation: PatientResource.java:5693-5773 (save_deceased_note for admission path).
+     *
+     * @param admissionUid   loose uid of the owning admission
+     * @param patientUid     loose uid of the patient
+     * @param patientSummary the patient summary narrative (non-blank, enforced by caller)
+     * @param causeOfDeath   the cause of death narrative (non-blank, enforced by caller)
+     * @param deathDate      date of death (client-supplied, verbatim)
+     * @param deathTime      time of death (client-supplied, verbatim)
+     * @param businessDayUid loose uid of the current open business day
+     */
+    public DeceasedNote(String admissionUid,
+                        String patientUid,
+                        String patientSummary,
+                        String causeOfDeath,
+                        LocalDate deathDate,
+                        LocalTime deathTime,
+                        String businessDayUid) {
+        this.consultation = null; // inpatient path — no consultation
+        this.admissionUid = admissionUid;
+        this.patientUid = patientUid;
+        this.patientSummary = patientSummary;
+        this.causeOfDeath = causeOfDeath;
+        this.deathDate = deathDate;
+        this.deathTime = deathTime;
+        this.status = DeceasedNoteStatus.PENDING;
+        this.businessDayUid = businessDayUid;
+    }
+
+    // -------------------------------------------------------------------------
     // Domain methods — lifecycle
     // -------------------------------------------------------------------------
 

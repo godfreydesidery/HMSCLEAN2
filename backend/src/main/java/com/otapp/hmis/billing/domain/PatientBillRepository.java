@@ -3,6 +3,8 @@ package com.otapp.hmis.billing.domain;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Spring Data JPA repository for {@link PatientBill}.
@@ -24,6 +26,19 @@ public interface PatientBillRepository extends JpaRepository<PatientBill, Long> 
      * Find all bills for a patient (all statuses — for invoice/receipt listing).
      */
     List<PatientBill> findByPatientUid(String patientUid);
+
+    /**
+     * Find all bill uids linked to the given admission.
+     *
+     * <p>Used by {@link com.otapp.hmis.billing.api.BillingCommands#approveInvoicesForAdmission}
+     * to collect all bills for an admission so their parent invoices can be approved.
+     * PatientResource.java:5354-5357 (discharge), :5626-5631 (referral), :5884-5887 (deceased).
+     *
+     * @param admissionUid the loose uid of the admission
+     * @return list of all PatientBill uids linked to this admission
+     */
+    @Query("SELECT b.uid FROM PatientBill b WHERE b.admissionUid = :admissionUid")
+    List<String> findUidsByAdmissionUid(@Param("admissionUid") String admissionUid);
 
     /**
      * Test whether any bill linked to the given admission is in one of the supplied statuses.

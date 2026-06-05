@@ -211,6 +211,27 @@ class BillingCommandsImpl implements BillingCommands {
      */
     @Override
     @Transactional(propagation = Propagation.REQUIRED)
+    public void approveInvoicesForAdmission(String admissionUid, TxAuditContext ctx) {
+        // Collect all bill uids for this admission then approve their parent invoices.
+        // PatientResource.java:5354-5357, :5626-5631, :5884-5887 (discharge/referral/deceased).
+        var billUids = patientBillRepository.findUidsByAdmissionUid(admissionUid);
+        Set<String> approvedInvoiceUids = new HashSet<>();
+        for (String billUid : billUids) {
+            invoiceDetailRepository.findByBillUid(billUid).ifPresent(detail -> {
+                PatientInvoice invoice = detail.getInvoice();
+                if (invoice != null && !approvedInvoiceUids.contains(invoice.getUid())) {
+                    invoice.approve();
+                    invoiceRepository.save(invoice);
+                    auditRecorder.record("billing.PatientInvoice", invoice.getUid(),
+                            AuditAction.UPDATE, ctx.actorUsername());
+                    approvedInvoiceUids.add(invoice.getUid());
+                }
+            });
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
     public void approveInvoicesForBills(Collection<String> billUids, TxAuditContext ctx) {
         Set<String> approvedInvoiceUids = new HashSet<>();
         for (String billUid : billUids) {

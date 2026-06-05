@@ -141,6 +141,26 @@ public interface BillingCommands {
                            com.otapp.hmis.shared.domain.TxAuditContext ctx);
 
     /**
+     * Approve all PENDING invoices linked to the given admission.
+     *
+     * <p>Collects all {@code PatientBill.uid} values where {@code PatientBill.admissionUid}
+     * matches the given uid, then delegates to {@link #approveInvoicesForBills} to flip their
+     * parent invoices PENDING→APPROVED.
+     *
+     * <p>Reproduces the legacy discharge/referral/deceased invoice-approve side-effect
+     * (PatientResource.java:5354-5357, :5626-5631, :5884-5887 — all three use the same
+     * admission-level approve pattern). The inpatient {@code DispositionService} calls this
+     * instead of the consultation-scoped {@link #approveInvoicesForBills} overload.
+     *
+     * <p>Runs inside the caller's (inpatient) transaction (Propagation.REQUIRED).
+     * Parameters are Strings only — no billing domain type crosses the module boundary (ADR-0008 §1).
+     *
+     * @param admissionUid the ULID of the admission whose invoices should be approved
+     * @param ctx          transaction audit context (dayUid, actor)
+     */
+    void approveInvoicesForAdmission(String admissionUid, TxAuditContext ctx);
+
+    /**
      * Approve all PENDING invoices whose details contain any of the supplied bill uids.
      *
      * <p>Used by {@code ClosureService.approveDeceased} to reproduce the legacy

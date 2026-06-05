@@ -17,7 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 /**
  * Asserts every authority code referenced in a {@code @PreAuthorize} annotation belongs to the
- * 26 live codes (build-spec §7, §1, ADR-0006).
+ * live codes set (build-spec §7, §1, ADR-0006).
  *
  * <p>Dead codes (9) and invented codes must never appear in a gate — this test fails the build
  * if any such code sneaks in.
@@ -25,12 +25,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
 class PrivilegeGateArchTest {
 
     /**
-     * The 27 live gate codes (build-spec §1 + inc-04 billing addition).
+     * The live gate codes (build-spec §1 + inc-04 billing + inc-07 07a-3 disposition APPROVE).
      * Any other code in @PreAuthorize is a bug.
      *
      * <p>BILL-A is seeded in V2:53 and is the gate for all billing endpoints
      * (view/pay/credit-note/collections — inc-04 build-spec §5.4, 11-DECISIONS-RATIFIED).
-     * It was previously listed as a dead code before the billing increment was built.
+     *
+     * <p>DISCHARGE-PLAN-APPROVE, REFERRAL-PLAN-APPROVE, DECEASED-NOTE-APPROVE are seeded in
+     * V47 (inc-07 07a-3, CR-07-SoD second-approver gate — owner-APPROVED).
      */
     private static final Set<String> LIVE_CODES = Set.of(
             "ADMIN-ACCESS",
@@ -60,7 +62,11 @@ class PrivilegeGateArchTest {
             "USER-UPDATE",
             "ROLE-ALL",
             // inc-04 billing gate (seeded V2:53; previously marked dead pending billing build)
-            "BILL-A"
+            "BILL-A",
+            // inc-07 07a-3 disposition second-approver gates (seeded V47, CR-07-SoD)
+            "DISCHARGE-PLAN-APPROVE",
+            "REFERRAL-PLAN-APPROVE",
+            "DECEASED-NOTE-APPROVE"
     );
 
     /** Matches single-quoted authority codes inside hasAnyAuthority / hasAuthority expressions. */
@@ -89,10 +95,11 @@ class PrivilegeGateArchTest {
         }
 
         assertThat(violations)
-                .as("Every @PreAuthorize authority code must be in the 27 live codes (build-spec §1). " +
+                .as("Every @PreAuthorize authority code must be in the live codes set (build-spec §1). " +
                     "Dead codes (GOO-ALL, PATIENT-A, PATIENT-C, PATIENT-U, " +
                     "PROCUREMENT-ACCESS, PRODUCT-CREATE, ROLE-CREATE, ROLE-U) must never gate anything. " +
                     "BILL-A is live as of inc-04. " +
+                    "DISCHARGE-PLAN-APPROVE/REFERRAL-PLAN-APPROVE/DECEASED-NOTE-APPROVE live as of inc-07 07a-3 (V47). " +
                     "Violations:")
                 .isEmpty();
     }
