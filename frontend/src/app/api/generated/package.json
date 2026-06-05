@@ -1,6 +1,6 @@
 {
   "name": "@hmis/api-client",
-  "version": "0.0.1",
+  "version": "v0",
   "description": "OpenAPI client for @hmis/api-client",
   "author": "OpenAPI-Generator Contributors",
   "repository": {

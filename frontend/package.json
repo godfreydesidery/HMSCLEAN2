@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "generate:api": "openapi-generator-cli generate -i ../backend/src/main/resources/openapi.yaml -g typescript-angular -o src/app/api/generated --additional-properties=ngVersion=18.2.0,npmName=@hmis/api-client,providedInRoot=true,withInterfaces=true,useSingleRequestParameter=true,fileNaming=kebab-case",
+    "generate:api": "openapi-generator-cli generate -i src/app/api/openapi-live.json -g typescript-angular -o src/app/api/generated --additional-properties=ngVersion=18.2.0,npmName=@hmis/api-client,providedInRoot=true,withInterfaces=true,useSingleRequestParameter=true,fileNaming=kebab-case",
+    "generate:api:fetch": "curl -s http://localhost:8080/v3/api-docs -o src/app/api/openapi-live.json && npm run generate:api",
     "lint": "ng lint"
   },
   "private": true,
@@ -22,6 +23,9 @@
     "@angular/platform-browser": "^18.2.0",
     "@angular/platform-browser-dynamic": "^18.2.0",
     "@angular/router": "^18.2.0",
+    "@ng-bootstrap/ng-bootstrap": "^17.0.1",
+    "@popperjs/core": "^2.11.8",
+    "bootstrap": "^5.3.8",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.14.10"

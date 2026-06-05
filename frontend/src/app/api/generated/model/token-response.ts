@@ -1,5 +1,5 @@
 /**
- * Zana HMIS API
+ * OpenAPI definition
  *
  * 
  *
